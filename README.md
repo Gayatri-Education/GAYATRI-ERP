@@ -271,6 +271,7 @@ Gayatri/
 ├── scripts/                    # Ops scripts: migrate, seed, inspect, benchmark, verify
 ├── hooks/                      # PyInstaller hooks for llama_cpp
 ├── packaging/                  # Windows installer (PyInstaller + Inno Setup)
+├── training/                   # SLM prompt contracts, fine-tuning scripts, and alignment data
 ├── docs/                       # Architecture, security, and operations docs
 ├── tests/                      # 1,252 tests across 43 verification phases
 ├── model_manifest.json         # Local SLM registry (Qwen2.5-0.5B, GGUF Q4_K_M)

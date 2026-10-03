@@ -65,9 +65,6 @@ scratch/
 temp/
 tmp/
 
-# Private model training artifacts (local only)
-training/
-
 # Private Local MVP Directories (Section 2 Master Plan)
 .private/
 local_data/
