@@ -1,0 +1,28 @@
+# Gayatri AI — Release Change Impact Matrix
+
+**Target Release:** 7 October 2026  
+**Baseline Date:** 3 October 2026  
+
+---
+
+| Change | Module | Caller Impact | DB Impact | API Impact | UI Impact | Security Impact | Packaging Impact | Tests |
+|---|---|---|---|---|---|---|---|---|
+| **Phase 0 Baseline** | `docs/release/*` | None (documentation only) | None | None | None | Establishes audit trail | None | Tier 0, Tier 4 (1252 passed) |
+| **Phase 1 Config Hardening** | `core/config.py`, `central_platform/api/app.py` | Environment loading across all services | None | Strict CORS origins in production; debug disabled | None | Eliminates wildcard origins, weak secret defaults | Bundled config validation | `test_phase02_platform_api.py`, `test_phase15_security.py` |
+| **Phase 2 Auth Remediation** | `central_platform/api/routes/auth.py`, `central_platform/auth/*` | Login, refresh, password-reset callers | DB user records authoritative | Unknown users return 401; password reset requires token | Login error handling for unregistered users | Eliminates fake identity issuance & unverified resets | None | `test_phase01_auth_identity_remediation.py`, `test_phase04_auth_rbac.py` |
+| **Phase 3 RBAC & Isolation** | `central_platform/auth/dependencies.py`, route guards | All route handlers | Scoped queries by tenant & user | Strict 403 on cross-tenant / unauthorized access | Error display on forbidden actions | Multi-tenant and student isolation guaranteed | None | `test_phase04_student_isolation.py`, `test_phase07_tenant_isolation.py` |
+| **Phase 4 AI Gateway Hardening** | `central_platform/ai/*` | Tutor orchestrator, AI endpoints | Telemetry logging | Clean 503 on model failure; no fake responses | Degradation/retry messaging | Prevents silent mock AI in production | None | `test_phase04_ai_gateway_remediation.py`, `test_phase17_ai_gateway_model_router_platform.py` |
+| **Phase 5 Model Integrity** | `model_manifest.json`, `core/providers/local.py` | Local provider initialization | None | None | Displays model status on startup | Verifies SHA-256 against tampering/corruption | Validates model packaging | `test_architecture/test_model_config_registry.py`, `test_phase16_model_config.py` |
+| **Phase 6 RAG Scope & Grounding** | `central_platform/rag/*`, `core/rag/*` | Tutor context assembly | Document chunks & embeddings | Scoped to course/tenant/version | Citations visible in tutor | Prevents RAG injection & tenant leakage | RAG data bundling | `test_phase03_rag_remediation.py`, `test_phase06_scoped_rag_authorization.py` |
+| **Phase 7 Tutor Orchestrator** | `central_platform/tutor/*` | Tutor API, desktop chat bridge | Learning state commits | 16-step canonical pipeline | Socratic interaction, multi-turn continuity | Preserves student state integrity | None | `test_phase10_generic_tutor_orchestrator.py`, `test_multi_turn_flow.py` |
+| **Phase 8 Adaptive Learning** | `central_platform/learning/*` | Tutor orchestrator | BKT/LDG mastery updates | State updates reflect actual performance | Progress dashboard updates | Prevents false mastery progression | None | `test_phase06_adaptive_remediation.py`, `test_phase08_adaptive_engine.py` |
+| **Phase 9 Assessment Anti-Leakage** | `central_platform/assessment/*` | Assessment routes | Assessment attempts | Prevents direct answer leaking in feedback | Feedback displayed safely | Guarantees academic integrity | None | `test_phase07_assessment_remediation.py`, `test_phase11_assessment_engine.py` |
+| **Phase 10 Portals & Bridge** | `app/portals/*`, `app/bridge/*` | Desktop UI | Read/write to central API | Synchronized state | Responsive error & loading states | Authoritative permissions | Qt WebEngine compatibility | `test_student_dashboard.py`, `test_teacher_dashboard_bridge.py` |
+| **Phase 11 API Contracts** | `central_platform/api/*` | All client endpoints | None | Standardized error shape & status codes | Graceful API failure handling | No stack trace or secret exposure | None | `test_phase02_platform_api.py`, `test_phase10_legacy_routes_audit.py` |
+| **Phase 12 Database & Restart** | `central_platform/db.py`, migrations | Persistence layer | Migrations, indexes, foreign keys | Consistent transactions | State preserved across restarts | Transactional safety | SQLite WAL file management | `test_phase02_migrations.py`, `test_phase21_database_migration_hardening.py` |
+| **Phase 13 Packaging** | `packaging/*` | PyInstaller build | None | None | Desktop launcher | Validates signed binaries & DLLs | Clean Windows installation without Python | `test_phase26_packaging_clean_install.py` |
+| **Phase 14 Observability** | `central_platform/health/*`, logs | Operations & probes | None | `/healthz`, `/readyz`, `/livez` probes | None | Safe logging without credentials/PII | None | `test_server_live_sync.py`, `test_phase18_ai_governance_observability_platform.py` |
+| **Phase 15 Security Audit** | Whole repository | All callers | None | None | None | Hardened against injection, auth bypass, leakage | Clean distribution | `tests/test_phase15_security.py`, `tests/test_phase22_security_hardening_master.py` |
+| **Phase 16 Product Acceptance** | Whole platform | Real users & test personas | Real DB records | E2E journeys | Multi-persona acceptance | Zero cross-tenant leakage | Packaged installer verification | `test_phase24_e2e_journeys_real.py` |
+| **Phase 17 RC Freeze** | Release branch | Final build | None | None | None | Freeze enforcement | Tagged RC build | Full Tier 0-4 suites |
+| **Phase 18 Final Gate** | Release artifacts | Production release | Clean production DB | Production API | Production desktop shell | Complete compliance | Final signed installer + SHA-256 | All gate checks pass |
