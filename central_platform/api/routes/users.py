@@ -15,6 +15,7 @@ from central_platform.api.schemas import ApiResponse, UserCreateRequest, UserRes
 from central_platform.auth.dependencies import (
     get_current_user_optional,
     get_db,
+    is_production_mode,
 )
 from central_platform.models.schema import User, UserRole
 
@@ -57,6 +58,12 @@ async def list_users(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """List platform users with optional role or org filtering."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     if current_user:
         if current_user.role == UserRole.STUDENT:
             raise HTTPException(
@@ -84,6 +91,12 @@ async def create_user(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Create a new platform user."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     if current_user:
         if current_user.role in (UserRole.STUDENT, UserRole.TEACHER):
             raise HTTPException(
@@ -139,6 +152,12 @@ async def get_user_by_id(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Get user by unique ID."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     if current_user:
         if current_user.role == UserRole.STUDENT and current_user.id != user_id:
             raise HTTPException(

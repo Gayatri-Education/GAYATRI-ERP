@@ -17,6 +17,7 @@ from central_platform.auth.dependencies import (
     enforce_resource_boundaries,
     get_current_user_optional,
     get_db,
+    is_production_mode,
 )
 from central_platform.models.schema import Session as DbSession, SessionStatus, User, UserRole
 
@@ -34,6 +35,12 @@ async def start_session(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Start an interactive adaptive tutoring session for a student."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to start a session",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     if current_user and current_user.role == UserRole.STUDENT:
         if req.student_id != current_user.id:
             raise HTTPException(
@@ -75,6 +82,12 @@ async def get_session(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Get active session details."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to view session",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     sess = _ACTIVE_SESSIONS.get(session_id)
     if not sess:
         try:

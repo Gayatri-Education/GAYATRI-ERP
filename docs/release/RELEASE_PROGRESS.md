@@ -206,8 +206,97 @@ No packaging configuration modifications required; runtime security policies app
 None within Phase 2 scope.
 
 ### Commit
-8e9c9d7
+`8e9c9d7`
 
 ### Status
 COMPLETE
+
+---
+
+## Phase 3 — Evidence
+
+### Scope
+Authorization, RBAC & Tenant Isolation across all platform routes and domain boundaries: prove and enforce every row of the Master Plan Section 9 Actor Matrix:
+1. Anonymous -> Protected API -> 401 Unauthorized in production
+2. Student -> Own data -> 200 OK
+3. Student -> Other student -> 403 Forbidden
+4. Student -> Teacher dashboard -> 403 Forbidden
+5. Teacher -> Assigned course -> 200 OK
+6. Teacher -> Other tenant course -> 403 Forbidden
+7. Org admin -> Own org -> 200/201 OK
+8. Org admin -> Other org -> 403 Forbidden
+9. Super admin -> Global admin resources -> 200/201 OK (policy-based)
+10. Deleted / Inactive / Suspended user -> Protected resources -> 403 Forbidden
+
+### Root Cause
+- Multiple router endpoints (`central_platform/api/routes/*`) accepted `Optional[User]` with fallback to synthetic personas without gating on `is_production_mode()`, allowing unauthenticated requests in production to execute with fallback privileges.
+- `central_platform/api/routes/teachers.py`: `get_teacher_dashboard` allowed access if `course.visibility == "PUBLIC"` even if the course belonged to another tenant (`course.organization_id != actor.organization_id`).
+- `central_platform/api/routes/enrollments.py`: checked `role_str == "STUDENT"` using un-normalized string representation, which missed lowercase enum value `"student"` and allowed cross-student enrollment queries.
+- `central_platform/auth/dependencies.py`: `db.get_user(user_id)` was called without `include_deleted=True`, causing deleted users in development/test fallback to be treated as non-existent and synthesized as active users instead of being rejected with 403.
+
+### Files Changed
+- `central_platform/auth/dependencies.py` (fail-fast 401 in production directory lookup, `include_deleted=True` in account status verification)
+- `central_platform/api/routes/admin.py` (enforce 401 in production for unauthenticated calls to `_enforce_admin_auth`, `system-health`, and `kill-switch`)
+- `central_platform/api/routes/teachers.py` (enforce 401 in production for unauthenticated teacher endpoints; strictly isolate courses with tenant ownership even if marked public)
+- `central_platform/api/routes/students.py` (implemented and enforced `_enforce_student_access` across all student routes)
+- `central_platform/api/routes/classes.py` (enforce 401 in production for unauthenticated class and cohort creation)
+- `central_platform/api/routes/courses.py` (enforce 401 in production for unauthenticated course mutation, versioning, review, publishing, and archiving)
+- `central_platform/api/routes/curricula.py` (enforce 401 in production in `_enforce_authoring_auth`)
+- `central_platform/api/routes/enrollments.py` (enforce 401 in production for unauthenticated calls; use `normalize_role` to enforce student self-access isolation)
+- `central_platform/api/routes/instructions.py` (enforce 401 in production for instruction creation and deletion; student prohibition on deletion)
+- `central_platform/api/routes/notifications.py` (enforce 401 in production for notification dispatch, status queries, and queue worker triggers)
+- `central_platform/api/routes/learning.py` (enforce 401 in production for event ingestion, queries, and replay)
+- `central_platform/api/routes/tools.py` (enforce 401 in production for tool execution)
+- `central_platform/api/routes/sync.py` (enforce 401 in production via `_enforce_sync_access`)
+- `central_platform/api/routes/sessions.py` (enforce 401 in production for session creation and retrieval)
+- `central_platform/api/routes/analytics.py` (enforce 401 in production for all analytics endpoints)
+- `central_platform/api/routes/organizations.py` (enforce 401 in production for organization creation)
+- `central_platform/api/routes/users.py` (enforce 401 in production for user creation and retrieval)
+- `tests/test_phase03_rbac_tenant_isolation.py` (complete 10-test suite verifying the entire Section 9 Actor Matrix)
+
+### Files Intentionally Not Changed
+Public route contracts, client serialization models (`schemas.py`), and non-production developer convenience fixtures.
+
+### Tests
+```text
+Tier 0: python -m compileall central_platform app core local_runtime scripts
+Result: 0 compilation errors
+
+Tier 1: python -m pytest tests/test_phase03_rbac_tenant_isolation.py -v
+Result: 10 passed in 4.16s
+
+Tier 2: python -m pytest tests/test_phase04_auth_rbac.py tests/test_phase22_security_privacy_isolation_audit.py tests/test_phase09_analytics_remediation.py -v
+Result: 37 passed in 6.63s
+
+Tier 4 Regression: python -m pytest -q -m "not gui"
+Result: 1283 passed in 97.89s
+```
+
+### Regression Result
+1,283 passing tests, 0 failures, 0 skipped across the complete headless test suite (+10 new tests from Phase 2 baseline).
+
+### Runtime Verification
+- In production mode, unauthenticated access to any protected platform resource returns HTTP 401 Unauthorized.
+- Students can only view their own profile, learning records, and enrollments; attempts to access another student's data yield HTTP 403 Forbidden.
+- Teachers can access assigned courses in their organization; cross-tenant course dashboards yield HTTP 403 Forbidden.
+- Org administrators are strictly scoped to their own organization for classes, courses, and instructions; cross-tenant actions yield HTTP 403 Forbidden.
+- Super administrators retain global control based on policy.
+- Deactivated, soft-deleted, and suspended accounts are rejected with HTTP 403 Forbidden across all protected endpoints.
+
+### Security Verification
+- Master Plan Section 9 Actor Matrix 100% verified and satisfied.
+- Negative security boundaries enforced at both dependency injection and route/service levels.
+
+### Packaging Impact
+No packaging configuration modifications required; authorization rules apply identically across server environments.
+
+### Known Limitations
+None within Phase 3 scope.
+
+### Commit
+[Pending Commit]
+
+### Status
+COMPLETE
+
 

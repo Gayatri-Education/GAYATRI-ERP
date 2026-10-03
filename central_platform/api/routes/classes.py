@@ -24,6 +24,7 @@ from central_platform.api.schemas import (
 from central_platform.auth.dependencies import (
     get_current_user_optional,
     get_db,
+    is_production_mode,
 )
 from central_platform.db import PlatformDatabase
 from central_platform.models.schema import ClassGroup, Cohort, User, UserRole
@@ -74,6 +75,12 @@ async def create_class_group(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Create a new class group."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required in production",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     if current_user:
         user_role = current_user.role.value if isinstance(current_user.role, UserRole) else str(current_user.role).upper()
         if user_role in (UserRole.STUDENT.value, "STUDENT"):
@@ -157,6 +164,12 @@ async def create_cohort_for_class(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Create a cohort in a class group."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required in production",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     if current_user:
         user_role = current_user.role.value if isinstance(current_user.role, UserRole) else str(current_user.role).upper()
         if user_role in (UserRole.STUDENT.value, "STUDENT"):

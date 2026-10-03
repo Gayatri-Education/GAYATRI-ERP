@@ -86,7 +86,7 @@ async def get_current_user(
         norm_role = UserRole.STUDENT
 
     db = get_db()
-    user = db.get_user(user_id)
+    user = db.get_user(user_id, include_deleted=True)
     if user:
         if not user.is_active or user.is_deleted:
             raise HTTPException(
@@ -102,8 +102,7 @@ async def get_current_user(
         return user
 
     # Production gate: Fail closed if account does not exist in the database (F-001, F-004)
-    env = os.environ.get("GAYATRI_ENV", "development").lower()
-    if env == "production":
+    if is_production_mode():
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authenticated user record not found in platform directory",

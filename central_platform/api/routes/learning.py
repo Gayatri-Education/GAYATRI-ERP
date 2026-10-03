@@ -17,6 +17,7 @@ from central_platform.api.schemas import ApiResponse, LearningEventSchema
 from central_platform.auth.dependencies import (
     enforce_resource_boundaries,
     get_current_user_optional,
+    is_production_mode,
 )
 from central_platform.events.models import (
     BatchLearningEventIngest,
@@ -46,6 +47,12 @@ async def ingest_learning_event(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Ingest a single pedagogical interaction event with validation and deduplication."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required in production",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     if current_user:
         enforce_resource_boundaries(
             current_user,
@@ -102,6 +109,12 @@ async def ingest_batch_learning_events(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Batch ingest learning events with high-throughput idempotency."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required in production",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     if current_user:
         for ev in batch.events:
             enforce_resource_boundaries(
@@ -128,6 +141,12 @@ async def list_learning_events(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Query time-series learning event stream with role and tenant scoping."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required in production",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     if current_user:
         enforce_resource_boundaries(
             current_user,
@@ -159,6 +178,12 @@ async def get_learning_event_by_id(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Fetch individual learning event by unique ID."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required in production",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     store = get_event_store()
     event = store.get_event(event_id)
     if not event:
@@ -182,6 +207,12 @@ async def replay_student_events(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Replay chronological event stream to compute projected mastery and diagnostics."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required in production",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     if current_user:
         enforce_resource_boundaries(
             current_user,
@@ -205,6 +236,12 @@ async def get_learning_recommendation(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Get pedagogical next action recommendation from adaptive engine policy."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required in production",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     if current_user:
         enforce_resource_boundaries(current_user, target_student_id=student_id)
 

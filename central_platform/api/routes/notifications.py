@@ -17,7 +17,10 @@ from central_platform.api.schemas import (
     NotificationResponse,
     NotificationStatusResponse,
 )
-from central_platform.auth.dependencies import get_current_user_optional
+from central_platform.auth.dependencies import (
+    get_current_user_optional,
+    is_production_mode,
+)
 from central_platform.models.schema import User, UserRole
 from central_platform.notifications.service import NotificationService
 
@@ -47,6 +50,12 @@ async def list_notifications(
     service: NotificationService = Depends(get_notification_service),
 ):
     """Retrieve notifications for user with optional unread and channel filters."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required in production",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     target_recipient = recipient_id
     if not target_recipient and current_user:
         target_recipient = current_user.id
@@ -101,6 +110,12 @@ async def create_notification(
     service: NotificationService = Depends(get_notification_service),
 ):
     """Dispatch a notification to a recipient via specified delivery channel."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required in production",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     # Students cannot dispatch arbitrary notifications to other users
     if current_user and current_user.role == UserRole.STUDENT:
         raise HTTPException(
@@ -126,6 +141,12 @@ async def create_batch_notifications(
     service: NotificationService = Depends(get_notification_service),
 ):
     """Dispatch notifications to multiple recipients simultaneously."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required in production",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     if current_user and current_user.role == UserRole.STUDENT:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -151,6 +172,12 @@ async def get_notification_status(
     service: NotificationService = Depends(get_notification_service),
 ):
     """Track delivery status, retry attempts, and provider confirmation for a notification."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required in production",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     notif = service.get_notification(notification_id)
     if not notif:
         raise HTTPException(
@@ -189,6 +216,12 @@ async def mark_as_read(
     service: NotificationService = Depends(get_notification_service),
 ):
     """Mark a specific notification as read."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required in production",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     user_id = current_user.id if current_user else None
     success = service.mark_as_read(notification_id, recipient_id=user_id)
     if not success:
@@ -224,6 +257,12 @@ async def process_notification_queue(
     service: NotificationService = Depends(get_notification_service),
 ):
     """Trigger background queue processing worker tick (Admin / System)."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required in production",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     if current_user and current_user.role not in (UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -240,6 +279,12 @@ async def get_queue_stats(
     service: NotificationService = Depends(get_notification_service),
 ):
     """Get real-time statistics on notification queue depth and channel volume."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required in production",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     if current_user and current_user.role not in (UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

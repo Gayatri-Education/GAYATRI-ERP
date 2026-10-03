@@ -22,6 +22,7 @@ from central_platform.api.schemas import (
 from central_platform.auth.dependencies import (
     get_current_user_optional,
     get_db,
+    is_production_mode,
 )
 from central_platform.db import PlatformDatabase
 from central_platform.models.schema import Organization, User, UserRole
@@ -78,6 +79,12 @@ async def create_organization(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Create a new tenant organization. Requires SUPER_ADMIN role."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to create organizations",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     if current_user:
         role_str = current_user.role.value if isinstance(current_user.role, UserRole) else str(current_user.role).upper()
         if role_str != "SUPER_ADMIN":

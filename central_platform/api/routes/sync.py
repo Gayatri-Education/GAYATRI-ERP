@@ -29,6 +29,7 @@ from central_platform.auth.dependencies import (
     enforce_resource_boundaries,
     get_current_user_optional,
     get_db,
+    is_production_mode,
 )
 from central_platform.models.schema import User
 from central_platform.sync.manager import SyncEvent, SyncManager
@@ -46,14 +47,24 @@ def get_sync_service() -> SyncService:
 _sync_manager = SyncManager()
 
 
+def _enforce_sync_access(current_user: Optional[User], target_student_id: Optional[str] = None) -> None:
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required for synchronization",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if current_user and target_student_id:
+        enforce_resource_boundaries(current_user, target_student_id=target_student_id)
+
+
 @router.post("/events", response_model=ApiResponse[BatchSyncEventsResponse])
 async def sync_events(
     batch: BatchSyncEventsRequest,
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Batch synchronize offline/local student events with central platform."""
-    if current_user:
-        enforce_resource_boundaries(current_user, target_student_id=batch.student_id)
+    _enforce_sync_access(current_user, target_student_id=batch.student_id)
 
     svc = get_sync_service()
     # Process through authoritative central sync service
@@ -114,8 +125,7 @@ async def get_sync_status(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Retrieve telemetry synchronization status and device audit summary for a student."""
-    if current_user:
-        enforce_resource_boundaries(current_user, target_student_id=student_id)
+    _enforce_sync_access(current_user, target_student_id=student_id)
 
     svc = get_sync_service()
     status_data = svc.get_sync_status(student_id=student_id, course_id=course_id)
@@ -131,8 +141,7 @@ async def bind_device(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Explicitly bind hardware device to authenticated student account."""
-    if current_user:
-        enforce_resource_boundaries(current_user, target_student_id=req.student_id)
+    _enforce_sync_access(current_user, target_student_id=req.student_id)
 
     svc = get_sync_service()
     try:
@@ -164,8 +173,7 @@ async def list_devices(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Retrieve all devices bound to a student account."""
-    if current_user:
-        enforce_resource_boundaries(current_user, target_student_id=student_id)
+    _enforce_sync_access(current_user, target_student_id=student_id)
 
     svc = get_sync_service()
     devices = svc.db.get_devices_for_student(student_id)
