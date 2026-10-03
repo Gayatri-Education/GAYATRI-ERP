@@ -31,6 +31,8 @@ datas = [
     (str(PROJECT_ROOT / 'gai3.png'), '.'),
     # User-facing docs
     (str(PROJECT_ROOT / 'EVALUATION_GUIDE.md'), '.'),
+    # Authoritative Model Manifest (needed for model artifact integrity verification)
+    (str(PROJECT_ROOT / 'model_manifest.json'), '.'),
     # SLM system prompt contracts (needed by PromptContractLoader at runtime)
     (str(PROJECT_ROOT / 'training' / 'prompts'), 'training/prompts'),
 ]

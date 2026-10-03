@@ -21,6 +21,6 @@
   "resource_profile": "1GB RAM, CPU",
   "language_support": ["en", "hi"],
   "version": "v4.0",
-  "checksum": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "checksum": "74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db",
   "license": "MIT"
 }

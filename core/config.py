@@ -73,12 +73,14 @@ for d in (DATA_DIR, MODELS_DIR, RAG_DIR, COURSES_DIR, LOG_DIR, UPLOADS_DIR):
 # 3. MODELS_DIR (%LOCALAPPDATA%/GayatriAI/models/gayatri) — user data dir
 # 4. Downloads folder (convenience auto-detect)
 _PORTABLE_MODEL_DIR: Path = BASE_DIR / "models" / "gayatri"
+_CANONICAL_MODEL_DIR: Path = BASE_DIR / "models"
 _PROJECT_MODEL_DIR: Path = BASE_DIR / "GayatriAI" / "models" / "gayatri"
 _DOWNLOADS_MODEL_DIR: Path = Path.home() / "Downloads"
 
 def _get_model_search_dirs() -> tuple[Path, ...]:
     dirs = [
-        _PORTABLE_MODEL_DIR,      # <install_dir>/models/gayatri/  (primary for installed/portable)
+        _CANONICAL_MODEL_DIR,     # <install_dir>/models/ (canonical release artifact path)
+        _PORTABLE_MODEL_DIR,      # <install_dir>/models/gayatri/  (legacy portable path)
         _PROJECT_MODEL_DIR,       # <install_dir>/GayatriAI/models/gayatri/ (dev layout)
         MODELS_DIR,               # %LOCALAPPDATA%/GayatriAI/models/gayatri/
     ]

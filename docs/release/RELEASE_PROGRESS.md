@@ -366,5 +366,82 @@ None within Phase 4 scope.
 ### Status
 COMPLETE
 
+---
+
+## Phase 5 — Evidence
+
+### Scope
+Model Artifact & Manifest Integrity (Section 11 of Remediation Plan & Defect Register P0-02):
+- Replace empty placeholder checksum in `model_manifest.json` with the authoritative SHA-256 for `qwen2.5-0.5b-instruct-q4_k_m.gguf` (`74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db`).
+- Implement `ModelIntegrityResult` and `verify_model_manifest()` utility in `core/model_fetch/manifest_validator.py` conforming to Section 11 specifications:
+  - Output: `MODEL_ID`, `MODEL_PATH`, `EXPECTED_SHA256`, `ACTUAL_SHA256`, `SIZE`, `FORMAT`, `VALID`.
+  - Provide both dictionary serialization and formatted CLI execution output.
+- Enforce production model integrity gate:
+  - `LocalProvider.health()`: in production mode or when verification is forced, verify model file checksum against manifest. If mismatched, return `available=False`, `reason_code="corrupt_file"`.
+  - `LocalProvider._load_model()`: in production mode or when verification is forced, verify checksum before initializing model weights. If mismatched, raise `LocalModelError`.
+  - `LocalGGUFAdapter`: in production mode, report `LocalModelCorrupt` error status when model fails checksum verification.
+- Synchronize `setup_model.bat` with canonical model artifact `qwen2.5-0.5b-instruct-q4_k_m.gguf` and official Hugging Face download URL while retaining backward compatibility for legacy filenames.
+- Synchronize packaging specifications:
+  - `packaging/gayatri_demo.spec`: include `model_manifest.json` in PyInstaller distribution `datas`.
+  - `packaging/installer.iss`: ensure `{app}\models` canonical model directory is created with write permissions.
+
+### Root Cause
+`model_manifest.json` was committed with an empty placeholder hash (`e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`) resulting from hashing zero bytes. Additionally, neither `LocalProvider.health()` nor `LocalProvider._load_model()` enforced a cryptographic SHA-256 checksum check prior to loading model weights in production, which would allow corrupted, incomplete, or tampered GGUF artifacts to be loaded without early rejection.
+
+### Files Changed
+- `model_manifest.json` (authoritative SHA-256 `74a4da8c9fdbcd15bd1f6d01d621410d31c6fc00986f5eb687824e7b93d7a9db`)
+- `core/model_fetch/manifest_validator.py` (added `ModelIntegrityResult`, `verify_model_manifest()`, streaming SHA-256 calculation, and CLI entrypoint)
+- `core/config.py` (added canonical `_CANONICAL_MODEL_DIR` (`BASE_DIR / "models"`) to `_get_model_search_dirs()`)
+- `core/providers/local.py` (added production checksum integrity gates in `LocalProvider.health()` and `LocalProvider._load_model()`)
+- `setup_model.bat` (synchronized with `qwen2.5-0.5b-instruct-q4_k_m.gguf`, authoritative SHA-256, and Hugging Face release source)
+- `packaging/gayatri_demo.spec` (included `model_manifest.json` in bundle datas)
+- `packaging/installer.iss` (added writable `{app}\models` directory)
+- `docs/release/RELEASE_DEFECT_REGISTER.md` (marked P0-02 as CLOSED)
+- `tests/test_phase05_model_integrity_remediation.py` (12 dedicated unit and integration tests covering manifest integrity, corrupt artifact rejection, missing file handling, empty file handling, production gates in health/loader/adapter, and CLI execution)
+
+### Files Intentionally Not Changed
+Non-production test stub loading behavior, fallback model search order for installed portable versions, and private training datasets.
+
+### Tests
+```text
+Tier 0: python -m compileall central_platform core app
+Result: 0 compilation errors
+
+Tier 1: python -m pytest tests/test_phase05_model_integrity_remediation.py -v
+Result: 12 passed in 1.07s
+
+Tier 2: python -m pytest tests/test_phase16_model_config.py tests/architecture/test_model_config_registry.py tests/test_phase04_ai_gateway_remediation.py -v
+Result: 19 passed in 1.16s
+
+Tier 4 Regression: python -m pytest -q -m "not gui"
+Result: 1296 passed in 93.23s
+```
+
+### Regression Result
+1,296 passing tests, 0 failures, 0 skipped across the complete headless test suite (+12 new tests from Phase 4 baseline).
+
+### Runtime Verification
+- Executed `python -m core.model_fetch.manifest_validator` CLI: successfully outputs canonical `MODEL_ID`, `MODEL_PATH`, `EXPECTED_SHA256`, `ACTUAL_SHA256`, `SIZE`, `FORMAT`, `VALID`.
+- Verified production gate rejects corrupted or mismatched weights in `LocalProvider.health()` (`reason_code="corrupt_file"`).
+- Verified production gate rejects corrupted weights in `LocalProvider._load_model()` (`LocalModelError("Production model integrity gate failure...")`).
+- Verified `LocalGGUFAdapter` in production translates corrupted weights into `error_class="LocalModelCorrupt"` with `status=MODEL_UNAVAILABLE`.
+- Verified non-production development workflows remain functional without breaking test stubs.
+
+### Security Verification
+- Defect **P0-02** verified resolved and closed.
+- Eliminates risk of executing tampered, truncated, or malicious model artifacts in production.
+
+### Packaging Impact
+PyInstaller bundle and Inno Setup installer now explicitly package `model_manifest.json` and prepare the `{app}\models` directory for the canonical model artifact.
+
+### Known Limitations
+None within Phase 5 scope.
+
+### Commit
+(Pending commit)
+
+### Status
+COMPLETE
+
 
 
