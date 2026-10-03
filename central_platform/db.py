@@ -196,6 +196,15 @@ class PlatformDatabase:
             self._conn = None
             self._conn_wrapper = None
 
+    def checkpoint(self, mode: str = "TRUNCATE") -> None:
+        """Checkpoint SQLite WAL entries into the database file."""
+        if self.db_path != ":memory:":
+            try:
+                conn = self._get_connection()
+                conn.execute(f"PRAGMA wal_checkpoint({mode});")
+            except Exception:
+                pass
+
     def _init_db(self) -> None:
         """Run initial DDL and migrations automatically."""
         conn = self._get_connection()
@@ -222,6 +231,7 @@ class PlatformDatabase:
                 ON device_bindings (student_id);
                 """
             )
+        self.checkpoint("TRUNCATE")
 
 
     # ── 1. Organizations & Identity ──────────────────────────────────────────

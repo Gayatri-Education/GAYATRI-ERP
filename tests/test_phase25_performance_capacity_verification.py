@@ -281,6 +281,7 @@ def test_perf_offline_storage_growth_envelope(tmp_path):
         )
     )
 
+    db.checkpoint("TRUNCATE")
     initial_size = os.path.getsize(str(db_file))
     num_events = 200
 
@@ -300,8 +301,11 @@ def test_perf_offline_storage_growth_envelope(tmp_path):
             )
         )
 
+    db.checkpoint("TRUNCATE")
     final_size = os.path.getsize(str(db_file))
     delta_bytes = final_size - initial_size
     bytes_per_event = delta_bytes / num_events
+    db.close()
 
     assert bytes_per_event < 1500.0, f"Storage growth {bytes_per_event:.1f} bytes/event exceeded 1500 bytes/event budget"
+
