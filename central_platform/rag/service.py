@@ -52,17 +52,18 @@ class SmartChunker:
         course_version_id: Optional[str] = None,
         visibility_scope: str = "course",
         class_id: Optional[str] = None,
+        section_index: int = 0,
     ) -> List[RAGChunk]:
         text = section.text.strip()
         if not text or len(text) < self.min_chunk_chars:
             if not text:
                 return []
             # Keep small chunk if meaningful
-            return [self._build_chunk(text, section, source_id, course_id, subject, index=0, course_version_id=course_version_id, visibility_scope=visibility_scope, class_id=class_id)]
+            return [self._build_chunk(text, section, source_id, course_id, subject, index=0, course_version_id=course_version_id, visibility_scope=visibility_scope, class_id=class_id, section_index=section_index)]
 
         # If text is already within reasonable bounds
         if len(text) <= self.target_chunk_chars + self.overlap_chars:
-            return [self._build_chunk(text, section, source_id, course_id, subject, index=0, course_version_id=course_version_id, visibility_scope=visibility_scope, class_id=class_id)]
+            return [self._build_chunk(text, section, source_id, course_id, subject, index=0, course_version_id=course_version_id, visibility_scope=visibility_scope, class_id=class_id, section_index=section_index)]
 
         # Split text into sentences
         sentences = re.split(r"(?<=[.!?])\s+", text)
@@ -75,7 +76,7 @@ class SmartChunker:
             s_len = len(sentence)
             if current_len + s_len > self.target_chunk_chars and current_sentences:
                 chunk_text = " ".join(current_sentences)
-                chunks.append(self._build_chunk(chunk_text, section, source_id, course_id, subject, index=idx, course_version_id=course_version_id, visibility_scope=visibility_scope, class_id=class_id))
+                chunks.append(self._build_chunk(chunk_text, section, source_id, course_id, subject, index=idx, course_version_id=course_version_id, visibility_scope=visibility_scope, class_id=class_id, section_index=section_index))
                 idx += 1
                 # Sliding window overlap
                 overlap_text: List[str] = []
@@ -95,7 +96,7 @@ class SmartChunker:
         if current_sentences:
             chunk_text = " ".join(current_sentences)
             if len(chunk_text) >= self.min_chunk_chars:
-                chunks.append(self._build_chunk(chunk_text, section, source_id, course_id, subject, index=idx, course_version_id=course_version_id, visibility_scope=visibility_scope, class_id=class_id))
+                chunks.append(self._build_chunk(chunk_text, section, source_id, course_id, subject, index=idx, course_version_id=course_version_id, visibility_scope=visibility_scope, class_id=class_id, section_index=section_index))
 
         return chunks
 
@@ -110,11 +111,13 @@ class SmartChunker:
         course_version_id: Optional[str] = None,
         visibility_scope: str = "course",
         class_id: Optional[str] = None,
+        section_index: int = 0,
     ) -> RAGChunk:
         clean = DocumentCleaner.clean(raw_text)
         sanitized, _ = RAGSecuritySanitizer.sanitize_document_text(clean)
 
-        raw_id = f"{source_id}:{section.chapter}:{section.topic}:{section.page}:{index}"
+        text_hash = hashlib.sha256(raw_text.encode("utf-8")).hexdigest()[:8]
+        raw_id = f"{source_id}:{section.chapter}:{section.topic}:{section.page}:{section_index}:{index}:{text_hash}"
         chunk_id = f"chk_{hashlib.sha256(raw_id.encode('utf-8')).hexdigest()[:12]}"
 
         # Deterministic simple embedding representation (term frequency dictionary / vector)
@@ -252,7 +255,7 @@ class RAGService:
 
         # 2. Chunk & Clean
         all_chunks: List[RAGChunk] = []
-        for sec in parsed_sections:
+        for sec_idx, sec in enumerate(parsed_sections):
             chunks = self.chunker.chunk_section(
                 sec,
                 source.id,
@@ -261,6 +264,7 @@ class RAGService:
                 course_version_id=source.course_version_id,
                 visibility_scope=source.visibility_scope,
                 class_id=source.class_id,
+                section_index=sec_idx,
             )
             all_chunks.extend(chunks)
 
@@ -410,6 +414,11 @@ class RAGService:
             if ext in dangerous_exts:
                 raise ValueError(f"Dangerous/executable file extension '{ext}' is prohibited in upload.")
 
+        if course_id:
+            c = self.db.get_course(course_id)
+            if c and (organization_id == "org-default" or not organization_id):
+                organization_id = c.organization_id
+
         sid = f"src_{hashlib.sha256(f'{course_id}:{title}:{version}'.encode()).hexdigest()[:12]}"
         now = datetime.now(timezone.utc).isoformat()
         ct_val = content_type.value if isinstance(content_type, KnowledgeContentType) else str(content_type or "textbook")
@@ -458,7 +467,7 @@ class RAGService:
                 raise ValueError("Document parser returned 0 sections. Verify file format and content.")
 
             all_chunks: List[RAGChunk] = []
-            for sec in parsed_sections:
+            for sec_idx, sec in enumerate(parsed_sections):
                 chunks = self.chunker.chunk_section(
                     sec,
                     source.id,
@@ -467,6 +476,7 @@ class RAGService:
                     course_version_id=course_version_id,
                     visibility_scope=vis_val,
                     class_id=class_id,
+                    section_index=sec_idx,
                 )
                 all_chunks.extend(chunks)
 

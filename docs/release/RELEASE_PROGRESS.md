@@ -443,5 +443,91 @@ None within Phase 5 scope.
 ### Status
 COMPLETE
 
+---
+
+## Phase 6 — Evidence
+
+### Scope
+RAG Integrity & Grounding (Section 12 of Remediation Plan):
+- End-to-end knowledge ingestion pipeline verification: upload -> parse -> clean -> chunk -> metadata -> persist -> validate -> publish -> query.
+- Multi-tenant and authorization scope enforcement: organization boundary, course, course version, class, student targeting, and publication status.
+- Section 12 Test Matrix execution:
+  - Direct retrieval with exact factual phrasing
+  - Paraphrased retrieval via lexical overlap and concept weighting
+  - Multi-chunk retrieval ordered strictly by relevance score
+  - Out-of-scope query returning controlled `RAG_EMPTY` ("insufficient context")
+  - Wrong course isolation (Course A chunks never leak into Course B queries)
+  - Wrong tenant / multi-tenant isolation (`RAG_DENIED` with descriptive tenant denial reason)
+  - Unpublished material invisibility (draft, processing, ready_for_review, failed)
+  - Archived material invisibility (archived assets excluded from live queries)
+  - Document indirect prompt injection neutralization (markers replaced with `[FILTERED_INSTRUCTION]`, flagged in validation warnings)
+  - User direct query prompt injection sanitization (dangerous instruction tokens stripped prior to retrieval)
+  - Empty document rejection (`ValueError("Content cannot be empty.")`)
+  - Corrupt document error handling (graceful transition to `FAILED` with descriptive error)
+  - Duplicate document re-ingestion idempotency (re-ingestion replaces chunks without duplicate accumulation)
+  - Large document size limit rejection (>10MB rejected with `ValueError`)
+  - Large valid document sequential chunking (generates sequential non-empty chunks without content loss)
+  - Class-scoped and student-targeted visibility scoping
+- Production Gate:
+  - Grounded questions provide verifiable source, scope, provenance, and data-framed context.
+  - Unsupported questions return controlled `RAG_EMPTY` without fabricating hallucinated sources.
+
+### Root Cause
+During multi-paragraph ingestion, `SmartChunker._build_chunk()` computed chunk IDs using `raw_id = f"{source_id}:{section.chapter}:{section.topic}:{section.page}:{index}"`. When multiple distinct sections within a single document shared identical chapter, topic, and page values, `index` defaulted to 0, causing identical chunk ID hashes that collided and silently overwritten earlier sections in SQLite (`INSERT OR REPLACE`). Furthermore, `upload_knowledge_asset()` did not auto-derive `organization_id` from the target course when callers omitted `organization_id`, risking foreign key constraint failures.
+
+### Files Changed
+- `central_platform/rag/service.py`:
+  - Updated `SmartChunker._build_chunk()` to incorporate `section_index` and a text content hash (`hashlib.sha256(raw_text.encode()).hexdigest()[:8]`) into `raw_id`, guaranteeing globally unique chunk IDs and preventing chunk collision/dropping.
+  - Updated `SmartChunker.chunk_section()` to accept `section_index: int = 0`.
+  - Updated `ingest_document()` and `upload_knowledge_asset()` chunking loops to pass `section_index=sec_idx`.
+  - Updated `upload_knowledge_asset()` to auto-resolve `organization_id` from the course record if omitted or left as `"org-default"`.
+- `tests/test_phase06_rag_integrity_remediation.py`: 23 dedicated unit and integration tests covering the complete Section 12 test matrix and production gate.
+
+### Files Intentionally Not Changed
+Vector index storage schema, RAG retrieval scoring formula, and legacy fallback JSON readers.
+
+### Tests
+```text
+Tier 0: python -m compileall central_platform core app
+Result: 0 compilation errors
+
+Tier 1: python -m pytest tests/test_phase06_rag_integrity_remediation.py -v
+Result: 23 passed in 1.66s
+
+Tier 2: python -m pytest tests/test_phase03_rag_remediation.py tests/test_phase06_scoped_rag_authorization.py tests/test_phase16_rag_plug_and_play_platform.py tests/test_phase18_teacher_instruction_rag_integration.py tests/test_phase23_rag_reliability.py tests/test_phase4_hybrid_rag.py tests/test_phase5_knowledge_graph_rag.py tests/test_phase9_rag.py -v
+Result: 62 passed in 5.45s
+
+Tier 4 Regression: python -m pytest -q -m "not gui"
+Result: 1319 passed in 103.31s
+```
+
+### Regression Result
+1,319 passing tests, 0 failures, 0 skipped across the complete headless test suite (+23 new tests from Phase 5 baseline).
+
+### Runtime Verification
+- Direct, paraphrased, and multi-chunk queries reliably return grounded facts with verified provenance (`NCERT`) and citations.
+- Queries outside of course material return clean, controlled `status="RAG_EMPTY"`, `count=0`, `data_context=""`.
+- Multi-tenant cross-organization queries return `status="RAG_DENIED"` with clean diagnostic reasons.
+- Document and query prompt injections are neutralized without breaking educational text retrieval.
+- Class and student targeted scopes are strictly isolated.
+
+### Security Verification
+- Indirect prompt injections in ingested content neutralized to `[FILTERED_INSTRUCTION]`.
+- Direct query injection wrappers stripped.
+- All retrieved evidence cards securely wrapped in `<rag_evidence_data chunk_id="..." source="..." topic="..." page="..." role="data_only">` with HTML escaping.
+
+### Packaging Impact
+No packaging configuration modifications required; RAG runtime applies identically across desktop and central server deployments.
+
+### Known Limitations
+None within Phase 6 scope.
+
+### Commit
+(Pending commit)
+
+### Status
+COMPLETE
+
+
 
 
