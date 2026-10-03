@@ -377,6 +377,29 @@ class LocalGGUFAdapter(BaseAIProviderAdapter):
 
         try:
             from core.providers.local import LocalProvider
+            health = LocalProvider.health()
+            if not health.get("available", False):
+                reason_code = health.get("reason_code", "unavailable")
+                if reason_code == "corrupt_file":
+                    err_cls = "LocalModelCorrupt"
+                elif reason_code in ("missing_file", "download_incomplete"):
+                    err_cls = "LocalModelMissing"
+                else:
+                    err_cls = "LocalModelUnavailable"
+
+                if is_production_mode():
+                    return AIExecutionResult(
+                        request_id=req_id,
+                        content="",
+                        provider=self.config.provider_name,
+                        model=model_desc.model_name,
+                        success=False,
+                        status=ModelExecutionStatus.MODEL_UNAVAILABLE,
+                        error_class=err_cls,
+                        error_message=health.get("message", "Local GGUF model is unavailable"),
+                        mock=False,
+                    )
+
             if LocalProvider.is_available():
                 messages = []
                 if request.system_prompt:
@@ -410,8 +433,34 @@ class LocalGGUFAdapter(BaseAIProviderAdapter):
                         status=ModelExecutionStatus.MODEL_SUCCESS,
                         mock=False,
                     )
+                elif is_production_mode():
+                    return AIExecutionResult(
+                        request_id=req_id,
+                        content="",
+                        provider=self.config.provider_name,
+                        model=model_desc.model_name,
+                        success=False,
+                        status=ModelExecutionStatus.MODEL_INVALID_RESPONSE,
+                        error_class="EmptyResponseError",
+                        error_message="Local GGUF model generated an empty response.",
+                        mock=False,
+                    )
         except Exception as exc:
             logger.debug("LocalProvider inference failed or unavailable: %s", exc)
+            if is_production_mode():
+                err_str = str(exc).lower()
+                err_cls = "LocalModelCorrupt" if ("corrupt" in err_str or "invalid" in err_str) else "LocalModelUnavailable"
+                return AIExecutionResult(
+                    request_id=req_id,
+                    content="",
+                    provider=self.config.provider_name,
+                    model=model_desc.model_name,
+                    success=False,
+                    status=ModelExecutionStatus.MODEL_UNAVAILABLE,
+                    error_class=err_cls,
+                    error_message=f"Local GGUF inference failed: {exc}",
+                    mock=False,
+                )
 
         if is_production_mode():
             return AIExecutionResult(
@@ -517,8 +566,35 @@ class OpenAICompatibleAdapter(BaseAIProviderAdapter):
             timeout = request.timeout_seconds or self.config.timeout_seconds
             with urllib.request.urlopen(http_req, timeout=timeout) as resp:
                 resp_data = json.loads(resp.read().decode("utf-8"))
-                choice = resp_data["choices"][0]
-                content = choice["message"]["content"]
+                choices = resp_data.get("choices")
+                if not choices or not isinstance(choices, list):
+                    return AIExecutionResult(
+                        request_id=req_id,
+                        content="",
+                        provider=self.config.provider_name,
+                        model=model_desc.model_name,
+                        success=False,
+                        status=ModelExecutionStatus.MODEL_INVALID_RESPONSE,
+                        error_class="MalformedResponseError",
+                        error_message="Provider response missing or invalid 'choices' list.",
+                        mock=False,
+                    )
+                choice = choices[0]
+                message = choice.get("message") if isinstance(choice, dict) else None
+                content = message.get("content") if isinstance(message, dict) else None
+                if content is None or not str(content).strip():
+                    return AIExecutionResult(
+                        request_id=req_id,
+                        content="",
+                        provider=self.config.provider_name,
+                        model=model_desc.model_name,
+                        success=False,
+                        status=ModelExecutionStatus.MODEL_INVALID_RESPONSE,
+                        error_class="EmptyResponseError",
+                        error_message="Provider returned an empty response.",
+                        mock=False,
+                    )
+                content = str(content)
                 usage = resp_data.get("usage", {})
                 prompt_tokens = usage.get("prompt_tokens", max(1, int(len(request.prompt.split()) * 1.33)))
                 completion_tokens = usage.get("completion_tokens", max(1, int(len(content.split()) * 1.33)))
@@ -607,7 +683,36 @@ class AnthropicAdapter(BaseAIProviderAdapter):
             timeout = request.timeout_seconds or self.config.timeout_seconds
             with urllib.request.urlopen(http_req, timeout=timeout) as resp:
                 resp_data = json.loads(resp.read().decode("utf-8"))
-                content = resp_data["content"][0]["text"]
+                content_blocks = resp_data.get("content")
+                if not content_blocks or not isinstance(content_blocks, list):
+                    return AIExecutionResult(
+                        request_id=req_id,
+                        content="",
+                        provider=self.config.provider_name,
+                        model=model_desc.model_name,
+                        success=False,
+                        status=ModelExecutionStatus.MODEL_INVALID_RESPONSE,
+                        error_class="MalformedResponseError",
+                        error_message="Provider response missing or invalid 'content' block list.",
+                        latency_ms=round((time.perf_counter() - t0) * 1000.0, 2),
+                        mock=False,
+                    )
+                first_block = content_blocks[0] if isinstance(content_blocks[0], dict) else {}
+                content = first_block.get("text")
+                if content is None or not str(content).strip():
+                    return AIExecutionResult(
+                        request_id=req_id,
+                        content="",
+                        provider=self.config.provider_name,
+                        model=model_desc.model_name,
+                        success=False,
+                        status=ModelExecutionStatus.MODEL_INVALID_RESPONSE,
+                        error_class="EmptyResponseError",
+                        error_message="Provider returned an empty response.",
+                        latency_ms=round((time.perf_counter() - t0) * 1000.0, 2),
+                        mock=False,
+                    )
+                content = str(content)
                 usage = resp_data.get("usage", {})
                 prompt_tokens = usage.get("input_tokens", max(1, int(len(request.prompt.split()) * 1.33)))
                 completion_tokens = usage.get("output_tokens", max(1, int(len(content.split()) * 1.33)))
@@ -684,8 +789,39 @@ class GeminiAdapter(BaseAIProviderAdapter):
             timeout = request.timeout_seconds or self.config.timeout_seconds
             with urllib.request.urlopen(http_req, timeout=timeout) as resp:
                 resp_data = json.loads(resp.read().decode("utf-8"))
-                candidate = resp_data["candidates"][0]
-                content = candidate["content"]["parts"][0]["text"]
+                candidates = resp_data.get("candidates")
+                if not candidates or not isinstance(candidates, list):
+                    return AIExecutionResult(
+                        request_id=req_id,
+                        content="",
+                        provider=self.config.provider_name,
+                        model=model_desc.model_name,
+                        success=False,
+                        status=ModelExecutionStatus.MODEL_INVALID_RESPONSE,
+                        error_class="EmptyResponseError",
+                        error_message="Provider returned no candidates (blocked or empty).",
+                        latency_ms=round((time.perf_counter() - t0) * 1000.0, 2),
+                        mock=False,
+                    )
+                candidate = candidates[0] if isinstance(candidates[0], dict) else {}
+                content_obj = candidate.get("content", {})
+                parts = content_obj.get("parts", []) if isinstance(content_obj, dict) else []
+                first_part = parts[0] if parts and isinstance(parts, list) and isinstance(parts[0], dict) else {}
+                content = first_part.get("text")
+                if content is None or not str(content).strip():
+                    return AIExecutionResult(
+                        request_id=req_id,
+                        content="",
+                        provider=self.config.provider_name,
+                        model=model_desc.model_name,
+                        success=False,
+                        status=ModelExecutionStatus.MODEL_INVALID_RESPONSE,
+                        error_class="EmptyResponseError",
+                        error_message="Provider returned an empty response.",
+                        latency_ms=round((time.perf_counter() - t0) * 1000.0, 2),
+                        mock=False,
+                    )
+                content = str(content)
                 prompt_tokens = max(1, int(len(request.prompt.split()) * 1.33))
                 completion_tokens = max(1, int(len(content.split()) * 1.33))
                 cost = (

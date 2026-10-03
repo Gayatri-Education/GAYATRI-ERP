@@ -165,6 +165,9 @@ LOCAL_MODEL_GPU_LAYERS: int = -1  # -1 = all layers on GPU if available
 # Model download source (HuggingFace bartowski GGUF — used by download_model in bridge)
 MODEL_HUGGINGFACE_REPO: str = "Qwen/Qwen2.5-0.5B-Instruct-GGUF"
 MODEL_GGUF_FILENAME: str = "qwen2.5-0.5b-instruct-q4_k_m.gguf"
+DEFAULT_MODEL_ID: str = "gayatri-chem-qwen2.5-0.5b-v4"
+DEFAULT_MODEL_NAME: str = "Gayatri-Chemistry-Tutor-0.5B"
+DEFAULT_CHAT_TEMPLATE: str = "chatml"
 
 # Inference defaults
 DEFAULT_TEMPERATURE: float = 0.7

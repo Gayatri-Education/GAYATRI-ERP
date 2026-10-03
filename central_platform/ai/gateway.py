@@ -63,6 +63,20 @@ class AIGatewayService:
             daily_budget_usd=100.0,
             models=[
                 AIModelDescriptor(
+                    model_id="gayatri-chem-qwen2.5-0.5b-v4",
+                    model_name="Gayatri-Chemistry-Tutor-0.5B",
+                    tier=ModelTier.TIER_2_STANDARD,
+                    context_window=8192,
+                    latency_p50_ms=30.0,
+                ),
+                AIModelDescriptor(
+                    model_id="qwen2.5-0.5b-instruct",
+                    model_name="Qwen2.5-0.5B-Instruct-Q4_K_M",
+                    tier=ModelTier.TIER_2_STANDARD,
+                    context_window=8192,
+                    latency_p50_ms=30.0,
+                ),
+                AIModelDescriptor(
                     model_id="gayatri-tutor-v3",
                     model_name="Gayatri-Tutor-v3-Q4_K_M",
                     tier=ModelTier.TIER_2_STANDARD,
@@ -214,6 +228,25 @@ class AIGatewayService:
             request_id=req_id,
         )
 
+        # In production mode, reject any explicit request for mock engine or mock models
+        if is_production_mode():
+            if (request.preferred_provider and "mock" in request.preferred_provider.lower()) or (
+                request.preferred_model and "mock" in request.preferred_model.lower()
+            ):
+                fail_res = AIExecutionResult(
+                    request_id=req_id,
+                    content="",
+                    provider=request.preferred_provider or "mock",
+                    model=request.preferred_model or "mock",
+                    success=False,
+                    status=ModelExecutionStatus.MODEL_CONFIGURATION_ERROR,
+                    error_class="MockInProductionProhibited",
+                    error_message="Mock engine is strictly prohibited in production mode (F-011, F-012). Cannot request mock provider or model.",
+                    mock=False,
+                )
+                self._log_execution(fail_res, request)
+                return fail_res
+
         # 2. Model Routing Decision
         routing: RoutingDecision = self.router.route(
             task_type=request.task_type,
@@ -258,6 +291,10 @@ class AIGatewayService:
 
             adapter = self.adapters.get(p_name)
             if not adapter:
+                continue
+
+            if is_production_mode() and (isinstance(adapter, MockAIAdapter) or getattr(p_config, "provider_type", None) == ProviderType.MOCK):
+                logger.error("Mock adapter '%s' rejected during production execution.", p_name)
                 continue
 
             # Select model descriptor

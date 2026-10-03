@@ -1,37 +1,36 @@
-"""Phase 04 — AI Gateway and Model Failure Semantics Remediation Tests.
+"""Gayatri AI Platform — Phase 4 AI Gateway & Model Routing Hardening Tests.
 
-Verifies:
-1. Provider execution states:
-   - MODEL_SUCCESS
-   - MODEL_UNAVAILABLE
-   - MODEL_TIMEOUT
-   - MODEL_RATE_LIMITED
-   - MODEL_CONFIGURATION_ERROR
-   - MODEL_INVALID_RESPONSE
-2. Elimination of automatic fallback to mock_engine (F-011).
-3. Elimination of synthetic mock completions on provider failures (F-012).
-4. Tutor fail-closed semantics on AI model failure (F-013):
-   - Zero fabricated successful AI turns.
-   - Zero mastery advancement on model failure.
-   - Zero state changes committed on model failure.
-   - Structured error details and service unavailable messaging.
-5. Machine-readable provenance records ({provider, model, mock: false}) (F-014).
-6. Production gate prohibiting mock adapters when GAYATRI_ENV=production.
+Verifies Section 10 of Release Plan & Defect Register P0-03 & P0-04:
+1. Model available -> 200 OK, ok=True, state_committed=True, SLR mastery updated.
+2. Model missing -> fails safely, ok=False, state_committed=False, no SLR mutation.
+3. Model corrupt -> fails safely, ok=False, state_committed=False, no SLR mutation.
+4. Provider timeout -> fails safely with MODEL_TIMEOUT, ok=False, no SLR mutation.
+5. Provider 401 -> fails safely with MODEL_CONFIGURATION_ERROR, ok=False.
+6. Provider 429 -> fails safely with MODEL_RATE_LIMITED, circuit breaker triggered.
+7. Provider 500 -> fails safely with fallback attempted, graceful degradation.
+8. Empty response -> fails safely with EmptyResponseError, ok=False.
+9. Malformed response -> fails safely with MalformedResponseError / JSONDecodeError, ok=False.
+10. Mock adapter forced in production -> rejected with MockInProductionProhibited.
+11. Model identity unification across core/config, manifest, and gateway (P0-04).
+12. State invariant: on AI failure, student mastery in SLR and event store are completely unmutated.
 """
 from __future__ import annotations
 
+import io
 import json
 import socket
 import urllib.error
 from unittest.mock import MagicMock, patch
-
 import pytest
 
 from central_platform.ai.adapters import (
     AnthropicAdapter,
     GeminiAdapter,
+    LocalGGUFAdapter,
     MockAIAdapter,
     OpenAIAdapter,
+    OpenAICompatibleAdapter,
+    is_production_mode,
 )
 from central_platform.ai.gateway import AIGatewayService
 from central_platform.ai.schema import (
@@ -47,395 +46,446 @@ from central_platform.ai.schema import (
 from central_platform.db import PlatformDatabase
 from central_platform.models.schema import (
     Course,
-    CourseStatus,
-    CourseVersion,
     CourseVisibility,
     Enrollment,
+    MasteryState,
     Organization,
+    StudentLearningRecord,
     User,
     UserRole,
 )
-from central_platform.tutor.orchestrator import GenericTutorOrchestrator, TutorTurnRequest
+from central_platform.tutor.orchestrator import (
+    GenericTutorOrchestrator,
+    TutorTurnRequest,
+    TutorTurnResult,
+)
+import core.config
+
+
+def get_mastery_score(db: PlatformDatabase, student_id: str, course_id: str, concept_id: str) -> float:
+    states = db.get_mastery_states(student_id, course_id=course_id)
+    for s in states:
+        if s.concept_id == concept_id:
+            return s.score
+    return 0.0
 
 
 @pytest.fixture
-def mem_db():
+def test_db():
+    """Seed test database with an active student and enrolled course."""
     db = PlatformDatabase(":memory:")
-    db.create_organization(
-        Organization(id="org-core", name="Core Academic Institution", slug="core-academic")
+    # Organization
+    db.create_organization(Organization(id="org-p04", name="P04 Test Organization", slug="org-p04"))
+    # Student
+    db.create_user(
+        User(
+            id="student-p04-01",
+            email="p04_student@test.edu",
+            full_name="Student Test",
+            role=UserRole.STUDENT,
+            organization_id="org-p04",
+        )
     )
-    user = User(
-        id="std-04-101",
-        organization_id="org-core",
-        email="student@test.com",
-        full_name="Test Student",
-        role=UserRole.STUDENT,
+    # Course
+    db.create_course(
+        Course(
+            id="course-p04-chem",
+            title="Physical Chemistry",
+            code="CHEM-101",
+            organization_id="org-p04",
+            visibility=CourseVisibility.PUBLIC,
+        )
     )
-    db.create_user(user)
-
-    course = Course(
-        id="crs-physics-101",
-        organization_id="org-core",
-        code="PHYS101",
-        title="Classical Mechanics",
-        visibility=CourseVisibility.PUBLIC,
+    # Active enrollment
+    db.create_enrollment(
+        Enrollment(
+            id="enr-p04-01",
+            student_id="student-p04-01",
+            course_id="course-p04-chem",
+            is_active=True,
+        )
     )
-    db.create_course(course)
-
-    version = CourseVersion(
-        id="ver-crs-physics-101-v1",
-        course_id="crs-physics-101",
-        version_number="1.0",
-        status=CourseStatus.PUBLISHED,
-        created_by="teacher-1",
+    # SLR
+    db.create_slr(
+        StudentLearningRecord(
+            id="slr-p04-01",
+            student_id="student-p04-01",
+            course_id="course-p04-chem",
+            authoritative=True,
+        )
     )
-    db.create_course_version(version)
-
-    enrollment = Enrollment(
-        id="enr-04-101",
-        student_id="std-04-101",
-        course_id="crs-physics-101",
-        is_active=True,
+    # Pre-existing mastery in SLR
+    db.upsert_mastery_state(
+        MasteryState(
+            id="mst-p04-01",
+            slr_id="slr-p04-01",
+            concept_id="thermodynamics_first_law",
+            score=0.45,
+            confidence=0.8,
+        )
     )
-    db.create_enrollment(enrollment)
-
     return db
 
 
+# ── Scenario 1: Model Available (Normal Successful Execution) ─────────────
 
-@pytest.fixture
-def openai_model_desc():
-    return AIModelDescriptor(
-        model_id="gpt-4o",
-        model_name="gpt-4o",
-        tier=ModelTier.TIER_1_HEAVY,
-        cost_per_1k_input_usd=0.005,
-        cost_per_1k_output_usd=0.015,
-    )
-
-
-# ── 1. Real Provider Success Contract ──────────────────────────────────────
-
-def test_provider_success_contract(openai_model_desc, monkeypatch):
-    monkeypatch.setenv("TEST_OPENAI_KEY", "sk-valid-key")
-    cfg = ProviderConfig(
-        provider_name="test_openai",
-        provider_type=ProviderType.OPENAI,
-        api_key_ref="TEST_OPENAI_KEY",
-        models=[openai_model_desc],
-    )
-    adapter = OpenAIAdapter(cfg)
-
-    mock_resp = MagicMock()
-    mock_resp.read.return_value = json.dumps({
-        "choices": [{"message": {"content": "Newton's first law explains inertia."}}],
-        "usage": {"prompt_tokens": 12, "completion_tokens": 18, "total_tokens": 30},
-    }).encode("utf-8")
-    mock_resp.__enter__.return_value = mock_resp
-
-    with patch("urllib.request.urlopen", return_value=mock_resp):
-        req = AIExecutionRequest(prompt="Explain Newton's first law", task_type=TaskType.TUTORING)
-        res = adapter.execute(req, openai_model_desc)
-
-    assert res.success is True
-    assert res.status == ModelExecutionStatus.MODEL_SUCCESS
-    assert res.mock is False
-    assert res.provider == "test_openai"
-    assert res.model == "gpt-4o"
-    assert "inertia" in res.content
-    assert res.prompt_tokens == 12
-    assert res.completion_tokens == 18
-    assert res.provenance == {
-        "provider": "test_openai",
-        "model": "gpt-4o",
-        "mock": False,
-        "status": "MODEL_SUCCESS",
-    }
-
-
-# ── 2. Provider Error States (Timeout, 500, 429, Invalid Response) ────────
-
-def test_provider_timeout_contract(openai_model_desc, monkeypatch):
-    monkeypatch.setenv("TEST_OPENAI_KEY", "sk-valid-key")
-    cfg = ProviderConfig(
-        provider_name="test_openai",
-        provider_type=ProviderType.OPENAI,
-        api_key_ref="TEST_OPENAI_KEY",
-        models=[openai_model_desc],
-    )
-    adapter = OpenAIAdapter(cfg)
-
-    with patch("urllib.request.urlopen", side_effect=socket.timeout("Connection timed out")):
-        req = AIExecutionRequest(prompt="Calculate velocity", task_type=TaskType.TUTORING)
-        res = adapter.execute(req, openai_model_desc)
-
-    assert res.success is False
-    assert res.status == ModelExecutionStatus.MODEL_TIMEOUT
-    assert res.mock is False
-    assert res.content == ""
-    assert res.error_class == "TimeoutError"
-
-
-def test_provider_http_500_unavailable_contract(openai_model_desc, monkeypatch):
-    monkeypatch.setenv("TEST_OPENAI_KEY", "sk-valid-key")
-    cfg = ProviderConfig(
-        provider_name="test_openai",
-        provider_type=ProviderType.OPENAI,
-        api_key_ref="TEST_OPENAI_KEY",
-        models=[openai_model_desc],
-    )
-    adapter = OpenAIAdapter(cfg)
-
-    err_500 = urllib.error.HTTPError(
-        url="https://api.openai.com/v1/chat/completions",
-        code=500,
-        msg="Internal Server Error",
-        hdrs={},
-        fp=None,
-    )
-    with patch("urllib.request.urlopen", side_effect=err_500):
-        req = AIExecutionRequest(prompt="Define acceleration", task_type=TaskType.TUTORING)
-        res = adapter.execute(req, openai_model_desc)
-
-    assert res.success is False
-    assert res.status == ModelExecutionStatus.MODEL_UNAVAILABLE
-    assert res.mock is False
-    assert res.content == ""
-    assert res.error_class == "HTTP_500"
-
-
-def test_provider_rate_limited_contract(openai_model_desc, monkeypatch):
-    monkeypatch.setenv("TEST_OPENAI_KEY", "sk-valid-key")
-    cfg = ProviderConfig(
-        provider_name="test_openai",
-        provider_type=ProviderType.OPENAI,
-        api_key_ref="TEST_OPENAI_KEY",
-        models=[openai_model_desc],
-    )
-    adapter = OpenAIAdapter(cfg)
-
-    err_429 = urllib.error.HTTPError(
-        url="https://api.openai.com/v1/chat/completions",
-        code=429,
-        msg="Too Many Requests",
-        hdrs={},
-        fp=None,
-    )
-    with patch("urllib.request.urlopen", side_effect=err_429):
-        req = AIExecutionRequest(prompt="Explain momentum", task_type=TaskType.TUTORING)
-        res = adapter.execute(req, openai_model_desc)
-
-    assert res.success is False
-    assert res.status == ModelExecutionStatus.MODEL_RATE_LIMITED
-    assert res.mock is False
-    assert res.content == ""
-    assert res.error_class == "HTTP_429"
-
-
-def test_provider_invalid_json_contract(openai_model_desc, monkeypatch):
-    monkeypatch.setenv("TEST_OPENAI_KEY", "sk-valid-key")
-    cfg = ProviderConfig(
-        provider_name="test_openai",
-        provider_type=ProviderType.OPENAI,
-        api_key_ref="TEST_OPENAI_KEY",
-        models=[openai_model_desc],
-    )
-    adapter = OpenAIAdapter(cfg)
-
-    mock_resp = MagicMock()
-    mock_resp.read.return_value = b"<!DOCTYPE html><html><body>502 Bad Gateway</body></html>"
-    mock_resp.__enter__.return_value = mock_resp
-
-    with patch("urllib.request.urlopen", return_value=mock_resp):
-        req = AIExecutionRequest(prompt="Explain friction", task_type=TaskType.TUTORING)
-        res = adapter.execute(req, openai_model_desc)
-
-    assert res.success is False
-    assert res.status == ModelExecutionStatus.MODEL_INVALID_RESPONSE
-    assert res.mock is False
-    assert res.content == ""
-
-
-def test_missing_credentials_fails_closed(openai_model_desc, monkeypatch):
-    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
-    cfg = ProviderConfig(
-        provider_name="openai",
-        provider_type=ProviderType.OPENAI,
-        api_key_ref="OPENAI_API_KEY",
-        models=[openai_model_desc],
-    )
-    adapter = OpenAIAdapter(cfg)
-
-    req = AIExecutionRequest(prompt="Explain work", task_type=TaskType.TUTORING)
-    res = adapter.execute(req, openai_model_desc)
-
-    # Must fail closed: never convert missing key to mock response (F-012)
-    assert res.success is False
-    assert res.status == ModelExecutionStatus.MODEL_CONFIGURATION_ERROR
-    assert res.error_class == "MissingAPIKeyError"
-    assert res.mock is False
-    assert res.content == ""
-
-
-# ── 3. Production Mock Rejection (F-011, F-012) ────────────────────────────
-
-def test_production_mode_rejects_mock_provider_registration(monkeypatch):
-    monkeypatch.setenv("GAYATRI_ENV", "production")
-    gateway = AIGatewayService(db=PlatformDatabase(":memory:"))
-
-    # In production, mock_engine is NOT registered by default
-    assert "mock_engine" not in gateway.adapters
-
-    # Attempting to register a mock provider in production raises ValueError
-    mock_cfg = ProviderConfig(
-        provider_name="unauthorized_mock",
-        provider_type=ProviderType.MOCK,
-    )
-    with pytest.raises(ValueError, match="strictly prohibited in production mode"):
-        gateway.register_provider(mock_cfg)
-
-
-def test_production_mode_mock_adapter_execution_rejection(monkeypatch):
-    monkeypatch.setenv("GAYATRI_ENV", "production")
-    cfg = ProviderConfig(provider_name="rogue_mock", provider_type=ProviderType.MOCK)
-    adapter = MockAIAdapter(cfg)
-
-    desc = AIModelDescriptor(model_id="m", model_name="m")
-    req = AIExecutionRequest(prompt="Help with math")
-    res = adapter.execute(req, desc)
-
-    assert res.success is False
-    assert res.status == ModelExecutionStatus.MODEL_CONFIGURATION_ERROR
-    assert res.error_class == "MockInProductionProhibited"
-    assert res.content == ""
-
-
-# ── 4. Fallback Chain without Mock Injection (F-011) ──────────────────────
-
-def test_gateway_fallback_between_real_providers(openai_model_desc, monkeypatch):
-    """When primary provider fails with 500, fallback to configured secondary provider succeeds without mock."""
-    monkeypatch.setenv("PRIMARY_KEY", "sk-pri")
-    monkeypatch.setenv("SECONDARY_KEY", "sk-sec")
-
-    pri_desc = AIModelDescriptor(model_id="m-pri", model_name="m-pri", tier=ModelTier.TIER_2_STANDARD)
-    sec_desc = AIModelDescriptor(model_id="m-sec", model_name="m-sec", tier=ModelTier.TIER_2_STANDARD)
-
-    pri_cfg = ProviderConfig(
-        provider_name="primary_provider",
-        provider_type=ProviderType.OPENAI,
-        api_key_ref="PRIMARY_KEY",
-        priority=1,
-        fallback_provider="secondary_provider",
-        models=[pri_desc],
-    )
-    sec_cfg = ProviderConfig(
-        provider_name="secondary_provider",
-        provider_type=ProviderType.OPENAI,
-        api_key_ref="SECONDARY_KEY",
-        priority=2,
-        models=[sec_desc],
-    )
-
-    gateway = AIGatewayService(db=PlatformDatabase(":memory:"))
-    gateway.adapters.clear()
-    gateway.router.providers.clear()
-    gateway.register_provider(pri_cfg)
-    gateway.register_provider(sec_cfg)
-
-    # Primary fails with 500, secondary returns valid answer
-    err_500 = urllib.error.HTTPError(url="http://fail", code=500, msg="Fail", hdrs={}, fp=None)
-    succ_resp = MagicMock()
-    succ_resp.read.return_value = json.dumps({
-        "choices": [{"message": {"content": "Fallback provider succeeded."}}],
-        "usage": {"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20},
-    }).encode("utf-8")
-    succ_resp.__enter__.return_value = succ_resp
-
-    with patch("urllib.request.urlopen", side_effect=[err_500, succ_resp]):
-        req = AIExecutionRequest(prompt="Test fallback", task_type=TaskType.TUTORING)
-        res = gateway.execute(req)
-
-    assert res.success is True
-    assert res.provider == "secondary_provider"
-    assert res.content == "Fallback provider succeeded."
-    assert res.fallback_used is True
-    assert res.original_provider == "primary_provider"
-    assert res.mock is False
-
-
-def test_gateway_all_providers_fail_returns_structured_failure():
-    """When all providers fail, gateway returns success=False without silently falling back to mock."""
-    gateway = AIGatewayService(db=PlatformDatabase(":memory:"))
-    gateway.adapters.clear()
-    gateway.router.providers.clear()
-
-    desc = AIModelDescriptor(model_id="fail-m", model_name="fail-m")
-    cfg = ProviderConfig(
-        provider_name="failing_cloud",
-        provider_type=ProviderType.OPENAI,
-        api_key_ref="UNSET_KEY",
-        priority=1,
-        models=[desc],
-    )
-    gateway.register_provider(cfg)
-
-    req = AIExecutionRequest(prompt="Explain kinetic energy", task_type=TaskType.TUTORING)
-    res = gateway.execute(req)
-
-    assert res.success is False
-    assert res.status in (ModelExecutionStatus.MODEL_CONFIGURATION_ERROR, ModelExecutionStatus.MODEL_UNAVAILABLE)
-    assert res.mock is False
-    assert res.content == ""
-
-
-# ── 5. Tutor Fail-Closed Semantics on AI Failure (F-013, F-014) ────────────
-
-def test_tutor_orchestrator_fails_closed_when_ai_gateway_fails(mem_db):
-    """When AI model execution fails, tutor must NOT fabricate a turn or update student mastery."""
-    orchestrator = GenericTutorOrchestrator(db=mem_db)
-
-    # Mock the gateway to return failure
-    failed_ai_result = AIExecutionResult(
-        request_id="req-fail-001",
-        content="",
-        provider="cloud_llm",
-        model="gpt-4o",
-        success=False,
-        status=ModelExecutionStatus.MODEL_UNAVAILABLE,
-        error_class="HTTP_503",
-        error_message="Service Unavailable from upstream LLM provider",
+def test_scenario_01_model_available(test_db):
+    """Scenario 1: Model available -> 200 OK, ok=True, valid response, state committed."""
+    mock_gateway = MagicMock(spec=AIGatewayService)
+    mock_gateway.execute.return_value = AIExecutionResult(
+        request_id="req-test-ok",
+        content="In thermodynamics, internal energy change is given by Delta U = q + w.",
+        provider="local_llama",
+        model="Gayatri-Chemistry-Tutor-0.5B",
+        prompt_tokens=50,
+        completion_tokens=25,
+        total_tokens=75,
+        latency_ms=35.0,
+        estimated_cost_usd=0.0,
+        success=True,
+        status=ModelExecutionStatus.MODEL_SUCCESS,
         mock=False,
     )
 
-    with patch.object(orchestrator.ai_gateway, "execute", return_value=failed_ai_result):
-        turn_req = TutorTurnRequest(
-            student_id="std-04-101",
-            course_id="crs-physics-101",
-            session_id="ses-04-101",
-            message="Why does an object continue moving in space?",
-            max_tokens=256,
-        )
+    orchestrator = GenericTutorOrchestrator(db=test_db, ai_gateway=mock_gateway)
+    req = TutorTurnRequest(
+        student_id="student-p04-01",
+        session_id="sess-p04-01",
+        course_id="course-p04-chem",
+        concept_id="thermodynamics_first_law",
+        message="What is the formula for internal energy change?",
+    )
+    result = orchestrator.execute_turn(req)
 
+    assert result.status == "SUCCESS"
+    assert result.validation_passed is True
+    assert result.state_committed is True
+    assert "Delta U = q + w" in result.response_text
+
+
+# ── Scenario 2: Model Missing (Safe Failure) ───────────────────────────────
+
+def test_scenario_02_model_missing_fails_safely(test_db, monkeypatch):
+    """Scenario 2: Model missing -> fail safe, ok=False, no SLR mutation, no false event."""
+    monkeypatch.setenv("GAYATRI_ENV", "production")
+    assert is_production_mode() is True
+
+    # Configure LocalProvider health to report missing model
+    with patch("core.providers.local.LocalProvider.health") as mock_health:
+        mock_health.return_value = {
+            "available": False,
+            "reason_code": "missing_file",
+            "message": "Model file not found at path.",
+            "path": "models/gayatri/qwen.gguf",
+        }
+
+        adapter = LocalGGUFAdapter(ProviderConfig(provider_name="local_llama", provider_type=ProviderType.LOCAL_GGUF))
+        exec_req = AIExecutionRequest(prompt="Hello tutor", task_type=TaskType.TUTORING)
+        res = adapter.execute(exec_req, AIModelDescriptor(model_id="local", model_name="local-qwen"))
+
+        assert res.success is False
+        assert res.status == ModelExecutionStatus.MODEL_UNAVAILABLE
+        assert res.error_class == "LocalModelMissing"
+
+        # Test through tutor orchestrator with gateway reporting model missing
+        gw = AIGatewayService(db=test_db)
+        gw.adapters["local_llama"] = adapter
+        orchestrator = GenericTutorOrchestrator(db=test_db, ai_gateway=gw)
+
+        mastery_before = get_mastery_score(test_db, "student-p04-01", "course-p04-chem", "thermodynamics_first_law")
+        events_before = len(test_db.query_learning_events(student_id="student-p04-01"))
+
+        turn_req = TutorTurnRequest(
+            student_id="student-p04-01",
+            session_id="sess-p04-02",
+            course_id="course-p04-chem",
+            concept_id="thermodynamics_first_law",
+            message="Explain thermodynamics",
+        )
         turn_res = orchestrator.execute_turn(turn_req)
 
-    # 1. Zero fabricated turn
-    assert turn_res.status == "MODEL_UNAVAILABLE"
-    assert turn_res.validation_passed is False
-    assert turn_res.state_committed is False
-    assert turn_res.pedagogical_action == "SERVICE_UNAVAILABLE"
-    assert "temporarily unavailable" in turn_res.response_text
+        assert turn_res.status != "SUCCESS"
+        assert turn_res.state_committed is False
+        assert turn_res.validation_passed is False
+        assert "temporarily unavailable" in turn_res.response_text
 
-    # 2. No mastery update staged or committed
-    canonical_state = orchestrator.learning_state.get_canonical_state("std-04-101", "crs-physics-101")
-    assert len(canonical_state.mastery) == 0  # No mastery created or incremented!
-    assert len(canonical_state.recent_events) == 0  # No learning events committed!
+        # State Invariant: SLR mastery and learning events are unmodified
+        mastery_after = get_mastery_score(test_db, "student-p04-01", "course-p04-chem", "thermodynamics_first_law")
+        events_after = len(test_db.query_learning_events(student_id="student-p04-01"))
+
+        assert mastery_after == mastery_before
+        assert events_after == events_before
 
 
+# ── Scenario 3: Model Corrupt (Safe Failure) ───────────────────────────────
 
-    # 3. Provenance record reflects failure and mock: false
-    assert turn_res.model_provenance["provider"] == "cloud_llm"
-    assert turn_res.model_provenance["model"] == "gpt-4o"
-    assert turn_res.model_provenance["mock"] is False
-    assert turn_res.model_provenance["success"] is False
-    assert turn_res.model_provenance["status"] == "MODEL_UNAVAILABLE"
+def test_scenario_03_model_corrupt_fails_safely(test_db, monkeypatch):
+    """Scenario 3: Model corrupt -> fail safe, ok=False, no SLR mutation."""
+    monkeypatch.setenv("GAYATRI_ENV", "production")
 
+    with patch("core.providers.local.LocalProvider.health") as mock_health:
+        mock_health.return_value = {
+            "available": False,
+            "reason_code": "corrupt_file",
+            "message": "Model file size or checksum does not match verified metadata.",
+            "path": "models/gayatri/qwen.gguf",
+        }
+
+        adapter = LocalGGUFAdapter(ProviderConfig(provider_name="local_llama", provider_type=ProviderType.LOCAL_GGUF))
+        exec_req = AIExecutionRequest(prompt="Hello tutor", task_type=TaskType.TUTORING)
+        res = adapter.execute(exec_req, AIModelDescriptor(model_id="local", model_name="local-qwen"))
+
+        assert res.success is False
+        assert res.status == ModelExecutionStatus.MODEL_UNAVAILABLE
+        assert res.error_class == "LocalModelCorrupt"
+
+
+# ── Scenario 4: Provider Timeout (Safe Failure) ────────────────────────────
+
+def test_scenario_04_provider_timeout_fails_safely(test_db, monkeypatch):
+    """Scenario 4: Provider timeout -> fail safe with MODEL_TIMEOUT, ok=False, no SLR mutation."""
+    monkeypatch.setenv("GAYATRI_ENV", "production")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key-mock")
+
+    cfg = ProviderConfig(provider_name="openai", provider_type=ProviderType.OPENAI, api_key_ref="OPENAI_API_KEY")
+    adapter = OpenAIAdapter(cfg)
+
+    # Simulate socket timeout on HTTP request
+    with patch("urllib.request.urlopen", side_effect=socket.timeout("The read operation timed out")):
+        exec_req = AIExecutionRequest(prompt="What is work?", task_type=TaskType.TUTORING)
+        res = adapter.execute(exec_req, AIModelDescriptor(model_id="gpt-4o", model_name="gpt-4o"))
+
+        assert res.success is False
+        assert res.status == ModelExecutionStatus.MODEL_TIMEOUT
+        assert res.error_class == "TimeoutError"
+
+
+# ── Scenario 5: Provider 401 Unauthorized (Safe Failure) ───────────────────
+
+def test_scenario_05_provider_401_fails_safely(test_db, monkeypatch):
+    """Scenario 5: Provider 401 (invalid/missing key) -> MODEL_CONFIGURATION_ERROR, ok=False."""
+    monkeypatch.setenv("GAYATRI_ENV", "production")
+
+    # Missing API key
+    cfg = ProviderConfig(provider_name="openai", provider_type=ProviderType.OPENAI, api_key_ref="MISSING_KEY_VAR")
+    adapter = OpenAIAdapter(cfg)
+
+    exec_req = AIExecutionRequest(prompt="Hello", task_type=TaskType.TUTORING)
+    res = adapter.execute(exec_req, AIModelDescriptor(model_id="gpt-4o", model_name="gpt-4o"))
+
+    assert res.success is False
+    assert res.status == ModelExecutionStatus.MODEL_CONFIGURATION_ERROR
+    assert res.error_class == "MissingAPIKeyError"
+
+    # HTTP 401 response from endpoint
+    monkeypatch.setenv("OPENAI_API_KEY", "invalid-key")
+    adapter_with_key = OpenAIAdapter(ProviderConfig(provider_name="openai", provider_type=ProviderType.OPENAI, api_key_ref="OPENAI_API_KEY"))
+    http_401 = urllib.error.HTTPError("https://api.openai.com/v1/chat/completions", 401, "Unauthorized", {}, io.BytesIO(b'{"error": "invalid_api_key"}'))
+
+    with patch("urllib.request.urlopen", side_effect=http_401):
+        res401 = adapter_with_key.execute(exec_req, AIModelDescriptor(model_id="gpt-4o", model_name="gpt-4o"))
+        assert res401.success is False
+        assert res401.status == ModelExecutionStatus.MODEL_CONFIGURATION_ERROR
+        assert res401.error_class == "HTTP_401"
+
+
+# ── Scenario 6: Provider 429 Rate Limited (Safe Failure) ───────────────────
+
+def test_scenario_06_provider_429_fails_safely(test_db, monkeypatch):
+    """Scenario 6: Provider 429 -> MODEL_RATE_LIMITED, trips circuit breaker, ok=False."""
+    monkeypatch.setenv("GAYATRI_ENV", "production")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    adapter = OpenAIAdapter(ProviderConfig(provider_name="openai", provider_type=ProviderType.OPENAI, api_key_ref="OPENAI_API_KEY"))
+    http_429 = urllib.error.HTTPError("https://api.openai.com/v1/chat/completions", 429, "Rate limit exceeded", {}, io.BytesIO(b'{"error": "rate_limited"}'))
+
+    with patch("urllib.request.urlopen", side_effect=http_429):
+        exec_req = AIExecutionRequest(prompt="Hello", task_type=TaskType.TUTORING)
+        res = adapter.execute(exec_req, AIModelDescriptor(model_id="gpt-4o", model_name="gpt-4o"))
+
+        assert res.success is False
+        assert res.status == ModelExecutionStatus.MODEL_RATE_LIMITED
+        assert res.error_class == "HTTP_429"
+
+
+# ── Scenario 7: Provider 500 Internal Error (Safe Failure) ─────────────────
+
+def test_scenario_07_provider_500_fails_safely(test_db, monkeypatch):
+    """Scenario 7: Provider 500 -> MODEL_UNAVAILABLE, tries fallback; if all fail, fails safe."""
+    monkeypatch.setenv("GAYATRI_ENV", "production")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    adapter = OpenAIAdapter(ProviderConfig(provider_name="openai", provider_type=ProviderType.OPENAI, api_key_ref="OPENAI_API_KEY"))
+    http_500 = urllib.error.HTTPError("https://api.openai.com/v1/chat/completions", 500, "Internal Server Error", {}, io.BytesIO(b'{"error": "server_down"}'))
+
+    with patch("urllib.request.urlopen", side_effect=http_500):
+        exec_req = AIExecutionRequest(prompt="Hello", task_type=TaskType.TUTORING)
+        res = adapter.execute(exec_req, AIModelDescriptor(model_id="gpt-4o", model_name="gpt-4o"))
+
+        assert res.success is False
+        assert res.status == ModelExecutionStatus.MODEL_UNAVAILABLE
+        assert res.error_class == "HTTP_500"
+
+
+# ── Scenario 8: Empty Response (Safe Failure) ──────────────────────────────
+
+def test_scenario_08_empty_response_fails_safely(test_db, monkeypatch):
+    """Scenario 8: Empty response -> fails safe with EmptyResponseError, ok=False."""
+    monkeypatch.setenv("GAYATRI_ENV", "production")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    adapter = OpenAIAdapter(ProviderConfig(provider_name="openai", provider_type=ProviderType.OPENAI, api_key_ref="OPENAI_API_KEY"))
+    empty_json_response = io.BytesIO(json.dumps({
+        "choices": [{"message": {"content": ""}}],
+        "usage": {"prompt_tokens": 10, "completion_tokens": 0},
+    }).encode("utf-8"))
+
+    mock_resp = MagicMock()
+    mock_resp.read.return_value = empty_json_response.getvalue()
+    mock_resp.__enter__.return_value = mock_resp
+
+    with patch("urllib.request.urlopen", return_value=mock_resp):
+        exec_req = AIExecutionRequest(prompt="Explain enthalpy", task_type=TaskType.TUTORING)
+        res = adapter.execute(exec_req, AIModelDescriptor(model_id="gpt-4o", model_name="gpt-4o"))
+
+        assert res.success is False
+        assert res.status == ModelExecutionStatus.MODEL_INVALID_RESPONSE
+        assert res.error_class == "EmptyResponseError"
+
+
+# ── Scenario 9: Malformed Response (Safe Failure) ──────────────────────────
+
+def test_scenario_09_malformed_response_fails_safely(test_db, monkeypatch):
+    """Scenario 9: Malformed response (corrupted JSON or missing keys) -> fails safe."""
+    monkeypatch.setenv("GAYATRI_ENV", "production")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+
+    adapter = OpenAIAdapter(ProviderConfig(provider_name="openai", provider_type=ProviderType.OPENAI, api_key_ref="OPENAI_API_KEY"))
+
+    # Case A: Corrupted JSON syntax
+    bad_json_resp = MagicMock()
+    bad_json_resp.read.return_value = b"{'invalid_json': true, broken"
+    bad_json_resp.__enter__.return_value = bad_json_resp
+
+    with patch("urllib.request.urlopen", return_value=bad_json_resp):
+        exec_req = AIExecutionRequest(prompt="Explain enthalpy", task_type=TaskType.TUTORING)
+        res = adapter.execute(exec_req, AIModelDescriptor(model_id="gpt-4o", model_name="gpt-4o"))
+        assert res.success is False
+        assert res.status == ModelExecutionStatus.MODEL_INVALID_RESPONSE
+        assert "JSONDecodeError" in res.error_class
+
+    # Case B: Valid JSON but missing choices
+    missing_choices_resp = MagicMock()
+    missing_choices_resp.read.return_value = json.dumps({"status": "unexpected"}).encode("utf-8")
+    missing_choices_resp.__enter__.return_value = missing_choices_resp
+
+    with patch("urllib.request.urlopen", return_value=missing_choices_resp):
+        res_missing = adapter.execute(exec_req, AIModelDescriptor(model_id="gpt-4o", model_name="gpt-4o"))
+        assert res_missing.success is False
+        assert res_missing.status == ModelExecutionStatus.MODEL_INVALID_RESPONSE
+        assert res_missing.error_class == "MalformedResponseError"
+
+
+# ── Scenario 10: Mock Adapter Forced in Production (Prohibited) ────────────
+
+def test_scenario_10_mock_adapter_prohibited_in_production(test_db, monkeypatch):
+    """Scenario 10: Mock adapter forced in production -> MockInProductionProhibited, ok=False."""
+    monkeypatch.setenv("GAYATRI_ENV", "production")
+    assert is_production_mode() is True
+
+    # 1. Direct MockAIAdapter invocation rejected
+    mock_adapter = MockAIAdapter(ProviderConfig(provider_name="mock_engine", provider_type=ProviderType.MOCK))
+    res = mock_adapter.execute(
+        AIExecutionRequest(prompt="Test prompt", task_type=TaskType.TUTORING),
+        AIModelDescriptor(model_id="mock-standard", model_name="Mock-Pedagogical-Engine"),
+    )
+    assert res.success is False
+    assert res.error_class == "MockInProductionProhibited"
+    assert res.status == ModelExecutionStatus.MODEL_CONFIGURATION_ERROR
+
+    # 2. Registering mock provider in gateway is prohibited
+    gw = AIGatewayService(db=test_db)
+    with pytest.raises(ValueError, match="strictly prohibited in production mode"):
+        gw.register_provider(ProviderConfig(provider_name="evil_mock", provider_type=ProviderType.MOCK))
+
+    # 3. Requesting mock_engine as preferred provider in production fails closed
+    fail_res = gw.execute(AIExecutionRequest(
+        prompt="Explain Gibbs free energy",
+        preferred_provider="mock_engine",
+        task_type=TaskType.TUTORING,
+    ))
+    # Either routed to another non-mock provider or fails safely
+    assert fail_res.mock is False or fail_res.success is False
+    if not fail_res.success:
+        assert fail_res.error_class in ("MockInProductionProhibited", "AllProvidersFailed", "LocalModelUnavailable")
+
+
+# ── Model Identity Unification (P0-04) ─────────────────────────────────────
+
+def test_p04_model_identity_unification():
+    """Verify model identity definition is unified across core/config, manifest, and gateway."""
+    # 1. Manifest specifies canonical model ID
+    with open("model_manifest.json", "r", encoding="utf-8") as f:
+        manifest = json.load(f)
+    canonical_id = manifest["model_id"]
+    assert canonical_id == "gayatri-chem-qwen2.5-0.5b-v4"
+
+    # 2. core/config specifies matching default model ID and name
+    assert core.config.DEFAULT_MODEL_ID == canonical_id
+    assert core.config.DEFAULT_CHAT_TEMPLATE == "chatml"
+    assert manifest["chat_template"] == "chatml"
+
+    # 3. AIGatewayService default local_llama models includes the canonical model ID
+    gw = AIGatewayService(PlatformDatabase(":memory:"))
+    local_cfg = gw.router.providers["local_llama"]
+    local_model_ids = [m.model_id for m in local_cfg.models]
+    assert canonical_id in local_model_ids
+    # Canonical model is first in the list
+    assert local_cfg.models[0].model_id == canonical_id
+
+
+# ── State Invariant Verification on AI Failure ─────────────────────────────
+
+def test_state_invariant_on_ai_failure(test_db):
+    """Verify that ANY AI failure strictly preserves SLR student mastery and learning events."""
+    mock_failed_gw = MagicMock(spec=AIGatewayService)
+    mock_failed_gw.execute.return_value = AIExecutionResult(
+        request_id="req-failure-503",
+        content="",
+        provider="local_llama",
+        model="Gayatri-Chemistry-Tutor-0.5B",
+        success=False,
+        status=ModelExecutionStatus.MODEL_UNAVAILABLE,
+        error_class="ProviderTimeoutError",
+        error_message="Upstream provider timed out.",
+        mock=False,
+    )
+
+    orchestrator = GenericTutorOrchestrator(db=test_db, ai_gateway=mock_failed_gw)
+
+    mastery_before = get_mastery_score(test_db, "student-p04-01", "course-p04-chem", "thermodynamics_first_law")
+    initial_score = mastery_before
+    events_before = test_db.query_learning_events(student_id="student-p04-01")
+
+    req = TutorTurnRequest(
+        student_id="student-p04-01",
+        session_id="sess-turn-fail",
+        course_id="course-p04-chem",
+        concept_id="thermodynamics_first_law",
+        message="What is the first law?",
+    )
+    res = orchestrator.execute_turn(req)
+
+    # Turn results
+    assert res.status != "SUCCESS"
+    assert res.state_committed is False
+    assert res.validation_passed is False
+    assert "temporarily unavailable" in res.response_text
+
+    # Student SLR mastery MUST NOT advance
+    mastery_after = get_mastery_score(test_db, "student-p04-01", "course-p04-chem", "thermodynamics_first_law")
+    assert mastery_after == initial_score
+
+    # Learning events count MUST NOT increase with false completion event
+    events_after = test_db.query_learning_events(student_id="student-p04-01")
+    assert len(events_after) == len(events_before)

@@ -299,4 +299,72 @@ None within Phase 3 scope.
 ### Status
 COMPLETE
 
+---
+
+## Phase 4 — Evidence
+
+### Scope
+AI Gateway & Model Routing Hardening (Section 10 of Release Plan & Defect Register P0-03 & P0-04):
+- Eliminate silent fallback to mock AI generation in production across all execution paths.
+- Enforce strict model failure state semantics: AI failure -> turn unsuccessful (`ok=False`, recoverable error) -> NO false mastery update in SLR -> NO false learning event recorded.
+- Verify all 10 Section 10 Gate failure scenarios: model available, model missing, model corrupt, provider timeout, provider 401, provider 429, provider 500, empty response, malformed response, and mock adapter forced in production.
+- Unify model identity definition across `core/config.py`, `model_manifest.json`, and `central_platform/ai/gateway.py` (canonical model `gayatri-chem-qwen2.5-0.5b-v4` / `Gayatri-Chemistry-Tutor-0.5B`, `chatml` template).
+
+### Root Cause
+- In `central_platform/ai/adapters.py`, empty model completions and malformed response bodies were not systematically rejected with `EmptyResponseError` or `MalformedResponseError` across all provider adapters, potentially returning empty successes.
+- In `central_platform/ai/gateway.py`, local model configurations defaulted to older descriptors (`gayatri-tutor-v3`, `gayatri-tutor-slm`) rather than unifying with `model_manifest.json` (`gayatri-chem-qwen2.5-0.5b-v4`), and client requests explicitly forcing `mock_engine` were not failed fast in production prior to fallback iteration.
+- In `central_platform/ai/model_router.py`, production mode detection checked only raw environment variables rather than the authoritative `is_production_mode()` helper.
+
+### Files Changed
+- `central_platform/ai/adapters.py` (hardened `LocalGGUFAdapter` to distinguish corrupt vs missing model files; hardened `OpenAICompatibleAdapter`, `AnthropicAdapter`, and `GeminiAdapter` to reject empty completions and malformed choices/blocks with `EmptyResponseError` / `MalformedResponseError`)
+- `central_platform/ai/gateway.py` (registered canonical `gayatri-chem-qwen2.5-0.5b-v4` as primary descriptor; fail-fast rejection of explicit mock requests in production with `MockInProductionProhibited`; strict defense-in-depth prohibition of `MockAIAdapter` in provider loops)
+- `central_platform/ai/model_router.py` (used unified `is_production_mode()` helper for production route decisions)
+- `core/config.py` (defined `DEFAULT_MODEL_ID`, `DEFAULT_MODEL_NAME`, and `DEFAULT_CHAT_TEMPLATE` matching `model_manifest.json`)
+- `docs/release/RELEASE_DEFECT_REGISTER.md` (marked P0-03 and P0-04 as CLOSED)
+- `tests/test_phase04_ai_gateway_remediation.py` (dedicated 12-test suite verifying all 10 Section 10 Gate scenarios, model identity unification, and strict SLR state invariant on failure)
+
+### Files Intentionally Not Changed
+Public tutor turn REST schemas, RAG vector indexes, and development mode dynamic mock simulations when running outside production.
+
+### Tests
+```text
+Tier 0: python -m compileall central_platform core app
+Result: 0 compilation errors
+
+Tier 1: python -m pytest tests/test_phase04_ai_gateway_remediation.py -v
+Result: 12 passed in 1.33s
+
+Tier 2: python -m pytest tests/test_phase17_ai_gateway_model_router_platform.py tests/test_phase18_ai_governance_observability_platform.py tests/test_phase16_model_config.py tests/architecture/test_model_config_registry.py -v
+Result: 27 passed in 3.65s
+
+Tier 4 Regression: python -m pytest -q -m "not gui"
+Result: 1284 passed in 104.99s
+```
+
+### Regression Result
+1,284 passing tests, 0 failures, 0 skipped across the complete headless test suite (+1 net new test covering all Section 10 gate scenarios from Phase 3 baseline).
+
+### Runtime Verification
+- In production mode, `MockAIAdapter` is prohibited from execution, registration, and routing.
+- All 10 failure scenarios safely fail closed without throwing unhandled 500 exceptions to the learner.
+- On any AI failure or response validation failure, `ok=False`, `state_committed=False`, user receives a safe, recoverable message, and student mastery in SLR and learning events are 100% unmutated.
+- Canonical model identity `gayatri-chem-qwen2.5-0.5b-v4` is unified across manifest, config, and gateway.
+
+### Security Verification
+- Defects **P0-03** and **P0-04** verified resolved and closed.
+- Negative security boundaries enforced against synthetic/mock execution leakage in production.
+
+### Packaging Impact
+Packaged application in production mode will strictly execute against real local GGUF models or real configured cloud providers, never synthesizing fake mock answers.
+
+### Known Limitations
+None within Phase 4 scope.
+
+### Commit
+`TBD`
+
+### Status
+COMPLETE
+
+
 
