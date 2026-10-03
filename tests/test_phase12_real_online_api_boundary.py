@@ -45,9 +45,10 @@ from central_platform.models.schema import (
 
 
 @pytest.fixture(scope="module")
-def app_instance():
+def app_instance(tmp_path_factory):
     """Create a configured FastAPI application instance with an isolated test DB."""
-    test_db_path = f"test_phase12_{uuid.uuid4().hex[:8]}.db"
+    temp_dir = tmp_path_factory.mktemp("phase12")
+    test_db_path = str(temp_dir / f"test_phase12_{uuid.uuid4().hex[:8]}.db")
     os.environ["GAYATRI_DB_PATH"] = test_db_path
     db = PlatformDatabase(test_db_path)
     if not db.get_organization("org-default"):
@@ -58,6 +59,7 @@ def app_instance():
     app = create_app()
     yield app
     # Cleanup test db
+    db.close()
     if os.path.exists(test_db_path):
         try:
             os.remove(test_db_path)

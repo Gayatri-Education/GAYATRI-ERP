@@ -54,9 +54,9 @@ def client():
 
 
 @pytest.fixture
-def setup_multi_course_env():
+def setup_multi_course_env(tmp_path):
     """Sets up an isolated database environment with 1 student enrolled in 3 courses."""
-    db_file = f"test_phase17_{uuid.uuid4().hex[:8]}.db"
+    db_file = str(tmp_path / f"test_phase17_{uuid.uuid4().hex[:8]}.db")
     db = PlatformDatabase(db_path=db_file)
 
     org_id = f"org_{uuid.uuid4().hex[:6]}"
@@ -209,6 +209,7 @@ def setup_multi_course_env():
         "cg3": cg3,
     }
 
+    db.close()
     if os.path.exists(db_file):
         try:
             os.remove(db_file)
