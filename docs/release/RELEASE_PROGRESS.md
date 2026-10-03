@@ -8,7 +8,7 @@
 | Phase | Status | Owner/Agent | Started | Completed | Commit | Tests | Evidence | Blockers |
 |---|---|---|---|---|---|---|---|---|
 | 0 Baseline | COMPLETE | local-agent | 2026-10-03 | 2026-10-03 | 08f0ae1 | Tier 0: 0 errors; Tier 4: 1252 passed (81.5s) | docs/release/RELEASE_BASELINE_2026-10-03.md | P0-01 to P0-08 |
-| 1 Config | COMPLETE | local-agent | 2026-10-03 | 2026-10-03 | pending | Tier 1: 12 passed; Tier 2: 50 passed; Tier 4: 1264 passed | docs/release/RELEASE_PROGRESS.md | P0-05 CLOSED |
+| 1 Config | COMPLETE | local-agent | 2026-10-03 | 2026-10-03 | 7be4e68 | Tier 1: 12 passed; Tier 2: 50 passed; Tier 4: 1264 passed | docs/release/RELEASE_PROGRESS.md | P0-05 CLOSED |
 | 2 Auth | NOT_STARTED | local-agent | | | | | | P0-01, P0-06 |
 | 3 RBAC | NOT_STARTED | local-agent | | | | | | |
 | 4 AI Gateway | NOT_STARTED | local-agent | | | | | | P0-03, P0-04 |
@@ -144,7 +144,7 @@ Packaged application in production mode will strictly enforce hardened security 
 None identified in Phase 1 scope.
 
 ### Commit
-`pending`
+`7be4e68`
 
 ### Status
 COMPLETE
