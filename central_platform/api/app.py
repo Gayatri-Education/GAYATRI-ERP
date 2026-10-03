@@ -88,23 +88,45 @@ _sync_manager = SyncManager()
 
 def create_app() -> FastAPI:
     """Create and configure the production FastAPI application."""
+    from central_platform.config import is_production_mode, validate_production_config
+
+    is_prod = is_production_mode()
+    if is_prod:
+        validate_production_config()
+
+    # Docs exposure policy: in production, Swagger/OpenAPI docs are disabled unless explicitly enabled
+    enable_docs = not is_prod or os.environ.get("GAYATRI_ENABLE_DOCS", "false").lower() in ("true", "1", "yes")
+
     app = FastAPI(
         title="Gayatri AI — Production Platform API",
         version="2.0.0",
         description="Authoritative, three-sided adaptive learning platform API (Student, Teacher, Admin).",
-        docs_url="/docs",
-        redoc_url="/redoc",
-        openapi_url="/openapi.json",
+        docs_url="/docs" if enable_docs else None,
+        redoc_url="/redoc" if enable_docs else None,
+        openapi_url="/openapi.json" if enable_docs else None,
     )
 
     # 1. Register CORS Middleware
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    if is_prod:
+        raw_origins = os.environ.get("GAYATRI_ALLOWED_ORIGINS") or os.environ.get("ALLOWED_ORIGINS", "")
+        allowed_origins = [o.strip() for o in raw_origins.split(",") if o.strip()]
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=allowed_origins,
+            allow_credentials=True,
+            allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"],
+            allow_headers=["Authorization", "Content-Type", "X-Request-ID", "Accept", "Origin"],
+        )
+    else:
+        raw_origins = os.environ.get("GAYATRI_ALLOWED_ORIGINS") or os.environ.get("ALLOWED_ORIGINS")
+        allowed_origins = [o.strip() for o in raw_origins.split(",") if o.strip()] if raw_origins else ["*"]
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=allowed_origins,
+            allow_credentials=True,
+            allow_methods=["*"],
+            allow_headers=["*"],
+        )
 
     # 2. Register Custom Tracing & Logging Middleware
     app.add_middleware(StructuredLoggingMiddleware)

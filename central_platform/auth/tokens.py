@@ -18,20 +18,30 @@ from typing import Any, Dict, Optional, Set
 
 import jwt
 
-DEFAULT_INSECURE_SECRET = "gayatri-platform-production-secret-key-3.0.0-entropy"
+from central_platform.config import (
+    DEFAULT_INSECURE_SECRET,
+    MIN_SECRET_LENGTH,
+    WEAK_SECRETS,
+    is_production_mode,
+)
+
 JWT_SECRET_KEY = os.environ.get("GAYATRI_JWT_SECRET", DEFAULT_INSECURE_SECRET)
 JWT_ALGORITHM = "HS256"
 
 
 def get_jwt_secret_key() -> str:
     """Retrieve verified JWT secret key, strictly refusing insecure defaults in production."""
-    secret = os.environ.get("GAYATRI_JWT_SECRET")
-    env = os.environ.get("GAYATRI_ENV", "development").lower()
-    if env == "production":
-        if not secret or secret == DEFAULT_INSECURE_SECRET:
+    secret = os.environ.get("GAYATRI_JWT_SECRET") or os.environ.get("JWT_SECRET")
+    if is_production_mode():
+        if not secret:
             raise RuntimeError(
                 "Production startup aborted: GAYATRI_JWT_SECRET environment variable "
                 "must be explicitly set with high entropy in production mode."
+            )
+        if secret.lower() in WEAK_SECRETS or len(secret) < MIN_SECRET_LENGTH:
+            raise RuntimeError(
+                f"Production startup aborted: GAYATRI_JWT_SECRET is too weak or uses a default value "
+                f"(minimum {MIN_SECRET_LENGTH} characters required in production mode)."
             )
         return secret
     return secret or DEFAULT_INSECURE_SECRET
@@ -117,7 +127,7 @@ def revoke_token(token_or_jti: str) -> bool:
         _REVOKED_JTIS.add(token_or_jti)
         return True
     try:
-        payload = jwt.decode(token_or_jti, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM], options={"verify_exp": False})
+        payload = jwt.decode(token_or_jti, get_jwt_secret_key(), algorithms=[JWT_ALGORITHM], options={"verify_exp": False})
         jti = payload.get("jti")
         if jti:
             _REVOKED_JTIS.add(jti)
@@ -133,7 +143,7 @@ def is_token_revoked(token_or_jti: str) -> bool:
     if token_or_jti in _REVOKED_JTIS:
         return True
     try:
-        payload = jwt.decode(token_or_jti, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM], options={"verify_exp": False})
+        payload = jwt.decode(token_or_jti, get_jwt_secret_key(), algorithms=[JWT_ALGORITHM], options={"verify_exp": False})
         return payload.get("jti") in _REVOKED_JTIS
     except Exception:
         return False

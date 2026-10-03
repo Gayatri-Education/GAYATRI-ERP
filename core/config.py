@@ -18,6 +18,16 @@ class ExecutionMode(str, Enum):
     CLOUD_ALLOWED = "cloud_allowed" # Cloud providers may be used (explicit opt-in)
 
 
+def get_environment() -> str:
+    """Return active environment ('development', 'test', 'production')."""
+    return (os.environ.get("GAYATRI_ENV") or os.environ.get("APP_ENV") or "development").lower()
+
+
+def is_production() -> bool:
+    """Return True if running in production mode."""
+    return get_environment() == "production"
+
+
 # ── Paths ──────────────────────────────────────────────────────────────
 
 def _data_dir() -> Path:

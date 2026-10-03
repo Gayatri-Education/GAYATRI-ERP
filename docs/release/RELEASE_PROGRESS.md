@@ -7,8 +7,8 @@
 
 | Phase | Status | Owner/Agent | Started | Completed | Commit | Tests | Evidence | Blockers |
 |---|---|---|---|---|---|---|---|---|
-| 0 Baseline | COMPLETE | local-agent | 2026-10-03 | 2026-10-03 | 66dd692 | Tier 0: 0 errors; Tier 4: 1252 passed (81.5s) | docs/release/RELEASE_BASELINE_2026-10-03.md | P0-01 to P0-08 |
-| 1 Config | NOT_STARTED | local-agent | | | | | | P0-04, P0-05 |
+| 0 Baseline | COMPLETE | local-agent | 2026-10-03 | 2026-10-03 | 08f0ae1 | Tier 0: 0 errors; Tier 4: 1252 passed (81.5s) | docs/release/RELEASE_BASELINE_2026-10-03.md | P0-01 to P0-08 |
+| 1 Config | COMPLETE | local-agent | 2026-10-03 | 2026-10-03 | pending | Tier 1: 12 passed; Tier 2: 50 passed; Tier 4: 1264 passed | docs/release/RELEASE_PROGRESS.md | P0-05 CLOSED |
 | 2 Auth | NOT_STARTED | local-agent | | | | | | P0-01, P0-06 |
 | 3 RBAC | NOT_STARTED | local-agent | | | | | | |
 | 4 AI Gateway | NOT_STARTED | local-agent | | | | | | P0-03, P0-04 |
@@ -77,6 +77,74 @@ PyInstaller specification (`packaging/gayatri_demo.spec`) identified as containi
 
 ### Commit
 `66dd692`
+
+### Status
+COMPLETE
+
+---
+
+## Phase 1 — Evidence
+
+### Scope
+Eliminate unsafe development defaults, enforce production configuration hardening, prohibit wildcard CORS (resolving P0-05), prohibit debug/reload in production, require high-entropy JWT secrets and encryption keys, disable public Swagger/OpenAPI documentation exposure by default in production.
+
+### Root Cause
+- `central_platform/api/app.py:create_app()` unconditionally mounted `CORSMiddleware` with `allow_origins=["*"]`, `allow_methods=["*"]`, `allow_headers=["*"]`.
+- `create_app()` unconditionally exposed `/docs`, `/redoc`, `/openapi.json`.
+- `central_platform/auth/tokens.py` lacked minimum length and weak secret auditing, defaulting to insecure strings.
+- Absence of a centralized fail-fast production startup validation gate.
+
+### Files Changed
+- `central_platform/config.py` (new authoritative production configuration validation module)
+- `core/config.py` (added `get_environment()` and `is_production()`)
+- `central_platform/api/app.py` (fail-fast validation, environment-dependent CORS, docs exposure policy)
+- `central_platform/api/server.py` (prohibited reload and debug mode in production)
+- `central_platform/auth/tokens.py` (enforced strict JWT secret validation and dynamic retrieval in revocation checks)
+- `central_platform/auth/dependencies.py` (delegated `is_production_mode()` to `central_platform.config`)
+- `central_platform/ai/adapters.py` (delegated `is_production_mode()` to `central_platform.config`)
+- `tests/test_phase01_production_config_hardening.py` (new 12-test suite for all Phase 1 criteria)
+- `tests/test_phase12_final_forensic_certification.py` (updated production demo-tokens test fixture with required production environment)
+
+### Files Intentionally Not Changed
+Public route signatures, database migrations, model adapters, and UI presentation components.
+
+### Tests
+```text
+Tier 0: python -m compileall central_platform app core local_runtime scripts
+Result: 0 compilation errors
+
+Tier 1: python -m pytest tests/test_phase01_production_config_hardening.py -v
+Result: 12 passed in 2.28s
+
+Tier 2: python -m pytest -v tests/test_phase02_platform_api.py tests/test_phase04_auth_rbac.py tests/test_phase41_deployment_validation.py
+Result: 50 passed in 4.06s
+
+Tier 4 Regression: python -m pytest -q -m "not gui"
+Result: 1264 passed in 102.23s
+```
+
+### Regression Result
+1,264 passing tests, 0 failures, 0 skipped across the complete headless test suite.
+
+### Runtime Verification
+- In development/test mode, standard permissive developer tooling and docs remain active.
+- In production mode, missing secrets, weak secrets, wildcard CORS, debug flags, reload flags, and missing databases fail fast with descriptive `RuntimeError` messages.
+- Production CORS restricts allowed methods and headers to explicit lists.
+
+### Security Verification
+- Defect **P0-05** verified resolved and closed.
+- Wildcard CORS is rejected at startup.
+- API documentation routes return 404 in production unless explicitly opted into via `GAYATRI_ENABLE_DOCS=true`.
+- Secrets shorter than 32 characters or matching known weak lists abort startup.
+
+### Packaging Impact
+Packaged application in production mode will strictly enforce hardened security defaults.
+
+### Known Limitations
+None identified in Phase 1 scope.
+
+### Commit
+`pending`
 
 ### Status
 COMPLETE

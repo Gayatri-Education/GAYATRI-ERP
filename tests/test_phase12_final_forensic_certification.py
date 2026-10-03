@@ -54,6 +54,9 @@ def test_layer1_zero_swallowed_exceptions_in_active_services():
 def test_layer1_demo_tokens_disabled_in_production(monkeypatch):
     """Verify /api/v1/auth/demo-tokens returns 404 in production mode."""
     monkeypatch.setenv("GAYATRI_ENV", "production")
+    monkeypatch.setenv("GAYATRI_JWT_SECRET", "super_secure_production_jwt_secret_with_32_characters_minimum!")
+    monkeypatch.setenv("GAYATRI_ALLOWED_ORIGINS", "https://app.gayatri.edu")
+    monkeypatch.setenv("GAYATRI_DB_PATH", "gayatri_local.db")
     app = create_app()
     client = TestClient(app)
     r = client.get("/api/v1/auth/demo-tokens")
