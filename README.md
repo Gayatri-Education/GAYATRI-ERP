@@ -110,8 +110,6 @@ Gayatri is an **open, curriculum-free AI tutoring platform** — any school, ins
 - **Python 3.12+**
 - Git
 
-> ℹ️ **No Ollama required.** The platform uses `llama-cpp-python` to run GGUF models directly on CPU. A model file is optional — without one, the platform runs in mock/development mode.
-
 ### 1. Clone & Install
 
 ```bash
