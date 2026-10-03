@@ -438,7 +438,7 @@ PyInstaller bundle and Inno Setup installer now explicitly package `model_manife
 None within Phase 5 scope.
 
 ### Commit
-(Pending commit)
+`91f8c2a`
 
 ### Status
 COMPLETE
