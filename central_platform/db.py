@@ -502,6 +502,12 @@ class PlatformDatabase:
                 return False
             user_id = r["user_id"]
         self.set_user_password(user_id, new_password)
+        now_iso = datetime.now(timezone.utc).isoformat()
+        with self._get_connection() as conn:
+            conn.execute(
+                "UPDATE user_credentials SET password_reset_token = NULL, updated_at = ? WHERE user_id = ?;",
+                (now_iso, user_id),
+            )
         return True
 
     def authenticate_user(self, email_or_identifier: str, password: str) -> Optional[User]:

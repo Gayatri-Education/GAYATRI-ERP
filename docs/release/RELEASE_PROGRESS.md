@@ -9,7 +9,7 @@
 |---|---|---|---|---|---|---|---|---|
 | 0 Baseline | COMPLETE | local-agent | 2026-10-03 | 2026-10-03 | 08f0ae1 | Tier 0: 0 errors; Tier 4: 1252 passed (81.5s) | docs/release/RELEASE_BASELINE_2026-10-03.md | P0-01 to P0-08 |
 | 1 Config | COMPLETE | local-agent | 2026-10-03 | 2026-10-03 | 7be4e68 | Tier 1: 12 passed; Tier 2: 50 passed; Tier 4: 1264 passed | docs/release/RELEASE_PROGRESS.md | P0-05 CLOSED |
-| 2 Auth | NOT_STARTED | local-agent | | | | | | P0-01, P0-06 |
+| 2 Auth | COMPLETE | local-agent | 2026-10-03 | 2026-10-04 | TBD | Tier 1: 9 passed; Tier 2: 34 passed; Tier 4: 1273 passed | docs/release/RELEASE_PROGRESS.md | P0-01 CLOSED, P0-06 CLOSED |
 | 3 RBAC | NOT_STARTED | local-agent | | | | | | |
 | 4 AI Gateway | NOT_STARTED | local-agent | | | | | | P0-03, P0-04 |
 | 5 Model Integrity | NOT_STARTED | local-agent | | | | | | P0-02 |
@@ -148,3 +148,66 @@ None identified in Phase 1 scope.
 
 ### Status
 COMPLETE
+
+---
+
+## Phase 2 — Evidence
+
+### Scope
+Authentication and identity remediation: eliminate synthetic mock user auto-creation in production (resolving P0-01), eliminate email-only password resets in production without valid reset tokens (resolving P0-06), enforce single-use token invalidation upon successful password reset, and enforce account status checks (`is_deleted`, `is_active`, `suspended`).
+
+### Root Cause
+- `central_platform/api/routes/auth.py:login()` previously synthesized mock identities (`usr-{req.username}`) and assigned fake tokens when an unrecognized user attempted login in development/demo, with insufficient environment gating.
+- `central_platform/api/routes/auth.py:reset_password()` previously permitted password resets with only an email address and no reset token.
+- `central_platform/db.py:reset_password_with_token()` did not clear `password_reset_token` upon completion, permitting infinite replay attacks.
+
+### Files Changed
+- `central_platform/api/routes/auth.py` (fail-fast 401 on unknown user in production, prohibition of synthetic users, account status checks for deleted/inactive/suspended users, mandatory token verification for password resets)
+- `central_platform/db.py` (single-use password reset token invalidation: `password_reset_token = NULL`)
+- `docs/release/RELEASE_DEFECT_REGISTER.md` (P0-01, P0-06 marked CLOSED)
+- `tests/test_phase02_auth_production_remediation.py` (9 tests covering P0-01, P0-06, single-use token invalidation, account lifecycle states)
+
+### Files Intentionally Not Changed
+Authentication token structure (`TokenResponse`), OAuth2 password request formats, and development/demo convenience paths when explicitly running outside production.
+
+### Tests
+```text
+Tier 0: python -m compileall central_platform app core local_runtime scripts
+Result: 0 compilation errors
+
+Tier 1: python -m pytest tests/test_phase02_auth_production_remediation.py -v
+Result: 9 passed in 2.05s
+
+Tier 2: python -m pytest tests/test_phase02_auth_production_remediation.py tests/test_phase02_platform_api.py tests/test_phase04_auth_rbac.py -v
+Result: 34 passed in 8.23s
+
+Tier 4 Regression: python -m pytest -q -m "not gui"
+Result: 1273 passed in 85.93s
+```
+
+### Regression Result
+1,273 passing tests, 0 failures, 0 skipped across the complete headless test suite (+9 new regression tests from Phase 1 baseline).
+
+### Runtime Verification
+- In production mode, any attempt to authenticate as an unknown user yields HTTP 401 Unauthorized.
+- Suspended, inactive, or soft-deleted users receive HTTP 403 Forbidden.
+- Password resets without a token in production yield HTTP 400 Bad Request.
+- Consuming a valid password reset token clears it from the database, preventing token reuse.
+
+### Security Verification
+- Defect **P0-01** verified resolved and closed.
+- Defect **P0-06** verified resolved and closed.
+- Replay attacks on password reset tokens eliminated.
+
+### Packaging Impact
+No packaging configuration modifications required; runtime security policies apply uniformly across native and packaged executables.
+
+### Known Limitations
+None within Phase 2 scope.
+
+### Commit
+TBD
+
+### Status
+COMPLETE
+

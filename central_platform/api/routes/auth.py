@@ -34,6 +34,7 @@ from central_platform.auth.tokens import (
     revoke_token,
 )
 from central_platform.models.schema import User, UserRole
+from central_platform.db import PlatformDatabase
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
@@ -45,12 +46,24 @@ MOCK_USERS = {
 
 
 @router.post("/login", response_model=ApiResponse[LoginResponse])
-async def login(req: LoginRequest):
+async def login(req: LoginRequest, db: PlatformDatabase = Depends(get_db)):
     """Authenticate user with PBKDF2 credentials and issue cryptographically signed JWT tokens."""
-    db = get_db()
-    db_user = db.get_user_by_email(req.username) or db.get_user(req.username)
+    username_clean = req.username.strip().lower() if "@" in req.username else req.username.strip()
+    db_user = db.get_user_by_email(username_clean) or db.get_user(req.username) or db.get_user_by_email(req.username)
 
     if db_user:
+        # Check deleted status
+        if getattr(db_user, "is_deleted", False):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Account is deleted or disabled",
+            )
+        # Check active status
+        if hasattr(db_user, "is_active") and not db_user.is_active:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Account is inactive or disabled",
+            )
         # Check suspended status
         creds = db.get_user_credentials(db_user.id)
         if creds and creds.get("is_suspended"):
@@ -59,7 +72,7 @@ async def login(req: LoginRequest):
                 detail="Account is suspended",
             )
         # Attempt DB authentication
-        auth_user = db.authenticate_user(req.username, req.password)
+        auth_user = db.authenticate_user(req.username, req.password) or db.authenticate_user(username_clean, req.password)
         if not auth_user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -70,7 +83,13 @@ async def login(req: LoginRequest):
         role = role_str.upper()
         org_id = auth_user.organization_id or "org-default"
     else:
-        # Mock or integration user fallback
+        # In production mode: STRICTLY PROHIBIT mock or synthetic identity fallback (P0-01)
+        if is_production_mode():
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid username or password",
+            )
+        # Mock or integration user fallback (development/test mode only)
         user = MOCK_USERS.get(req.username)
         if not user:
             if req.password != "password":
@@ -145,6 +164,7 @@ async def get_current_user_profile(
 async def refresh_access_token(
     body: Optional[TokenRefreshRequest] = None,
     authorization: Optional[str] = Header(default=None, alias="Authorization"),
+    db: PlatformDatabase = Depends(get_db),
 ):
     """Exchange a valid refresh token for a newly issued short-lived access token."""
     token = None
@@ -169,7 +189,6 @@ async def refresh_access_token(
 
     user_id = payload["user_id"]
     org_id = payload.get("organization_id", "org-default")
-    db = get_db()
     user = db.get_user(user_id)
     role_str = user.role.value if user and isinstance(user.role, UserRole) else "student"
 
@@ -186,9 +205,8 @@ async def refresh_access_token(
 
 
 @router.post("/password-reset", response_model=ApiResponse[dict])
-async def reset_password(req: PasswordResetRequest):
+async def reset_password(req: PasswordResetRequest, db: PlatformDatabase = Depends(get_db)):
     """Reset password using email or one-time token."""
-    db = get_db()
     if req.token:
         ok = db.reset_password_with_token(req.token, req.new_password)
         if not ok:
@@ -197,6 +215,12 @@ async def reset_password(req: PasswordResetRequest):
                 detail="Invalid or expired password reset token",
             )
     else:
+        # In production mode: Unverified email-only reset is strictly prohibited (P0-06)
+        if is_production_mode():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Password reset token is required in production mode.",
+            )
         user = db.get_user_by_email(req.email)
         if not user:
             raise HTTPException(
