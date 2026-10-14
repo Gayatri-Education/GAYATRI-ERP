@@ -57,7 +57,6 @@ jobs:
 
       - name: Initialize temporary database schema
         run: |
-          python scripts/migrate_db.py up --db-path gayatri_local.db
           python scripts/migrate_db.py up --db-path test_ci.db
 
       - name: Run architecture guardrail suite
