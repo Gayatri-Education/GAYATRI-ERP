@@ -142,7 +142,10 @@ def normalize_role(role: Union[UserRole, str]) -> UserRole:
     """Normalize string or UserRole into standard UserRole enum."""
     if isinstance(role, UserRole):
         return role
-    return UserRole(role)
+    role_str = str(role).lower().strip()
+    if role_str == "admin":
+        return UserRole.ORG_ADMIN
+    return UserRole(role_str)
 
 
 def has_permission(role: Union[UserRole, str], permission: str) -> bool:

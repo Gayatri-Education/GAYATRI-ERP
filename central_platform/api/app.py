@@ -51,6 +51,7 @@ from central_platform.api.routes.classes import router as classes_router
 from central_platform.api.routes.courses import router as courses_router
 from central_platform.api.routes.curricula import router as curricula_router
 from central_platform.api.routes.enrollments import router as enrollments_router
+from central_platform.api.routes.identity import router as identity_router
 from central_platform.api.routes.instructions import router as instructions_router
 from central_platform.api.routes.learning import router as learning_router
 from central_platform.api.routes.notifications import router as notifications_router
@@ -139,6 +140,7 @@ def create_app() -> FastAPI:
     # 4. Mount Versioned Route Groups under /api/v1
     app.include_router(auth_router, prefix="/api/v1")
     app.include_router(users_router, prefix="/api/v1")
+    app.include_router(identity_router, prefix="/api/v1")
     app.include_router(students_router, prefix="/api/v1")
     app.include_router(teachers_router, prefix="/api/v1")
     app.include_router(admin_router, prefix="/api/v1")

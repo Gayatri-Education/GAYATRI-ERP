@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import sqlite3
+import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from enum import Enum
@@ -353,7 +354,21 @@ class PlatformDatabase:
 
     # ── 1. Organizations & Identity ──────────────────────────────────────────
 
-    def create_organization(self, org: Organization) -> Organization:
+    def create_organization(
+        self,
+        org: Optional[Organization] = None,
+        *,
+        org_id: Optional[str] = None,
+        name: Optional[str] = None,
+        slug: Optional[str] = None,
+    ) -> Organization:
+        if org is None:
+            now_iso = datetime.now(timezone.utc).isoformat()
+            actual_id = org_id or f"org_{uuid.uuid4().hex[:12]}"
+            actual_name = name or actual_id
+            actual_slug = slug or actual_name.lower().replace(" ", "-")
+            org = Organization(id=actual_id, name=actual_name, slug=actual_slug, created_at=now_iso, updated_at=now_iso)
+
         with self._get_connection() as conn:
             conn.execute(
                 """
@@ -371,6 +386,290 @@ class PlatformDatabase:
                 ),
             )
         return org
+
+    # ── Shared Identity Methods (Phase 01) ─────────────────────────────────
+
+    def create_person(
+        self,
+        person_id: str,
+        organization_id: str,
+        first_name: str,
+        last_name: str,
+        email: Optional[str] = None,
+        phone: Optional[str] = None,
+        user_id: Optional[str] = None,
+        date_of_birth: Optional[str] = None,
+        gender: Optional[str] = None,
+        national_id_hash: Optional[str] = None,
+        address_line1: Optional[str] = None,
+        address_line2: Optional[str] = None,
+        city: Optional[str] = None,
+        state: Optional[str] = None,
+        postal_code: Optional[str] = None,
+        country: str = "India",
+    ) -> Dict[str, Any]:
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO persons (
+                    id, organization_id, user_id, first_name, last_name,
+                    email, phone, date_of_birth, gender, national_id_hash,
+                    address_line1, address_line2, city, state, postal_code, country
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+                """,
+                (
+                    person_id, organization_id, user_id, first_name, last_name,
+                    email, phone, date_of_birth, gender, national_id_hash,
+                    address_line1, address_line2, city, state, postal_code, country,
+                ),
+            )
+        return {
+            "id": person_id,
+            "organization_id": organization_id,
+            "first_name": first_name,
+            "last_name": last_name,
+            "email": email,
+            "phone": phone,
+        }
+
+    def get_person(self, organization_id: str, person_id: str) -> Optional[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM persons WHERE organization_id = ? AND id = ?;",
+                (organization_id, person_id),
+            )
+            r = cursor.fetchone()
+            if not r:
+                return None
+            return dict(r)
+
+    def create_student_profile(
+        self,
+        student_id: str,
+        person_id: str,
+        organization_id: str,
+        admission_number: Optional[str] = None,
+        roll_number: Optional[str] = None,
+        admission_date: Optional[str] = None,
+        academic_status: str = "active",
+    ) -> Dict[str, Any]:
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO student_profiles (
+                    id, person_id, organization_id, admission_number, roll_number, admission_date, academic_status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?);
+                """,
+                (student_id, person_id, organization_id, admission_number, roll_number, admission_date, academic_status),
+            )
+        return {
+            "id": student_id,
+            "person_id": person_id,
+            "organization_id": organization_id,
+            "admission_number": admission_number,
+            "roll_number": roll_number,
+            "academic_status": academic_status,
+        }
+
+    def get_student_profile(self, organization_id: str, student_id: str) -> Optional[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT sp.*, p.first_name, p.last_name, p.email, p.phone, p.gender, p.date_of_birth
+                FROM student_profiles sp
+                JOIN persons p ON sp.person_id = p.id
+                WHERE sp.organization_id = ? AND sp.id = ?;
+                """,
+                (organization_id, student_id),
+            )
+            r = cursor.fetchone()
+            if not r:
+                return None
+            return dict(r)
+
+    def create_guardian_profile(
+        self,
+        guardian_id: str,
+        person_id: str,
+        organization_id: str,
+        occupation: Optional[str] = None,
+        annual_income: Optional[str] = None,
+        is_legal_guardian: bool = True,
+    ) -> Dict[str, Any]:
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO guardian_profiles (
+                    id, person_id, organization_id, occupation, annual_income, is_legal_guardian
+                ) VALUES (?, ?, ?, ?, ?, ?);
+                """,
+                (guardian_id, person_id, organization_id, occupation, annual_income, 1 if is_legal_guardian else 0),
+            )
+        return {
+            "id": guardian_id,
+            "person_id": person_id,
+            "organization_id": organization_id,
+            "occupation": occupation,
+            "is_legal_guardian": is_legal_guardian,
+        }
+
+    def get_guardian_profile(self, organization_id: str, guardian_id: str) -> Optional[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT gp.*, p.first_name, p.last_name, p.email, p.phone
+                FROM guardian_profiles gp
+                JOIN persons p ON gp.person_id = p.id
+                WHERE gp.organization_id = ? AND gp.id = ?;
+                """,
+                (organization_id, guardian_id),
+            )
+            r = cursor.fetchone()
+            if not r:
+                return None
+            return dict(r)
+
+    def link_student_guardian(
+        self,
+        organization_id: str,
+        student_id: str,
+        guardian_id: str,
+        relationship: str,
+        is_primary_contact: bool = False,
+        is_emergency_contact: bool = False,
+        is_pickup_authorized: bool = False,
+        can_access_portal: bool = True,
+    ) -> str:
+        link_id = f"sgl_{uuid.uuid4().hex[:12]}"
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO student_guardian_links (
+                    id, organization_id, student_id, guardian_id, relationship,
+                    is_primary_contact, is_emergency_contact, is_pickup_authorized, can_access_portal
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+                """,
+                (
+                    link_id, organization_id, student_id, guardian_id, relationship,
+                    1 if is_primary_contact else 0,
+                    1 if is_emergency_contact else 0,
+                    1 if is_pickup_authorized else 0,
+                    1 if can_access_portal else 0,
+                ),
+            )
+        return link_id
+
+    def get_student_guardians(self, organization_id: str, student_id: str) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT l.*, gp.occupation, gp.is_legal_guardian,
+                       p.first_name, p.last_name, p.email, p.phone
+                FROM student_guardian_links l
+                JOIN guardian_profiles gp ON l.guardian_id = gp.id
+                JOIN persons p ON gp.person_id = p.id
+                WHERE l.organization_id = ? AND l.student_id = ?;
+                """,
+                (organization_id, student_id),
+            )
+            rows = cursor.fetchall()
+            return [
+                {
+                    "id": r["id"],
+                    "organization_id": r["organization_id"],
+                    "student_id": r["student_id"],
+                    "guardian_id": r["guardian_id"],
+                    "relationship": r["relationship"],
+                    "is_primary_contact": bool(r["is_primary_contact"]),
+                    "is_emergency_contact": bool(r["is_emergency_contact"]),
+                    "is_pickup_authorized": bool(r["is_pickup_authorized"]),
+                    "can_access_portal": bool(r["can_access_portal"]),
+                    "first_name": r["first_name"],
+                    "last_name": r["last_name"],
+                    "email": r["email"],
+                    "phone": r["phone"],
+                    "occupation": r["occupation"],
+                    "is_legal_guardian": bool(r["is_legal_guardian"]),
+                }
+                for r in rows
+            ]
+
+    def create_staff_profile(
+        self,
+        staff_id: str,
+        person_id: str,
+        organization_id: str,
+        employee_id: Optional[str] = None,
+        department: Optional[str] = None,
+        designation: Optional[str] = None,
+        employment_type: str = "full_time",
+        employment_status: str = "active",
+        joining_date: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO staff_profiles (
+                    id, person_id, organization_id, employee_id, department, designation,
+                    employment_type, employment_status, joining_date
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+                """,
+                (
+                    staff_id, person_id, organization_id, employee_id, department,
+                    designation, employment_type, employment_status, joining_date,
+                ),
+            )
+        return {
+            "id": staff_id,
+            "person_id": person_id,
+            "organization_id": organization_id,
+            "employee_id": employee_id,
+            "department": department,
+            "designation": designation,
+        }
+
+    def get_staff_profile(self, organization_id: str, staff_id: str) -> Optional[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT sp.*, p.first_name, p.last_name, p.email, p.phone
+                FROM staff_profiles sp
+                JOIN persons p ON sp.person_id = p.id
+                WHERE sp.organization_id = ? AND sp.id = ?;
+                """,
+                (organization_id, staff_id),
+            )
+            r = cursor.fetchone()
+            if not r:
+                return None
+            return dict(r)
+
+    def enqueue_domain_event(
+        self,
+        organization_id: str,
+        event_type: str,
+        aggregate_type: str,
+        aggregate_id: str,
+        payload: Dict[str, Any],
+        idempotency_key: Optional[str] = None,
+    ) -> str:
+        event_id = f"evt_{uuid.uuid4().hex[:16]}"
+        payload_str = json.dumps(payload)
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO domain_events_outbox (
+                    id, organization_id, event_type, aggregate_type, aggregate_id, payload_json, idempotency_key
+                ) VALUES (?, ?, ?, ?, ?, ?, ?);
+                """,
+                (event_id, organization_id, event_type, aggregate_type, aggregate_id, payload_str, idempotency_key),
+            )
+        return event_id
 
     def get_organization(self, org_id: str, include_deleted: bool = False) -> Optional[Organization]:
         with self._get_connection() as conn:

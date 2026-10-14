@@ -43,6 +43,9 @@ from scripts.migrate_db import (
 
 ROOT = Path(__file__).resolve().parent.parent
 
+FORWARD_SCRIPTS = sorted([f for f in MIGRATIONS_DIR.glob("*.sql") if not f.name.endswith("_down.sql")])
+EXPECTED_VERSIONS = [s.name.split("_", 1)[0] for s in FORWARD_SCRIPTS]
+
 
 # ── Test 1: Empty Database Migration (All Versions) ──────────────────────────
 
@@ -52,8 +55,8 @@ def test_empty_database_migration_all_versions():
     conn.execute("PRAGMA foreign_keys = ON;")
 
     applied = run_all_migrations(conn)
-    assert len(applied) == 8
-    assert applied == ["001", "002", "003", "004", "005", "006", "007", "008"]
+    assert len(applied) == len(EXPECTED_VERSIONS)
+    assert applied == EXPECTED_VERSIONS
 
     cursor = conn.cursor()
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")
@@ -87,7 +90,7 @@ def test_migrations_idempotency_rerun():
 
     assert second_run == []
     applied_records = get_applied_migrations(conn)
-    assert len(applied_records) == 8
+    assert len(applied_records) == len(EXPECTED_VERSIONS)
 
     conn.close()
 
@@ -100,7 +103,7 @@ def test_incremental_migration_stepping():
     conn.execute("PRAGMA foreign_keys = ON;")
 
     scripts = sorted([f for f in MIGRATIONS_DIR.glob("*.sql") if not f.name.endswith("_down.sql")])
-    assert len(scripts) == 8
+    assert len(scripts) == len(EXPECTED_VERSIONS)
 
     for script in scripts:
         version = script.name.split("_", 1)[0]
@@ -108,7 +111,7 @@ def test_incremental_migration_stepping():
         assert applied is True
 
     records = get_applied_migrations(conn)
-    assert [r["version"] for r in records] == ["001", "002", "003", "004", "005", "006", "007", "008"]
+    assert [r["version"] for r in records] == EXPECTED_VERSIONS
     conn.close()
 
 
@@ -120,11 +123,11 @@ def test_full_rollback_and_reapplication():
     conn.execute("PRAGMA foreign_keys = ON;")
 
     run_all_migrations(conn)
-    assert len(get_applied_migrations(conn)) == 8
+    assert len(get_applied_migrations(conn)) == len(EXPECTED_VERSIONS)
 
     # Roll back all
     rolled_back = rollback_all_migrations(conn)
-    assert rolled_back == ["008", "007", "006", "005", "004", "003", "002", "001"]
+    assert rolled_back == list(reversed(EXPECTED_VERSIONS))
 
     cursor = conn.cursor()
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")
@@ -133,7 +136,7 @@ def test_full_rollback_and_reapplication():
 
     # Re-apply
     reapplied = run_all_migrations(conn)
-    assert len(reapplied) == 8
+    assert len(reapplied) == len(EXPECTED_VERSIONS)
     cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';")
     tables_after = {r[0] for r in cursor.fetchall()}
     assert len(tables_after) >= 50

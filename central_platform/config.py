@@ -212,7 +212,8 @@ def resolve_database_path(envs: Dict[str, str], is_prod: bool) -> str:
             db_file = Path(db_path)
             if not db_file.exists():
                 raise RuntimeError(
-                    f"Production startup aborted: Configured production database does not exist: {db_path}"
+                    f"Production startup aborted: Configured production database does not exist: {db_path}. "
+                    f"Run 'python scripts/migrate_db.py up --db-path {db_path}' to initialize schema."
                 )
         return db_path
 
