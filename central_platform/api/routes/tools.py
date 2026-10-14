@@ -21,6 +21,7 @@ from central_platform.api.schemas import (
 from central_platform.auth.dependencies import (
     get_current_user_optional,
     get_db,
+    is_production_mode,
 )
 from central_platform.models.schema import CourseToolPolicy, User, UserRole
 from central_platform.tools import (
@@ -99,6 +100,12 @@ async def execute_tool(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Execute a pedagogical computational tool within course policy and resource limits."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required in production",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     registry = get_configured_tool_registry()
     engine = ToolExecutionEngine(registry)
     db = get_db()

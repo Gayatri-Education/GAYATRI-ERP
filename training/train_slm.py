@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -196,22 +197,38 @@ def train_and_convert(data_dir: Path, output_dir: Path):
     # GGUF Quantization
     print("\n[STEP] Converting to GGUF using llama.cpp...")
     if not os.path.exists("llama.cpp"):
-        os.system("git clone --depth 1 https://github.com/ggerganov/llama.cpp.git")
-        os.system("pip install --quiet gguf")
-        os.system("pip install -r llama.cpp/requirements.txt")
-        os.system("cmake -B llama.cpp/build -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_SERVER=OFF llama.cpp")
-        os.system("cmake --build llama.cpp/build --config Release --target llama-quantize -j")
+        run_checked_command("git clone --depth 1 https://github.com/ggerganov/llama.cpp.git", "Clone llama.cpp")
+        run_checked_command("pip install --quiet gguf", "Install gguf python package")
+        run_checked_command("pip install -r llama.cpp/requirements.txt", "Install llama.cpp dependencies")
+        run_checked_command("cmake -B llama.cpp/build -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF -DLLAMA_BUILD_SERVER=OFF llama.cpp", "Configure llama.cpp")
+        run_checked_command("cmake --build llama.cpp/build --config Release --target llama-quantize -j", "Build llama-quantize")
 
     f16_gguf = "./gayatri_slm_f16.gguf"
-    os.system(f"python llama.cpp/convert_hf_to_gguf.py {MERGED_OUTPUT_DIR} --outfile {f16_gguf} --outtype f16")
+    run_checked_command(f"python llama.cpp/convert_hf_to_gguf.py {MERGED_OUTPUT_DIR} --outfile {f16_gguf} --outtype f16", "Convert HF to F16 GGUF")
 
     quant_bin = "./llama.cpp/build/bin/llama-quantize" if os.path.exists("./llama.cpp/build/bin/llama-quantize") else "./llama.cpp/llama-quantize"
-    os.system(f"{quant_bin} {f16_gguf} {GGUF_Q4} Q4_K_M")
-    os.system(f"{quant_bin} {f16_gguf} {GGUF_Q8} Q8_0")
+    run_checked_command(f"{quant_bin} {f16_gguf} {GGUF_Q4} Q4_K_M", "Quantize to Q4_K_M")
+    run_checked_command(f"{quant_bin} {f16_gguf} {GGUF_Q8} Q8_0", "Quantize to Q8_0")
 
     if os.path.exists(GGUF_Q4):
         size_mb = os.path.getsize(GGUF_Q4) / (1024 * 1024)
         print(f"\n[OK] Model successfully created: {GGUF_Q4} ({size_mb:.1f} MB)")
+
+
+def run_checked_command(cmd: str | list[str], description: str = "") -> subprocess.CompletedProcess:
+    """Execute shell command with checked exit code and error diagnostics (QA-012)."""
+    if description:
+        print(f"[*] Executing: {description}")
+    try:
+        if isinstance(cmd, str):
+            res = subprocess.run(cmd, shell=True, check=True)
+        else:
+            res = subprocess.run(cmd, check=True)
+        return res
+    except subprocess.CalledProcessError as exc:
+        print(f"[ERROR] Command failed with exit code {exc.returncode}: {cmd}")
+        raise RuntimeError(f"Training pipeline command failed ({description or cmd}): {exc}") from exc
+
 
 
 if __name__ == "__main__":

@@ -10,6 +10,7 @@ import os
 from typing import Dict, List, Optional, Set
 
 
+from central_platform.ai.adapters import is_production_mode
 from central_platform.ai.schema import (
     AIModelDescriptor,
     ModelTier,
@@ -153,7 +154,7 @@ class ModelRouter:
             )
 
         if not target_p:
-            if os.environ.get("GAYATRI_ENV", "").lower() == "production" or os.environ.get("APP_ENV", "").lower() == "production":
+            if is_production_mode():
                 return RoutingDecision(
                     task_type=task_type,
                     target_provider="",

@@ -22,6 +22,7 @@ from central_platform.api.schemas import (
 from central_platform.auth.dependencies import (
     get_current_user_optional,
     get_db,
+    is_production_mode,
 )
 from central_platform.db import PlatformDatabase
 from central_platform.models.schema import (
@@ -110,6 +111,12 @@ async def create_instruction(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Create a scoped teacher instruction. Requires TEACHER, ORG_ADMIN, or SUPER_ADMIN role."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to create teacher instructions",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     actor = current_user or User(
         id="usr-teacher-01",
         email="teacher@platform.local",
@@ -223,6 +230,19 @@ async def delete_instruction(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Deactivate or remove a teacher instruction."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to delete teacher instructions",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if current_user:
+        user_role = current_user.role.value if isinstance(current_user.role, UserRole) else str(current_user.role).upper()
+        if user_role in (UserRole.STUDENT.value, "STUDENT"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Students cannot delete teacher instructions.",
+            )
     inst = db.get_teacher_instruction(instruction_id)
     if not inst:
         raise HTTPException(

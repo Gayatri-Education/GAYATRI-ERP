@@ -37,7 +37,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: checkedonce
 
 [Dirs]
-; Create writable models directory so user can drop model file here
+; Create writable models directories so user can drop model file here
+Name: "{app}\models"; Permissions: users-full
 Name: "{app}\models\gayatri"; Permissions: users-full
 
 [Files]

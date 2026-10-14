@@ -35,6 +35,7 @@ from central_platform.api.schemas import (
 from central_platform.auth.dependencies import (
     get_current_user_optional,
     get_db,
+    is_production_mode,
 )
 from central_platform.curriculum.service import (
     CurriculumService,
@@ -53,13 +54,20 @@ def get_curriculum_service() -> CurriculumService:
 def _enforce_authoring_auth(current_user: Optional[User]) -> User:
     """Ensure user is authorized to create, import, or publish curricula."""
     if not current_user:
+        if is_production_mode():
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required in production",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
         return User(
             id="admin-default",
             email="admin@gayatri.edu",
             full_name="System Administrator",
             role=UserRole.SUPER_ADMIN,
         )
-    if current_user.role in (UserRole.STUDENT,):
+    user_role = current_user.role.value if isinstance(current_user.role, UserRole) else str(current_user.role).upper()
+    if user_role in (UserRole.STUDENT.value, "STUDENT"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden: Students cannot author, import, or publish curricula",

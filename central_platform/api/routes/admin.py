@@ -50,6 +50,7 @@ from central_platform.api.schemas import (
 from central_platform.auth.dependencies import (
     get_current_user_optional,
     get_db,
+    is_production_mode,
 )
 from central_platform.models.schema import User, UserRole
 
@@ -70,6 +71,12 @@ def get_admin_service() -> AdminService:
 def _enforce_admin_auth(current_user: Optional[User]) -> User:
     """Enforce that caller has administrative privileges."""
     if not current_user:
+        if is_production_mode():
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required for administrative resources",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
         return User(
             id="admin-default",
             email="admin@gayatri.edu",
@@ -844,6 +851,12 @@ async def get_system_health(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Get system resource and services status."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required for administrative resources",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     if current_user and current_user.role in (UserRole.STUDENT, UserRole.TEACHER):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -861,6 +874,12 @@ async def toggle_kill_switch(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Admin emergency AI kill switch control (Super Admin only)."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required for administrative resources",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     if current_user and current_user.role != UserRole.SUPER_ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

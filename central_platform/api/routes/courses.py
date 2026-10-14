@@ -28,6 +28,7 @@ from central_platform.api.schemas import (
 from central_platform.auth.dependencies import (
     get_current_user_optional,
     get_db,
+    is_production_mode,
 )
 from central_platform.courses.service import (
     CourseAuthorizationError,
@@ -240,6 +241,12 @@ async def create_course(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Create a new course. Requires TEACHER, ORG_ADMIN, or SUPER_ADMIN role."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required in production",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     actor = current_user or User(
         id="usr-teacher-01",
         email="teacher@platform.local",
@@ -289,6 +296,12 @@ async def select_course_for_organization(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Select a course for an organization, establishing an active offering pinned to a version."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required in production",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     actor = current_user or User(
         id="usr-admin-01",
         email="admin@platform.local",
@@ -344,6 +357,12 @@ async def create_course_version(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Create a new draft version of a course."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required in production",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     actor = current_user or User(
         id="usr-teacher-01",
         email="teacher@platform.local",
@@ -374,6 +393,12 @@ async def submit_course_version(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Submit a course version for administrative review."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required in production",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     actor = current_user or User(
         id="usr-teacher-01",
         email="teacher@platform.local",
@@ -399,6 +424,12 @@ async def publish_course_version(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Approve and publish a course version. Requires ORG_ADMIN or SUPER_ADMIN role."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required in production",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     actor = current_user or User(
         id="usr-admin-01",
         email="admin@platform.local",
@@ -423,6 +454,12 @@ async def archive_course(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Archive / soft-delete a course. Requires ORG_ADMIN or SUPER_ADMIN role."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required in production",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     actor = current_user or User(
         id="usr-admin-01",
         email="admin@platform.local",
@@ -456,6 +493,12 @@ async def archive_course_version(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Archive a course version. Requires ORG_ADMIN or SUPER_ADMIN role."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required in production",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     actor = current_user or User(
         id="usr-admin-01",
         email="admin@platform.local",

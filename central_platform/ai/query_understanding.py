@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field, field_validator
 from core.tutor.intents import (
     CHEMISTRY_CONCEPT_PATTERNS,
     CHEMISTRY_SAFETY_PATTERN,
+    INTENT_RULES,
     PROMPT_INJECTION_PATTERN,
     QueryIntent,
 )
@@ -83,35 +84,36 @@ class QueryUnderstandingEngine:
 
         # 3. Intent Detection
         q_lower = clean_query.lower()
+        matched_intent = QueryIntent.CONCEPT_EXPLANATION
+        if any(w in q_lower for w in ["hi", "hello", "hey", "greetings"]):
+            matched_intent = QueryIntent.GREETING
+        elif any(w in q_lower for w in ["define", "what is", "definition"]):
+            matched_intent = QueryIntent.DEFINITION
+        else:
+            for rule_intent, pattern in INTENT_RULES:
+                if rule_intent in (QueryIntent.PROMPT_INJECTION, QueryIntent.CHEMISTRY_SAFETY):
+                    continue
+                if pattern.search(clean_query):
+                    matched_intent = rule_intent
+                    break
+
+        intent = matched_intent.value
         requires_calc = False
         requires_rag = True
         complexity = "intermediate"
 
-        if any(w in q_lower for w in ["hi", "hello", "hey", "greetings"]):
-            intent = QueryIntent.GREETING.value
+        if matched_intent == QueryIntent.GREETING:
             requires_rag = False
             complexity = "basic"
-        elif any(w in q_lower for w in ["define", "what is", "definition"]):
-            intent = QueryIntent.DEFINITION.value
+        elif matched_intent == QueryIntent.DEFINITION:
             complexity = "basic"
-        elif any(w in q_lower for w in ["calculate", "compute", "solve", "numerical", "value of"]):
-            intent = QueryIntent.NUMERICAL.value
+        elif matched_intent in (QueryIntent.NUMERICAL, QueryIntent.PROBLEM_SOLVING):
             requires_calc = True
             complexity = "advanced"
-        elif any(w in q_lower for w in ["hint", "give me a hint", "stuck"]):
-            intent = QueryIntent.HINT.value
-            complexity = "intermediate"
-        elif any(w in q_lower for w in ["why", "reason for", "explain why"]):
-            intent = QueryIntent.WHY.value
-            complexity = "intermediate"
-        elif any(w in q_lower for w in ["how to", "mechanism", "procedure"]):
-            intent = QueryIntent.HOW.value
+        elif matched_intent in (QueryIntent.DERIVATION, QueryIntent.MECHANISM, QueryIntent.EXAM):
             complexity = "advanced"
-        elif any(w in q_lower for w in ["compare", "difference between", "versus", "vs"]):
-            intent = QueryIntent.COMPARISON.value
+        elif matched_intent in (QueryIntent.HINT, QueryIntent.CLARIFICATION, QueryIntent.WHY, QueryIntent.COMPARISON):
             complexity = "intermediate"
-        else:
-            intent = QueryIntent.CONCEPT_EXPLANATION.value
 
         # Contextual rewrite if follow-up
         rewritten = None

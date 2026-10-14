@@ -10,7 +10,10 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from central_platform.analytics.service import AnalyticsService
-from central_platform.auth.dependencies import get_current_user_optional
+from central_platform.auth.dependencies import (
+    get_current_user_optional,
+    is_production_mode,
+)
 from central_platform.rbac.engine import normalize_role
 from central_platform.api.schemas import (
     AdminSystemAnalyticsResponse,
@@ -43,6 +46,12 @@ async def get_student_analytics(
     service: AnalyticsService = Depends(get_analytics_service),
 ):
     """Retrieve authoritative student learning analytics (mastery, accuracy, retention, velocity, weak concepts)."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to view student analytics",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     if current_user:
         user_role = normalize_role(current_user.role)
         if user_role == UserRole.STUDENT and current_user.id != student_id:
@@ -93,6 +102,12 @@ async def get_cohort_analytics(
     service: AnalyticsService = Depends(get_analytics_service),
 ):
     """Retrieve aggregate learning analytics, class mastery, misconceptions, and intervention metrics."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to view cohort analytics",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     if current_user:
         user_role = normalize_role(current_user.role)
         if user_role in (UserRole.STUDENT, UserRole.PARENT):
@@ -141,6 +156,12 @@ async def get_teacher_class_analytics(
     service: AnalyticsService = Depends(get_analytics_service),
 ):
     """Retrieve full teacher class diagnostics: mastery, difficult concepts, misconceptions, and interventions."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to view class analytics",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     if current_user:
         user_role = normalize_role(current_user.role)
         if user_role in (UserRole.STUDENT, UserRole.PARENT):
@@ -177,6 +198,12 @@ async def get_system_analytics(
     service: AnalyticsService = Depends(get_analytics_service),
 ):
     """Retrieve platform-wide telemetry, DAU/WAU/MAU, course usage, AI token metrics, costs, and health."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to view system analytics",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     if current_user:
         user_role = normalize_role(current_user.role)
         if user_role not in (UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN):
@@ -203,6 +230,12 @@ async def get_ai_usage_analytics(
     service: AnalyticsService = Depends(get_analytics_service),
 ):
     """Retrieve AI model router token usage, provider latency percentiles, and cost attribution."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to view AI observability analytics",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     if current_user:
         user_role = normalize_role(current_user.role)
         if user_role not in (UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN):

@@ -23,6 +23,7 @@ from central_platform.api.schemas import (
 from central_platform.auth.dependencies import (
     get_current_user_optional,
     get_db,
+    is_production_mode,
 )
 from central_platform.db import PlatformDatabase
 from central_platform.models.schema import (
@@ -31,6 +32,7 @@ from central_platform.models.schema import (
     User,
     UserRole,
 )
+from central_platform.rbac.engine import normalize_role
 
 logger = logging.getLogger("gayatri.api.enrollments")
 
@@ -64,10 +66,15 @@ async def list_enrollments(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """List course enrollments with RBAC boundary checks."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required in production",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     effective_student_id = student_id
     if current_user:
-        role_str = current_user.role.value if isinstance(current_user.role, UserRole) else str(current_user.role).upper()
-        if role_str == "STUDENT":
+        if normalize_role(current_user.role) == UserRole.STUDENT:
             # Student can only list their own enrollments
             if student_id and student_id != current_user.id:
                 raise HTTPException(
@@ -116,6 +123,19 @@ async def create_enrollment(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Enroll a student into a course."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required in production",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if current_user:
+        if normalize_role(current_user.role) == UserRole.STUDENT and req.student_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Students can only enroll themselves.",
+            )
+
     # 1. Verify course exists
     course = db.get_course(req.course_id)
     if not course:
@@ -182,6 +202,12 @@ async def get_enrollment(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Get enrollment by ID."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required in production",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     with db._get_connection() as conn:
         cur = conn.cursor()
         cur.execute(
@@ -206,8 +232,7 @@ async def get_enrollment(
     )
 
     if current_user:
-        role_str = current_user.role.value if isinstance(current_user.role, UserRole) else str(current_user.role).upper()
-        if role_str == "STUDENT" and e.student_id != current_user.id:
+        if normalize_role(current_user.role) == UserRole.STUDENT and e.student_id != current_user.id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Students can only access their own enrollments.",

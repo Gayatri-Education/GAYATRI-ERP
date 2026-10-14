@@ -47,6 +47,7 @@ from central_platform.auth.dependencies import (
     enforce_resource_boundaries,
     get_current_user_optional,
     get_db,
+    is_production_mode,
 )
 from central_platform.courses.service import CourseService
 from central_platform.models.schema import Assignment, ClassGroup, Cohort, CourseVisibility, User, UserRole
@@ -89,6 +90,12 @@ async def get_teacher_dashboard(
     db: Any = Depends(get_db),
 ):
     """Retrieve full teacher dashboard analytics, alerts, and student roster."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to access teacher dashboard",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     if current_user:
         if current_user.role == UserRole.STUDENT:
             raise HTTPException(
@@ -105,8 +112,13 @@ async def get_teacher_dashboard(
             if vis_str.upper() == "PUBLIC" or course.organization_id in ("org-default", None):
                 is_public = True
 
-        if course and course.organization_id and not is_public:
-            enforce_resource_boundaries(current_user, target_org_id=course.organization_id)
+        if course and course.organization_id:
+            if course.organization_id not in ("org-default", None):
+                enforce_resource_boundaries(current_user, target_org_id=course.organization_id)
+            elif not is_public:
+                enforce_resource_boundaries(current_user, target_org_id=course.organization_id)
+            else:
+                enforce_resource_boundaries(current_user)
         else:
             enforce_resource_boundaries(current_user)
 
@@ -184,6 +196,12 @@ async def create_instruction(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Dispatch a pedagogical directive with hierarchical scoping, policy validation, and audit logging."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to create teacher instructions",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     if current_user:
         if current_user.role == UserRole.STUDENT:
             raise HTTPException(
@@ -728,6 +746,12 @@ async def get_teacher_student_slr(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Retrieve Authoritative SLR for an assigned student."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to access student SLR",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     if current_user:
         if current_user.role == UserRole.STUDENT:
             raise HTTPException(
@@ -753,6 +777,12 @@ async def get_teacher_students(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Retrieve cohort roster for the teacher."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to access student roster",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     if current_user:
         if current_user.role == UserRole.STUDENT:
             raise HTTPException(
@@ -773,6 +803,12 @@ async def get_teacher_student_detail(
     db: Any = Depends(get_db),
 ):
     """Retrieve full Section 19 Student View from Authoritative SLR."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to access student details",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     if current_user:
         if current_user.role == UserRole.STUDENT:
             raise HTTPException(

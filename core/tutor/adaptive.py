@@ -53,6 +53,15 @@ class StudentProfile:
     history: list[dict[str, Any]] = field(default_factory=list)
     active_hint_level: int = 0
     current_mode: str = "EXPLAIN"
+    current_difficulty: int = 3
+
+    def update_difficulty(self, eval_result: Any) -> int:
+        """Update student's current difficulty (L1-L5) based on answer evaluation."""
+        from core.tutor.difficulty import DifficultyManager
+        self.current_difficulty = DifficultyManager.calculate_next_difficulty(
+            self.current_difficulty, eval_result
+        )
+        return self.current_difficulty
 
     def get_mastery(self, concept_id: str, default: float = 0.0) -> float:
         """Get current mastery score for a concept, defaulting to initial foundation."""

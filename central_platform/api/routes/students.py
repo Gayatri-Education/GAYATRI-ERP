@@ -28,6 +28,7 @@ from central_platform.api.schemas import (
 from central_platform.auth.dependencies import (
     enforce_resource_boundaries,
     get_current_user_optional,
+    is_production_mode,
 )
 from central_platform.curriculum.service import CurriculumService
 from central_platform.db import PlatformDatabase
@@ -50,6 +51,17 @@ _progress_service = StudentProgressService()
 _portal_service = get_shared_portal_service()
 
 
+def _enforce_student_access(current_user: Optional[User], target_student_id: Optional[str] = None) -> None:
+    """Enforce authentication in production and student self-access boundaries."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required to access student resources",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    if current_user and target_student_id:
+        enforce_resource_boundaries(current_user, target_student_id=target_student_id)
+
 
 @router.get("/{student_id}", response_model=ApiResponse[StudentProfileResponse])
 async def get_student_profile(
@@ -57,8 +69,7 @@ async def get_student_profile(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Retrieve full student learning profile from authoritative SLR."""
-    if current_user:
-        enforce_resource_boundaries(current_user, target_student_id=student_id)
+    _enforce_student_access(current_user, target_student_id=student_id)
 
     slr = _slr_service.get_authoritative_slr(student_id)
     recent_activity = [t.summary for t in slr.learning_timeline[:5]]
@@ -84,8 +95,7 @@ async def update_student_snapshot(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Push local student telemetry, mastery, and misconceptions to platform."""
-    if current_user:
-        enforce_resource_boundaries(current_user, target_student_id=snapshot.student_id)
+    _enforce_student_access(current_user, target_student_id=snapshot.student_id)
 
     # Sync with SLR service
     _slr_service.update_concept_mastery(
@@ -130,8 +140,7 @@ async def get_student_learning_record(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Get canonical 15-dimension Authoritative Student Learning Record (SLR)."""
-    if current_user:
-        enforce_resource_boundaries(current_user, target_student_id=student_id)
+    _enforce_student_access(current_user, target_student_id=student_id)
 
     slr = _slr_service.get_authoritative_slr(student_id, course_id=course_id)
     profile = await get_student_profile(student_id, current_user=current_user)
@@ -156,8 +165,7 @@ async def submit_student_action(
 
     Flow: student action -> learning event -> learning engine -> updated mastery -> SLR -> recommendation.
     """
-    if current_user:
-        enforce_resource_boundaries(current_user, target_student_id=student_id)
+    _enforce_student_access(current_user, target_student_id=student_id)
 
     payload = StudentActionPayload(
         concept_id=action_req.concept_id,
@@ -201,8 +209,7 @@ async def get_student_progress_report(
     weak areas, misconceptions, accuracy trends, mastery trends, question-type performance,
     review due, recommendations (policy-driven), session summary, learning streak.
     """
-    if current_user:
-        enforce_resource_boundaries(current_user, target_student_id=student_id)
+    _enforce_student_access(current_user, target_student_id=student_id)
 
     report = _progress_service.get_student_progress(student_id, course_id=course_id)
     return ApiResponse(ok=True, data=report.to_dict())
@@ -215,8 +222,7 @@ async def get_student_progress_heatmap(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Retrieve granular concept mastery heatmap matrix with pedagogical color coding."""
-    if current_user:
-        enforce_resource_boundaries(current_user, target_student_id=student_id)
+    _enforce_student_access(current_user, target_student_id=student_id)
 
     report = _progress_service.get_student_progress(student_id, course_id=course_id)
     return ApiResponse(ok=True, data=[h.to_dict() for h in report.concept_heatmap])
@@ -229,8 +235,7 @@ async def get_student_progress_summary(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Retrieve high-level student progress summary (overall mastery, topics, streak)."""
-    if current_user:
-        enforce_resource_boundaries(current_user, target_student_id=student_id)
+    _enforce_student_access(current_user, target_student_id=student_id)
 
     report = _progress_service.get_student_progress(student_id, course_id=course_id)
     summary_data = {
@@ -253,8 +258,7 @@ async def get_student_enrolled_courses(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """List all enrolled courses for the student with live mastery and current active concept."""
-    if current_user:
-        enforce_resource_boundaries(current_user, target_student_id=student_id)
+    _enforce_student_access(current_user, target_student_id=student_id)
 
     enrollments = _db.get_enrollments_for_student(student_id)
     courses_response: List[StudentEnrolledCourseResponse] = []
@@ -331,8 +335,7 @@ async def get_student_course_curriculum(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Retrieve curriculum hierarchy for an enrolled course with student mastery overlaid."""
-    if current_user:
-        enforce_resource_boundaries(current_user, target_student_id=student_id)
+    _enforce_student_access(current_user, target_student_id=student_id)
 
     enrollments = _db.get_enrollments_for_student(student_id)
     if not any(e.course_id == course_id and e.is_active for e in enrollments):
@@ -363,8 +366,7 @@ async def get_student_course_assignments(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Retrieve assignments strictly scoped to this student, their class/cohort, and the active course."""
-    if current_user:
-        enforce_resource_boundaries(current_user, target_student_id=student_id)
+    _enforce_student_access(current_user, target_student_id=student_id)
 
     enrollments = _db.get_enrollments_for_student(student_id)
     if not any(e.course_id == course_id and e.is_active for e in enrollments):
@@ -384,8 +386,7 @@ async def get_student_course_knowledge(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Retrieve published knowledge sources authorized for this student in this course."""
-    if current_user:
-        enforce_resource_boundaries(current_user, target_student_id=student_id)
+    _enforce_student_access(current_user, target_student_id=student_id)
 
     enrollments = _db.get_enrollments_for_student(student_id)
     if not any(e.course_id == course_id and e.is_active for e in enrollments):
@@ -405,8 +406,7 @@ async def switch_student_course(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Switch student active course context with safe-switching concurrency invariant."""
-    if current_user:
-        enforce_resource_boundaries(current_user, target_student_id=student_id)
+    _enforce_student_access(current_user, target_student_id=student_id)
 
     if req.active_turn_generating:
         raise HTTPException(
@@ -471,8 +471,7 @@ async def get_student_course_offline_status(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Retrieve offline caching and synchronization status for the course."""
-    if current_user:
-        enforce_resource_boundaries(current_user, target_student_id=student_id)
+    _enforce_student_access(current_user, target_student_id=student_id)
 
     enrollments = _db.get_enrollments_for_student(student_id)
     if not any(e.course_id == course_id and e.is_active for e in enrollments):

@@ -4,9 +4,26 @@ Fine-tunes Qwen2.5-3B-Instruct on the Gayatri Chemistry curriculum dataset.
 Includes automatic Google Drive backup, GGUF Q4_K_M conversion, and download.
 """
 import os
-import sys
 import shutil
+import subprocess
+import sys
 from pathlib import Path
+
+
+def run_checked_command(cmd: str | list[str], description: str = "") -> subprocess.CompletedProcess:
+    """Execute shell command with checked exit code and error diagnostics (QA-012)."""
+    if description:
+        print(f"[*] Executing: {description}")
+    try:
+        if isinstance(cmd, str):
+            res = subprocess.run(cmd, shell=True, check=True)
+        else:
+            res = subprocess.run(cmd, check=True)
+        return res
+    except subprocess.CalledProcessError as exc:
+        print(f"[ERROR] Command failed with exit code {exc.returncode}: {cmd}")
+        raise RuntimeError(f"Training pipeline command failed ({description or cmd}): {exc}") from exc
+
 
 # ── 1. Configuration ────────────────────────────────────────────────────────
 BASE_MODEL_NAME = "Qwen/Qwen2.5-3B-Instruct"
@@ -82,7 +99,7 @@ def train_slm():
     try:
         import torchao
         if getattr(torchao, "__version__", "0") < "0.16.0":
-            os.system("pip uninstall -y torchao")
+            run_checked_command("pip uninstall -y torchao", "Uninstall incompatible torchao")
     except Exception:
         pass
 
@@ -168,18 +185,18 @@ def train_slm():
     # Convert to GGUF using llama.cpp
     print("\n[STEP] Converting to GGUF Q4_K_M...")
     if not os.path.exists("llama.cpp"):
-        os.system("git clone --depth 1 https://github.com/ggerganov/llama.cpp.git")
-        os.system("pip install --quiet gguf")
-        os.system("pip install -r llama.cpp/requirements.txt")
-        os.system("cd llama.cpp && cmake -B build && cmake --build build --config Release -j --target llama-quantize")
+        run_checked_command("git clone --depth 1 https://github.com/ggerganov/llama.cpp.git", "Clone llama.cpp")
+        run_checked_command("pip install --quiet gguf", "Install gguf python package")
+        run_checked_command("pip install -r llama.cpp/requirements.txt", "Install llama.cpp dependencies")
+        run_checked_command("cd llama.cpp && cmake -B build && cmake --build build --config Release -j --target llama-quantize", "Build llama-quantize")
 
     # 1. Convert to f16 GGUF
     f16_gguf = "./gayatri_slm_f16.gguf"
-    os.system(f"python llama.cpp/convert_hf_to_gguf.py {merged_output_dir} --outfile {f16_gguf} --outtype f16")
+    run_checked_command(f"python llama.cpp/convert_hf_to_gguf.py {merged_output_dir} --outfile {f16_gguf} --outtype f16", "Convert HF to F16 GGUF")
 
     # 2. Quantize to Q4_K_M
     quant_binary = "./llama.cpp/build/bin/llama-quantize" if os.path.exists("./llama.cpp/build/bin/llama-quantize") else "./llama.cpp/llama-quantize"
-    os.system(f"{quant_binary} {f16_gguf} {GGUF_NAME} Q4_K_M")
+    run_checked_command(f"{quant_binary} {f16_gguf} {GGUF_NAME} Q4_K_M", "Quantize to Q4_K_M")
 
     if os.path.exists(GGUF_NAME):
         file_size_mb = os.path.getsize(GGUF_NAME) / (1024 * 1024)

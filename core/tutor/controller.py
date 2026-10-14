@@ -151,10 +151,17 @@ class TutorController:
         )
 
         user_msg = f"Please explain the concept: {concept_id}. {user_query}".strip()
-        raw_output = LocalProvider.chat([
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_msg},
-        ], max_tokens=600, temperature=0.2)
+        if LocalProvider.is_available():
+            try:
+                raw_output = LocalProvider.chat([
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_msg},
+                ], max_tokens=600, temperature=0.2)
+            except Exception as exc:
+                logger.warning(f"LocalProvider chat failed for explanation: {exc}")
+                raw_output = f"Core Explanation for {concept_id}: Review the foundational relationships and definitions."
+        else:
+            raw_output = f"Core Explanation for {concept_id}: Review the foundational relationships and definitions."
 
         mastery = self.student.get_mastery(concept_id)
 
@@ -184,12 +191,23 @@ class TutorController:
 
     # ── Mode 2: QUESTION ────────────────────────────────────────────────
 
-    def handle_question(self, concept_id: str, difficulty: str = "medium") -> TutorResponse:
+    def handle_question(self, concept_id: str, difficulty: str | None = None) -> TutorResponse:
         """Section 15: Present a single targeted question calibrated to student difficulty."""
         self.current_mode = TutorMode.QUESTION
         self.student.current_mode = TutorMode.QUESTION.value
         self.student.current_concept = concept_id
         self.student.active_hint_level = 0
+
+        if difficulty is None:
+            diff_lvl = getattr(self.student, "current_difficulty", 3)
+            if diff_lvl <= 2:
+                calibrated_difficulty = "easy"
+            elif diff_lvl >= 4:
+                calibrated_difficulty = "hard"
+            else:
+                calibrated_difficulty = "medium"
+        else:
+            calibrated_difficulty = difficulty
 
         evidence, chunk_ids = self.retrieve_grounding(concept_id, "questions practice")
 
@@ -197,17 +215,24 @@ class TutorController:
             "You are Gayatri Chemistry Tutor. Your task is to present ONE single targeted question to test student understanding.\n"
             "Rules:\n"
             "- Ask exactly ONE question.\n"
-            f"- Calibrate difficulty to: {difficulty}.\n"
+            f"- Calibrate difficulty to: {calibrated_difficulty}.\n"
             "- Do NOT reveal the answer, explanation, or solution.\n"
             "- Clearly prompt the student to submit their answer.\n\n"
             f"Ground your question in this curriculum evidence:\n{evidence}"
         )
 
-        user_msg = f"Generate a {difficulty} chemistry question testing understanding of {concept_id}."
-        raw_output = LocalProvider.chat([
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_msg},
-        ], max_tokens=300, temperature=0.3)
+        user_msg = f"Generate a {calibrated_difficulty} chemistry question testing understanding of {concept_id}."
+        if LocalProvider.is_available():
+            try:
+                raw_output = LocalProvider.chat([
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_msg},
+                ], max_tokens=300, temperature=0.3)
+            except Exception as exc:
+                logger.warning(f"LocalProvider chat failed for question: {exc}")
+                raw_output = f"Practice problem ({calibrated_difficulty}): Please analyze the core principles of {concept_id}."
+        else:
+            raw_output = f"Practice problem ({calibrated_difficulty}): Please analyze the core principles of {concept_id}."
 
         mastery = self.student.get_mastery(concept_id)
 
@@ -215,7 +240,7 @@ class TutorController:
             event_type="QUESTION_PRESENTED",
             student_id=self.student.student_id,
             concept_id=concept_id,
-            details={"mode": "QUESTION", "difficulty": difficulty, "mastery": mastery}
+            details={"mode": "QUESTION", "difficulty": calibrated_difficulty, "mastery": mastery}
         )
         self.student.save_to_file()
 
@@ -284,10 +309,17 @@ class TutorController:
             f"Please give a Level {level} hint."
         )
 
-        raw_output = LocalProvider.chat([
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_msg},
-        ], max_tokens=350, temperature=0.2)
+        if LocalProvider.is_available():
+            try:
+                raw_output = LocalProvider.chat([
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_msg},
+                ], max_tokens=350, temperature=0.2)
+            except Exception as exc:
+                logger.warning(f"LocalProvider chat failed for hint: {exc}")
+                raw_output = f"[Hint Level {level}]: {directive}"
+        else:
+            raw_output = f"[Hint Level {level}]: {directive}"
 
         mastery = self.student.get_mastery(concept_id)
 
@@ -321,6 +353,7 @@ class TutorController:
         student_answer: str,
         expected_answer: str = "",
         reference_answer: str = "",
+        question_type: str = "auto",
     ) -> TutorResponse:
         """Section 17: Answer evaluation, misconception detection & mastery updates."""
         self.current_mode = TutorMode.EVALUATE
@@ -335,7 +368,7 @@ class TutorController:
             "question": question,
             "student_answer": student_answer,
             "expected_answer": expected,
-            "question_type": "conceptual",
+            "question_type": question_type,
         })
 
         correctness = eval_result.correctness.upper()  # CORRECT, PARTIALLY_CORRECT, INCORRECT, UNCERTAIN
@@ -386,6 +419,9 @@ class TutorController:
 
         prev_mastery, new_mastery = self.student.update_mastery(concept_id, delta)
 
+        # 4. Update student difficulty level (L1-L5)
+        new_difficulty = self.student.update_difficulty(eval_result)
+
         # Determine next action & feedback message
         if correctness == "CORRECT":
             self.student.active_hint_level = 0
@@ -422,6 +458,7 @@ class TutorController:
                 "previous_mastery": prev_mastery,
                 "new_mastery": new_mastery,
                 "mastery_delta": delta,
+                "difficulty_level": new_difficulty,
                 "next_mode": next_action,
             }
         )
@@ -459,6 +496,7 @@ class TutorController:
                 "previous_mastery": f"{prev_mastery:.0%}",
                 "new_mastery": f"{new_mastery:.0%}",
                 "delta": delta,
+                "difficulty_level": new_difficulty,
                 "repeated_misconception": is_repeated,
             }
         )
@@ -496,10 +534,17 @@ class TutorController:
         )
 
         user_msg = f"Remediate foundational gap: target '{target_concept}', prerequisite '{prereq_concept}'."
-        raw_output = LocalProvider.chat([
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_msg},
-        ], max_tokens=500, temperature=0.2)
+        if LocalProvider.is_available():
+            try:
+                raw_output = LocalProvider.chat([
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_msg},
+                ], max_tokens=500, temperature=0.2)
+            except Exception as exc:
+                logger.warning(f"LocalProvider chat failed for remediation: {exc}")
+                raw_output = f"Reviewing foundational prerequisite '{prereq_concept}' to build confidence before returning to '{target_concept}'."
+        else:
+            raw_output = f"Reviewing foundational prerequisite '{prereq_concept}' to build confidence before returning to '{target_concept}'."
 
         evt = self.event_logger.log_event(
             event_type="REMEDIATION_STARTED",

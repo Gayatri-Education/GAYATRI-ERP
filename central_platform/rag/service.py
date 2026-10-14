@@ -52,17 +52,18 @@ class SmartChunker:
         course_version_id: Optional[str] = None,
         visibility_scope: str = "course",
         class_id: Optional[str] = None,
+        section_index: int = 0,
     ) -> List[RAGChunk]:
         text = section.text.strip()
         if not text or len(text) < self.min_chunk_chars:
             if not text:
                 return []
             # Keep small chunk if meaningful
-            return [self._build_chunk(text, section, source_id, course_id, subject, index=0, course_version_id=course_version_id, visibility_scope=visibility_scope, class_id=class_id)]
+            return [self._build_chunk(text, section, source_id, course_id, subject, index=0, course_version_id=course_version_id, visibility_scope=visibility_scope, class_id=class_id, section_index=section_index)]
 
         # If text is already within reasonable bounds
         if len(text) <= self.target_chunk_chars + self.overlap_chars:
-            return [self._build_chunk(text, section, source_id, course_id, subject, index=0, course_version_id=course_version_id, visibility_scope=visibility_scope, class_id=class_id)]
+            return [self._build_chunk(text, section, source_id, course_id, subject, index=0, course_version_id=course_version_id, visibility_scope=visibility_scope, class_id=class_id, section_index=section_index)]
 
         # Split text into sentences
         sentences = re.split(r"(?<=[.!?])\s+", text)
@@ -75,7 +76,7 @@ class SmartChunker:
             s_len = len(sentence)
             if current_len + s_len > self.target_chunk_chars and current_sentences:
                 chunk_text = " ".join(current_sentences)
-                chunks.append(self._build_chunk(chunk_text, section, source_id, course_id, subject, index=idx, course_version_id=course_version_id, visibility_scope=visibility_scope, class_id=class_id))
+                chunks.append(self._build_chunk(chunk_text, section, source_id, course_id, subject, index=idx, course_version_id=course_version_id, visibility_scope=visibility_scope, class_id=class_id, section_index=section_index))
                 idx += 1
                 # Sliding window overlap
                 overlap_text: List[str] = []
@@ -95,7 +96,7 @@ class SmartChunker:
         if current_sentences:
             chunk_text = " ".join(current_sentences)
             if len(chunk_text) >= self.min_chunk_chars:
-                chunks.append(self._build_chunk(chunk_text, section, source_id, course_id, subject, index=idx, course_version_id=course_version_id, visibility_scope=visibility_scope, class_id=class_id))
+                chunks.append(self._build_chunk(chunk_text, section, source_id, course_id, subject, index=idx, course_version_id=course_version_id, visibility_scope=visibility_scope, class_id=class_id, section_index=section_index))
 
         return chunks
 
@@ -110,11 +111,13 @@ class SmartChunker:
         course_version_id: Optional[str] = None,
         visibility_scope: str = "course",
         class_id: Optional[str] = None,
+        section_index: int = 0,
     ) -> RAGChunk:
         clean = DocumentCleaner.clean(raw_text)
         sanitized, _ = RAGSecuritySanitizer.sanitize_document_text(clean)
 
-        raw_id = f"{source_id}:{section.chapter}:{section.topic}:{section.page}:{index}"
+        text_hash = hashlib.sha256(raw_text.encode("utf-8")).hexdigest()[:8]
+        raw_id = f"{source_id}:{section.chapter}:{section.topic}:{section.page}:{section_index}:{index}:{text_hash}"
         chunk_id = f"chk_{hashlib.sha256(raw_id.encode('utf-8')).hexdigest()[:12]}"
 
         # Deterministic simple embedding representation (term frequency dictionary / vector)
@@ -252,7 +255,7 @@ class RAGService:
 
         # 2. Chunk & Clean
         all_chunks: List[RAGChunk] = []
-        for sec in parsed_sections:
+        for sec_idx, sec in enumerate(parsed_sections):
             chunks = self.chunker.chunk_section(
                 sec,
                 source.id,
@@ -261,6 +264,7 @@ class RAGService:
                 course_version_id=source.course_version_id,
                 visibility_scope=source.visibility_scope,
                 class_id=source.class_id,
+                section_index=sec_idx,
             )
             all_chunks.extend(chunks)
 
@@ -410,6 +414,11 @@ class RAGService:
             if ext in dangerous_exts:
                 raise ValueError(f"Dangerous/executable file extension '{ext}' is prohibited in upload.")
 
+        if course_id:
+            c = self.db.get_course(course_id)
+            if c and (organization_id == "org-default" or not organization_id):
+                organization_id = c.organization_id
+
         sid = f"src_{hashlib.sha256(f'{course_id}:{title}:{version}'.encode()).hexdigest()[:12]}"
         now = datetime.now(timezone.utc).isoformat()
         ct_val = content_type.value if isinstance(content_type, KnowledgeContentType) else str(content_type or "textbook")
@@ -458,7 +467,7 @@ class RAGService:
                 raise ValueError("Document parser returned 0 sections. Verify file format and content.")
 
             all_chunks: List[RAGChunk] = []
-            for sec in parsed_sections:
+            for sec_idx, sec in enumerate(parsed_sections):
                 chunks = self.chunker.chunk_section(
                     sec,
                     source.id,
@@ -467,6 +476,7 @@ class RAGService:
                     course_version_id=course_version_id,
                     visibility_scope=vis_val,
                     class_id=class_id,
+                    section_index=sec_idx,
                 )
                 all_chunks.extend(chunks)
 
@@ -726,9 +736,29 @@ class RAGService:
                 "data_context": "",
             }
 
-        # Score chunks using hybrid TF-IDF lexical overlap + concept match + authority weighting
+        # Score chunks using hybrid lexical + semantic n-gram + concept match + authority weighting (QA-006)
         query_terms = set(re.findall(r"\w+", sanitized_query.lower()))
-        scored_results: List[Tuple[float, RAGChunk]] = []
+        query_text_lower = sanitized_query.lower()
+
+        # Character 3-grams for semantic morphological and spelling variation support
+        def _get_char_ngrams(s: str, n: int = 3) -> Set[str]:
+            clean = re.sub(r"\s+", " ", s.lower().strip())
+            return {clean[i:i+n] for i in range(max(0, len(clean) - n + 1))} if len(clean) >= n else {clean}
+
+        query_ngrams = _get_char_ngrams(query_text_lower)
+
+        # Domain conceptual associations for semantic recall
+        CONCEPT_SYNONYMS = {
+            "equilibrium": {"le chatelier", "reversible", "balance", "dynamic", "reactants", "products", "constant"},
+            "enthalpy": {"heat", "exothermic", "endothermic", "calorimetry", "energy"},
+            "entropy": {"disorder", "randomness", "spontaneity", "second law"},
+            "thermodynamics": {"gibbs", "free energy", "work", "heat", "system", "surroundings"},
+            "kinetics": {"rate", "catalyst", "activation energy", "arrhenius", "order"},
+            "acid": {"base", "ph", "poh", "proton", "hydronium", "neutralization", "buffer"},
+            "gas": {"boyle", "charles", "avogadro", "pressure", "volume", "ideal"},
+        }
+
+        scored_results: List[Tuple[float, RAGChunk, float, float]] = []
 
         for chunk in chunks:
             text_lower = chunk.clean_text.lower()
@@ -739,20 +769,44 @@ class RAGService:
             if overlap:
                 lexical_score = len(overlap) / (math.sqrt(len(query_terms)) * math.sqrt(len(chunk_terms) + 1))
 
+            # Semantic n-gram similarity
+            semantic_score = 0.0
+            chunk_ngrams = _get_char_ngrams(text_lower)
+            if query_ngrams and chunk_ngrams:
+                ngram_overlap = query_ngrams.intersection(chunk_ngrams)
+                if ngram_overlap:
+                    semantic_score = len(ngram_overlap) / (math.sqrt(len(query_ngrams)) * math.sqrt(len(chunk_ngrams) + 1))
+
+            # Conceptual association bonus
+            synonym_bonus = 0.0
+            for core_term, syn_set in CONCEPT_SYNONYMS.items():
+                if core_term in query_terms or any(s in query_text_lower for s in syn_set):
+                    if any(s in text_lower for s in syn_set) or core_term in text_lower:
+                        synonym_bonus = max(synonym_bonus, 0.15)
+            semantic_score = min(1.0, semantic_score + synonym_bonus)
+
+            # Combined hybrid base score
+            if lexical_score > 0 and semantic_score > 0:
+                hybrid_score = 0.60 * lexical_score + 0.40 * semantic_score
+            elif lexical_score > 0:
+                hybrid_score = lexical_score
+            else:
+                hybrid_score = semantic_score * 0.70
+
             # Exact phrase bonus
             if sanitized_query.lower() in text_lower:
-                lexical_score += 0.35
+                hybrid_score += 0.35
 
             # Concept / Chapter / Topic match bonus
             if concept:
                 c_lower = concept.lower()
                 c_clean = c_lower.replace("cpt-", "").replace("cpt_", "")
                 if chunk.concept and (c_lower in chunk.concept.lower() or c_clean in chunk.concept.lower()):
-                    lexical_score += 0.25
+                    hybrid_score += 0.25
                 elif (chunk.chapter and (c_lower in chunk.chapter.lower() or c_clean in chunk.chapter.lower())) or (chunk.topic and (c_lower in chunk.topic.lower() or c_clean in chunk.topic.lower())):
-                    lexical_score += 0.15
+                    hybrid_score += 0.15
 
-            if lexical_score == 0.0:
+            if hybrid_score == 0.0:
                 continue
 
             # Authority weight
@@ -762,11 +816,11 @@ class RAGService:
             elif chunk.provenance_type == "APPROVED_CURRICULUM":
                 authority_multiplier = 1.10
 
-            final_score = min(1.0, round(lexical_score * authority_multiplier, 3))
+            final_score = min(1.0, round(hybrid_score * authority_multiplier, 3))
             if final_score >= confidence_threshold:
-                scored_results.append((final_score, chunk))
+                scored_results.append((final_score, chunk, lexical_score, semantic_score))
 
-        # Sort by score descending
+        # Sort by score descending (reciprocal reranking order)
         scored_results.sort(key=lambda x: x[0], reverse=True)
         top_results = scored_results[:top_k]
 
@@ -782,7 +836,7 @@ class RAGService:
         # Format items and build secure data-framed context
         result_items = []
         evidence_cards = []
-        for score, chunk in top_results:
+        for score, chunk, lex_sc, sem_sc in top_results:
             sec_info = f", sec. {chunk.section}" if chunk.section else ""
             cit = f"{chunk.provenance_type}: {chunk.chapter} (p. {chunk.page}{sec_info})"
             item = {
@@ -796,6 +850,8 @@ class RAGService:
                 "content_type": chunk.content_type,
                 "text": chunk.clean_text,
                 "score": score,
+                "lexical_score": round(lex_sc, 3),
+                "semantic_score": round(sem_sc, 3),
                 "citation": cit,
                 "provenance_type": chunk.provenance_type,
                 "course_version_id": chunk.course_version_id,
@@ -815,68 +871,85 @@ class RAGService:
             "data_context": data_context,
         }
 
-    def _legacy_fallback_query(self, query_text: str, top_k: int) -> Dict[str, Any]:
-        """Fallback to project data/rag JSON files when no published DB sources are present."""
+    def _legacy_fallback_query(self, query_text: str, top_k: int, rag_dir: Optional[Any] = None) -> Dict[str, Any]:
+        """Fallback to project data/rag JSON files when no published DB sources are present (QA-007)."""
         import json
         from pathlib import Path
 
-        project_root = Path(__file__).resolve().parent.parent.parent
-        rag_dir = project_root / "data" / "rag"
+        if rag_dir is None:
+            project_root = Path(__file__).resolve().parent.parent.parent
+            rag_dir = project_root / "data" / "rag"
+        else:
+            rag_dir = Path(rag_dir)
+
         results = []
+        errors = []
 
         if rag_dir.exists():
             for fpath in rag_dir.glob("ncert_*.json"):
                 try:
                     with open(fpath, "r", encoding="utf-8") as f:
                         data = json.load(f)
-                        chunks = data if isinstance(data, list) else (data.get("chunks") or data.get("sections", []))
-                        file_chapter = data.get("chapter", "Chemistry") if isinstance(data, dict) else "Chemistry"
-                        for c in chunks:
-                            text = c.get("text", "")
-                            words = [w for w in query_text.lower().split() if len(w) > 2]
-                            if any(w in text.lower() for w in words):
-                                chk_id = c.get("chunk_id", f"{fpath.stem}_{c.get('page', 100)}")
-                                chapter = c.get("chapter", file_chapter)
-                                topic = c.get("topic", c.get("subtopic", "General"))
-                                page = c.get("page", 100)
-                                cit = f"NCERT: {chapter} (p. {page})"
-                                results.append(
-                                    {
-                                        "chunk_id": chk_id,
-                                        "source_id": "ncert_textbook",
-                                        "chapter": chapter,
-                                        "topic": topic,
-                                        "concept": "",
-                                        "page": page,
-                                        "text": text[:300],
-                                        "score": 0.88,
-                                        "citation": cit,
-                                    }
-                                )
-                                if len(results) >= top_k:
-                                    break
-                except Exception:
+                    chunks = data if isinstance(data, list) else (data.get("chunks") or data.get("sections", []))
+                    file_chapter = data.get("chapter", "Chemistry") if isinstance(data, dict) else "Chemistry"
+                    for c in chunks:
+                        text = c.get("text", "")
+                        words = [w for w in query_text.lower().split() if len(w) > 2]
+                        if any(w in text.lower() for w in words):
+                            chk_id = c.get("chunk_id", f"{fpath.stem}_{c.get('page', 100)}")
+                            chapter = c.get("chapter", file_chapter)
+                            topic = c.get("topic", c.get("subtopic", "General"))
+                            page = c.get("page", 100)
+                            cit = f"NCERT: {chapter} (p. {page})"
+                            results.append(
+                                {
+                                    "chunk_id": chk_id,
+                                    "source_id": "ncert_textbook",
+                                    "chapter": chapter,
+                                    "topic": topic,
+                                    "concept": "",
+                                    "page": page,
+                                    "text": text[:300],
+                                    "score": 0.88,
+                                    "citation": cit,
+                                }
+                            )
+                            if len(results) >= top_k:
+                                break
+                except Exception as exc:
+                    logger.warning("Error reading RAG fallback file %s: %s", fpath.name, exc)
+                    errors.append({
+                        "filename": fpath.name,
+                        "error_category": type(exc).__name__,
+                        "error_message": str(exc),
+                    })
                     continue
                 if len(results) >= top_k:
                     break
 
         if not results:
-            return {
+            ret = {
                 "status": "RAG_EMPTY",
                 "query": query_text,
                 "results": [],
                 "count": 0,
                 "data_context": "",
             }
+            if errors:
+                ret["errors"] = errors
+            return ret
 
         data_context = RAGSecuritySanitizer.build_llm_rag_context(results)
-        return {
+        ret = {
             "status": "RAG_OK",
             "query": query_text,
             "results": results,
             "count": len(results),
             "data_context": data_context,
         }
+        if errors:
+            ret["errors"] = errors
+        return ret
 
     # ── Backward-Compatibility Aliases ────────────────────────────────────────
     def retrieve(self, **kwargs) -> Dict[str, Any]:

@@ -144,7 +144,8 @@ class TestPhase29FinalPlatformAuditMaster:
     # 4. Intelligence Audit
     # -------------------------------------------------------------------------
     def test_audit_intelligence_ai_gateway_and_resilience(self, tmp_path):
-        """Audit 4: Verify AI Gateway model routing, fallback handling, and governance."""
+        """Audit 4: Verify AI Gateway model routing, fallback handling, and provenance transparency (QA-001, QA-002)."""
+        from central_platform.ai.schema import ExecutionProvenance
         db_path = str(tmp_path / "audit_ai.db")
         db = PlatformDatabase(db_path=db_path)
         gateway = AIGatewayService(db=db)
@@ -159,6 +160,10 @@ class TestPhase29FinalPlatformAuditMaster:
         assert res is not None
         assert res.success is True
         assert len(res.content) > 0
+        # Verification that mock/fallback provenance is transparently exposed and does not masquerade as REAL_MODEL
+        assert res.execution_provenance in (ExecutionProvenance.MOCK, ExecutionProvenance.DEGRADED_FALLBACK)
+        assert res.provenance["real_model"] is False
+        assert "execution_provenance" in res.to_dict()
 
     # -------------------------------------------------------------------------
     # 5. UX & API Contract Audit

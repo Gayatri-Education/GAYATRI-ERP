@@ -93,6 +93,13 @@ class StudentAnswerEvaluator:
             clean_text = text.lower()
             qtype = question_type.strip().lower() if question_type else "conceptual"
 
+            # Auto-detect numeric question type when expected_answer is primarily numeric
+            if qtype in ("conceptual", "auto", "") and expected_answer:
+                has_num = bool(re.search(r'[-+]?\d*\.?\d+', expected_answer))
+                long_words = re.findall(r'[a-zA-Z]{4,}', expected_answer)
+                if has_num and not long_words:
+                    qtype = "numeric"
+
             if not clean_text:
                 return EvaluationResult(
                     correctness="uncertain",
@@ -168,15 +175,20 @@ class StudentAnswerEvaluator:
 
             # -- 2. Numeric Evaluator (with Tolerance & Unit Checks) --
             if qtype == "numeric":
-                num_match = re.search(r'[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?', text)
                 exp_match = re.search(r'[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?', expected_answer) if expected_answer else None
+                all_nums = [float(n) for n in re.findall(r'[-+]?\d*\.?\d+(?:[eE][-+]?\d+)?', text)]
 
-                if num_match and exp_match:
-                    user_val = float(num_match.group())
+                if all_nums and exp_match:
                     exp_val = float(exp_match.group())
-
                     allowed_err = max(abs(exp_val * tolerance), tolerance)
-                    is_num_correct = abs(user_val - exp_val) <= allowed_err
+
+                    matching_num = next((val for val in all_nums if abs(val - exp_val) <= allowed_err), None)
+                    if matching_num is not None:
+                        user_val = matching_num
+                        is_num_correct = True
+                    else:
+                        user_val = all_nums[-1]
+                        is_num_correct = False
 
                     # Check units if specified or extractable from expected_answer
                     req_unit = expected_unit.strip().lower()
@@ -211,14 +223,29 @@ class StudentAnswerEvaluator:
                             evidence=[f"Numeric value {user_val} correct, but unit missing or wrong (expected {req_unit})"]
                         )
                     else:
+                        misconception = None
+                        try:
+                            from core.learning.misconceptions import MisconceptionTracker
+                            misconception = MisconceptionTracker.identify_misconception_from_error(
+                                concept_id=concept_id,
+                                student_answer=text,
+                                error_type="arithmetic",
+                            )
+                        except Exception as m_exc:
+                            logger.debug(f"Misconception lookup error: {m_exc}")
+
                         return EvaluationResult(
                             correctness="incorrect",
                             confidence=0.9,
-                            concept_understanding="shaky",
-                            error_type="arithmetic",
+                            concept_understanding="misconception" if misconception else "shaky",
+                            error_type="conceptual" if misconception else "arithmetic",
+                            misconception=misconception,
                             recommended_action="remediate",
                             next_difficulty_change="decrease",
-                            evidence=[f"Numeric value {user_val} outside allowed tolerance of {exp_val}"]
+                            evidence=[
+                                f"Numeric value {user_val} outside allowed tolerance of {exp_val}"
+                                + (f" (Misconception: {misconception})" if misconception else "")
+                            ]
                         )
                 elif not exp_match and not rubric:
                     return EvaluationResult(

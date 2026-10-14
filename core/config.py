@@ -18,6 +18,16 @@ class ExecutionMode(str, Enum):
     CLOUD_ALLOWED = "cloud_allowed" # Cloud providers may be used (explicit opt-in)
 
 
+def get_environment() -> str:
+    """Return active environment ('development', 'test', 'production')."""
+    return (os.environ.get("GAYATRI_ENV") or os.environ.get("APP_ENV") or "development").lower()
+
+
+def is_production() -> bool:
+    """Return True if running in production mode."""
+    return get_environment() == "production"
+
+
 # ── Paths ──────────────────────────────────────────────────────────────
 
 def _data_dir() -> Path:
@@ -63,12 +73,14 @@ for d in (DATA_DIR, MODELS_DIR, RAG_DIR, COURSES_DIR, LOG_DIR, UPLOADS_DIR):
 # 3. MODELS_DIR (%LOCALAPPDATA%/GayatriAI/models/gayatri) — user data dir
 # 4. Downloads folder (convenience auto-detect)
 _PORTABLE_MODEL_DIR: Path = BASE_DIR / "models" / "gayatri"
+_CANONICAL_MODEL_DIR: Path = BASE_DIR / "models"
 _PROJECT_MODEL_DIR: Path = BASE_DIR / "GayatriAI" / "models" / "gayatri"
 _DOWNLOADS_MODEL_DIR: Path = Path.home() / "Downloads"
 
 def _get_model_search_dirs() -> tuple[Path, ...]:
     dirs = [
-        _PORTABLE_MODEL_DIR,      # <install_dir>/models/gayatri/  (primary for installed/portable)
+        _CANONICAL_MODEL_DIR,     # <install_dir>/models/ (canonical release artifact path)
+        _PORTABLE_MODEL_DIR,      # <install_dir>/models/gayatri/  (legacy portable path)
         _PROJECT_MODEL_DIR,       # <install_dir>/GayatriAI/models/gayatri/ (dev layout)
         MODELS_DIR,               # %LOCALAPPDATA%/GayatriAI/models/gayatri/
     ]
@@ -155,6 +167,9 @@ LOCAL_MODEL_GPU_LAYERS: int = -1  # -1 = all layers on GPU if available
 # Model download source (HuggingFace bartowski GGUF — used by download_model in bridge)
 MODEL_HUGGINGFACE_REPO: str = "Qwen/Qwen2.5-0.5B-Instruct-GGUF"
 MODEL_GGUF_FILENAME: str = "qwen2.5-0.5b-instruct-q4_k_m.gguf"
+DEFAULT_MODEL_ID: str = "gayatri-chem-qwen2.5-0.5b-v4"
+DEFAULT_MODEL_NAME: str = "Gayatri-Chemistry-Tutor-0.5B"
+DEFAULT_CHAT_TEMPLATE: str = "chatml"
 
 # Inference defaults
 DEFAULT_TEMPERATURE: float = 0.7

@@ -163,6 +163,18 @@ class LocalProvider:
                     "re-download via the app's Download button."
                 )
 
+            # Section 11 / P0-02: Production Model Integrity Gate
+            from core.config import is_production
+            force_verify = override_params.pop("force_checksum_verify", False)
+            if is_production() or force_verify:
+                from core.model_fetch.manifest_validator import verify_model_manifest
+                result = verify_model_manifest(model_path=model_path)
+                if not result.valid:
+                    raise LocalModelError(
+                        f"Production model integrity gate failure: {result.error} "
+                        f"(model_path={model_path}, expected_sha256={result.expected_sha256}, actual_sha256={result.actual_sha256})"
+                    )
+
             logger.info(f"Loading model: {model_path.name} ({model_path.stat().st_size / 1024 / 1024:.1f} MB)")
             start = time.time()
 
@@ -221,9 +233,9 @@ class LocalProvider:
             return cls._model
 
     @classmethod
-    def health(cls) -> dict:
+    def health(cls, force_checksum_verify: bool = False) -> dict:
         """Return structured health status of the local model without forcing heavy model load."""
-        from core.config import get_active_model_path
+        from core.config import get_active_model_path, is_production
         model_path = get_active_model_path()
         cls.MODEL_PATH = model_path
         part_path = model_path.with_name(model_path.name + ".part")
@@ -268,6 +280,28 @@ class LocalProvider:
                     }
         except Exception:
             logger.debug("Model metadata check skipped (non-critical)", exc_info=True)
+
+        # Section 11 / P0-02: Production Manifest & Checksum Integrity Gate
+        if is_production() or force_checksum_verify:
+            try:
+                from core.model_fetch.manifest_validator import verify_model_manifest
+                result = verify_model_manifest(model_path=model_path)
+                if not result.valid:
+                    return {
+                        "available": False,
+                        "reason_code": "corrupt_file",
+                        "message": f"Model integrity check failed: {result.error}",
+                        "path": str(model_path),
+                        "expected_sha256": result.expected_sha256,
+                        "actual_sha256": result.actual_sha256,
+                    }
+            except Exception as exc:
+                return {
+                    "available": False,
+                    "reason_code": "corrupt_file",
+                    "message": f"Model manifest validation error: {exc}",
+                    "path": str(model_path),
+                }
 
         try:
             import llama_cpp  # noqa: F401
