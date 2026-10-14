@@ -47,10 +47,12 @@ from central_platform.api.routes.agents import router as agents_router
 from central_platform.api.routes.ai import router as ai_router
 from central_platform.api.routes.analytics import router as analytics_router
 from central_platform.api.routes.assessments import router as assessments_router
+from central_platform.api.routes.attendance import router as attendance_router
 from central_platform.api.routes.auth import router as auth_router
 from central_platform.api.routes.classes import router as classes_router
 from central_platform.api.routes.courses import router as courses_router
 from central_platform.api.routes.curricula import router as curricula_router
+from central_platform.api.routes.communications import router as communications_router
 from central_platform.api.routes.enrollments import router as enrollments_router
 from central_platform.api.routes.identity import router as identity_router
 from central_platform.api.routes.instructions import router as instructions_router
@@ -63,6 +65,7 @@ from central_platform.api.routes.sis import router as sis_router
 from central_platform.api.routes.students import router as students_router
 from central_platform.api.routes.sync import router as sync_router
 from central_platform.api.routes.teachers import router as teachers_router
+from central_platform.api.routes.timetable import router as timetable_router
 from central_platform.api.routes.tools import router as tools_router
 from central_platform.api.routes.tutor import router as tutor_router
 from central_platform.api.routes.users import router as users_router
@@ -146,6 +149,9 @@ def create_app() -> FastAPI:
     app.include_router(academic_router, prefix="/api/v1")
     app.include_router(admissions_router, prefix="/api/v1")
     app.include_router(sis_router, prefix="/api/v1")
+    app.include_router(attendance_router, prefix="/api/v1")
+    app.include_router(timetable_router, prefix="/api/v1")
+    app.include_router(communications_router, prefix="/api/v1")
     app.include_router(students_router, prefix="/api/v1")
     app.include_router(teachers_router, prefix="/api/v1")
     app.include_router(admin_router, prefix="/api/v1")
