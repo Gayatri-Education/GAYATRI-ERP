@@ -1,0 +1,176 @@
+{
+  "release_candidate": "1.0.0-rc1",
+  "generated_at": "2026-10-14T19:45:23.924694+00:00",
+  "platform": "Gayatri School OS",
+  "governing_contract": "DEVELOPMENT.md",
+  "git": {
+    "commit_sha": "b4cc04494a33bbb21dcb130511e0fd7ce4ff1eb4",
+    "branch": "main",
+    "clean_working_tree": false
+  },
+  "schema": {
+    "latest_migration": "016_analytics_exports_diagnostics.sql",
+    "total_migration_scripts": 32,
+    "migrations": {
+      "001_initial_schema.sql": {
+        "bytes": 22220,
+        "sha256": "219ec3c1732c770143543dd7b1aeb9b629efa78fc529e2f79dda42402985db9b"
+      },
+      "001_initial_schema_down.sql": {
+        "bytes": 1560,
+        "sha256": "e0d2b95373c3706234d6dee24707176fac9f88f64c822fe51a833faa6ef3397b"
+      },
+      "002_curriculum_abstraction.sql": {
+        "bytes": 259,
+        "sha256": "446a2f1275558faafc39079e034b04da031e3ef97b78495fb53420c65e772bb0"
+      },
+      "002_curriculum_abstraction_down.sql": {
+        "bytes": 340,
+        "sha256": "2d79d15a7f098377b1fda71381a599087095fc5c1db56558f42aaaf44de36519"
+      },
+      "003_fee_management_schema.sql": {
+        "bytes": 6342,
+        "sha256": "fe7d98a73278f5427af23bce644892a9327cfe351cc2c1e32dc0d0fa2f110bf2"
+      },
+      "003_fee_management_schema_down.sql": {
+        "bytes": 267,
+        "sha256": "b8d5101987ec585dbf5d5cbc2fa7584bfa5cd29adbb239c2b1fc1726205ab798"
+      },
+      "004_course_domain_model.sql": {
+        "bytes": 2185,
+        "sha256": "4e51d229bde787dd3470753104ce45207b783ce4d4a3d6e8e4204ddcb0d47f48"
+      },
+      "004_course_domain_model_down.sql": {
+        "bytes": 429,
+        "sha256": "4305ee3290db7adffc750f8d42128477a91bec957827465aaf38c77eed8b7282"
+      },
+      "005_knowledge_assets.sql": {
+        "bytes": 723,
+        "sha256": "bc466ef725834feb57559480ba6fdede36eac7a207470b8aacd9bb3a1bcd4c37"
+      },
+      "005_knowledge_assets_down.sql": {
+        "bytes": 559,
+        "sha256": "650c7b1764568127e546dcbea1f8376f2f3d9e0650e74695967fd9d0fcb090fb"
+      },
+      "006_scoped_rag_authorization.sql": {
+        "bytes": 1242,
+        "sha256": "f25d2870436dc7d6dc0bda3a09df2dfbccef94206e7c41db65305f777a6900c5"
+      },
+      "006_scoped_rag_authorization_down.sql": {
+        "bytes": 793,
+        "sha256": "d6f042c084e0e5422d5ba0b0f79c5a1417b743c47f8b96daa9b44bd10c2a2f6b"
+      },
+      "007_teacher_instruction_hierarchy.sql": {
+        "bytes": 1528,
+        "sha256": "eed1d766f0b219e1f7825cd228275087fddc9abb2691c2645cfae1f946176a83"
+      },
+      "007_teacher_instruction_hierarchy_down.sql": {
+        "bytes": 1515,
+        "sha256": "d86b1493e291e61496cb88e212175f1603f44361f161dee44416b37cba1e8dac"
+      },
+      "008_sync_operations.sql": {
+        "bytes": 731,
+        "sha256": "8e453a1501cfbc1d0eed7517fc20b3b9b6f281ce5d2aede12b36cea171b99a55"
+      },
+      "008_sync_operations_down.sql": {
+        "bytes": 158,
+        "sha256": "4a46dd921237d78efa13be2f066986289d3b016f33f9b015ec8391b2558cfa3e"
+      },
+      "009_shared_identity_and_entitlements.sql": {
+        "bytes": 5473,
+        "sha256": "62d69d7451dbcedceeb22f83acf1a4f6b581c1a3ea62523915c38c50059808de"
+      },
+      "009_shared_identity_and_entitlements_down.sql": {
+        "bytes": 328,
+        "sha256": "a5046ce41a93d7b6c143915da6ab7d0a2e395d9d8507673fe1ea97fb74a39f83"
+      },
+      "010_admissions_and_academic_calendar.sql": {
+        "bytes": 6697,
+        "sha256": "69bd2d7606e9f015002b363a9f54c3f281553913867f203430038143d1b0d615"
+      },
+      "010_admissions_and_academic_calendar_down.sql": {
+        "bytes": 623,
+        "sha256": "c4faaea32506fdea233240006454246cf5e5d81ec962ffd4b2b0b4aef74c7b52"
+      },
+      "011_attendance_timetable_communications.sql": {
+        "bytes": 6248,
+        "sha256": "3ddba61694d0f6cf8e7fff1f70b71796311739a8e6de847e0c2ba51ea55e13ea"
+      },
+      "011_attendance_timetable_communications_down.sql": {
+        "bytes": 633,
+        "sha256": "8dc561a67e27369514ab493e58cdff86bede407bab5c1a98f8e36c5ab32886e9"
+      },
+      "012_examinations_grading_report_cards.sql": {
+        "bytes": 6014,
+        "sha256": "ef488c4529dd27688da18263762259409858ea719d9c5a65481d845ae2898abd"
+      },
+      "012_examinations_grading_report_cards_down.sql": {
+        "bytes": 513,
+        "sha256": "9f67c5f7f3a8442b0b4659b03479e54f6dba9e6293263bf3e0e8b99cc3551d34"
+      },
+      "013_finance_payments_reconciliation.sql": {
+        "bytes": 4050,
+        "sha256": "e4f8740a7ebcf298811b7c31ecfac1318a4b308665b8ada990cd26839e5b1fe9"
+      },
+      "013_finance_payments_reconciliation_down.sql": {
+        "bytes": 447,
+        "sha256": "088868993f1a3d52e8cdf7a06a018fea90016a30d9bdd2ec2182848ae87d902d"
+      },
+      "014_full_erp_expansion.sql": {
+        "bytes": 13591,
+        "sha256": "69a2aafb805477d6a67551f99950926c2485a2b0517b269a6c3c814133e10ef5"
+      },
+      "014_full_erp_expansion_down.sql": {
+        "bytes": 1090,
+        "sha256": "d060f5a29ee9f2e2b9cc84fa7bf2c4dfdef49a3263504886d68fc1e591ba7292"
+      },
+      "015_offline_sync_edge_daemon.sql": {
+        "bytes": 2641,
+        "sha256": "af6b097bcf9df11cd15f3d84dac21a8f9598b5f2f45fcfd9b5ad2461bbf32e7e"
+      },
+      "015_offline_sync_edge_daemon_down.sql": {
+        "bytes": 225,
+        "sha256": "8433d37f416505ed5ba89835d16ba2203249ece9092d1b20525b836ea2beb002"
+      },
+      "016_analytics_exports_diagnostics.sql": {
+        "bytes": 1057,
+        "sha256": "b201c7a284191d8629bf016d50401667ae978152a1583ae2818766cb20a7459e"
+      },
+      "016_analytics_exports_diagnostics_down.sql": {
+        "bytes": 148,
+        "sha256": "966529388867b9ef83726831b7d2aa46bb111867f072da92f71ea8b5fd3d01e1"
+      }
+    }
+  },
+  "core_artifacts": {
+    "central_platform/db.py": {
+      "bytes": 198101,
+      "sha256": "c9df2c55711342d49cf0cab99b3d6e8e5cab6e575ccded07d07269e0db24ad54"
+    },
+    "central_platform/config.py": {
+      "bytes": 12315,
+      "sha256": "62e017323e6693165c42adb2859381f06c5008063bea919d770fb528af489455"
+    },
+    "central_platform/api/app.py": {
+      "bytes": 21485,
+      "sha256": "561e9868621ae86e1506eb28a7fa01a34d136b8ad540472b060a2c4672c2aa36"
+    },
+    "central_platform/ops/release_gate.py": {
+      "bytes": 7950,
+      "sha256": "aae7541c3147987e8976208df3468dfc9c7dce3c5946ab3eac74e9103327ed08"
+    },
+    "central_platform/ops/diagnostics.py": {
+      "bytes": 5801,
+      "sha256": "5a0f0a8cfa79d6998b64a676499b3536c0019643fc2b8889cb2aa9929f1f6810"
+    },
+    "central_platform/analytics/institutional.py": {
+      "bytes": 10259,
+      "sha256": "aefe3cef73bf874c1b6bd94c172d514b79099bd4106ec3adc43c742b56d6d398"
+    },
+    "central_platform/analytics/exports.py": {
+      "bytes": 6991,
+      "sha256": "c49750abecaac0d3b3120e6c6cd28a51af9262004c854cdce1210965db6fd84b"
+    }
+  },
+  "manifest_sha256": "f16398415fe7f2095ef64bc177f9026ba6021465d86fb61c4ac30b994f92c13f"
+}

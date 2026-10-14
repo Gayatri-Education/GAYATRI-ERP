@@ -28,6 +28,27 @@ def _now_iso() -> str:
 class PlatformDiagnosticsService:
     """Produces verified, redacted system health diagnostic packages."""
 
+    @staticmethod
+    def scrub_secrets(payload: Any) -> Any:
+        """Recursively redact sensitive keys from dictionaries or lists."""
+        sensitive_keys = {
+            "password", "secret", "token", "key", "authorization",
+            "database_url", "secret_hash", "jwt_secret", "encryption_key"
+        }
+        if isinstance(payload, dict):
+            clean = {}
+            for k, v in payload.items():
+                if any(sk in k.lower() for sk in sensitive_keys):
+                    clean[k] = "[REDACTED]"
+                else:
+                    clean[k] = PlatformDiagnosticsService.scrub_secrets(v)
+            return clean
+        elif isinstance(payload, list):
+            return [PlatformDiagnosticsService.scrub_secrets(item) for item in payload]
+        return payload
+
+    _scrub_secrets = scrub_secrets
+
     def __init__(self, db: PlatformDatabase):
         self.db = db
 
