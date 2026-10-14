@@ -8,6 +8,7 @@ Thread-safe for single-user desktop use.
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -34,7 +35,7 @@ class Conversation:
     """
     session_id: str
     mode: str = "general_assistant"
-    user_id: str = "local_user_1"
+    user_id: str = field(default_factory=lambda: os.environ.get("GAYATRI_USER_ID", "local_learner"))
     max_messages: int = 20
     max_history: int = 5000
     _messages: list[Message] = field(default_factory=list, repr=False)

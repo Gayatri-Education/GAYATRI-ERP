@@ -28,6 +28,7 @@ from central_platform.ai.schema import (
     AIExecutionRequest,
     AIExecutionResult,
     AIModelDescriptor,
+    ExecutionProvenance,
     ModelExecutionStatus,
     ModelTier,
     ProviderConfig,
@@ -243,6 +244,7 @@ class AIGatewayService:
                     error_class="MockInProductionProhibited",
                     error_message="Mock engine is strictly prohibited in production mode (F-011, F-012). Cannot request mock provider or model.",
                     mock=False,
+                    execution_provenance=ExecutionProvenance.FAILED,
                 )
                 self._log_execution(fail_res, request)
                 return fail_res
@@ -276,6 +278,7 @@ class AIGatewayService:
                     error_class="MockInProductionProhibited",
                     error_message="Mock engine is strictly prohibited in production mode (F-011, F-012). No eligible production providers.",
                     mock=False,
+                    execution_provenance=ExecutionProvenance.FAILED,
                 )
                 self._log_execution(fail_res, request)
                 return fail_res
@@ -320,6 +323,7 @@ class AIGatewayService:
                         error_class="PolicyViolation",
                         error_message=reason,
                         mock=getattr(adapter, "mock", False) if hasattr(adapter, "mock") else (p_config.provider_type == ProviderType.MOCK),
+                        execution_provenance=ExecutionProvenance.FAILED,
                     )
                 last_error = reason
                 last_error_status = ModelExecutionStatus.MODEL_UNAVAILABLE
@@ -362,6 +366,7 @@ class AIGatewayService:
             error_class=last_error_class,
             error_message=f"All configured providers failed. Last error: {last_error}",
             mock=False,
+            execution_provenance=ExecutionProvenance.FAILED,
         )
         self._log_execution(fail_res, request)
         return fail_res

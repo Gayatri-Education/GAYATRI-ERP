@@ -24,6 +24,7 @@ from central_platform.ai.schema import (
     AIExecutionRequest,
     AIExecutionResult,
     AIModelDescriptor,
+    ExecutionProvenance,
     ModelExecutionStatus,
     ProviderConfig,
     ProviderType,
@@ -335,6 +336,7 @@ class MockAIAdapter(BaseAIProviderAdapter):
                 error_class="MockInProductionProhibited",
                 error_message="Mock engine is strictly prohibited in production mode (F-011, F-012)",
                 mock=True,
+                execution_provenance=ExecutionProvenance.FAILED,
             )
 
         t0 = time.perf_counter()
@@ -365,6 +367,7 @@ class MockAIAdapter(BaseAIProviderAdapter):
             success=True,
             status=ModelExecutionStatus.MODEL_SUCCESS,
             mock=True,
+            execution_provenance=ExecutionProvenance.MOCK,
         )
 
 
@@ -398,6 +401,7 @@ class LocalGGUFAdapter(BaseAIProviderAdapter):
                         error_class=err_cls,
                         error_message=health.get("message", "Local GGUF model is unavailable"),
                         mock=False,
+                        execution_provenance=ExecutionProvenance.FAILED,
                     )
 
             if LocalProvider.is_available():
@@ -432,6 +436,7 @@ class LocalGGUFAdapter(BaseAIProviderAdapter):
                         success=True,
                         status=ModelExecutionStatus.MODEL_SUCCESS,
                         mock=False,
+                        execution_provenance=ExecutionProvenance.REAL_MODEL,
                     )
                 elif is_production_mode():
                     return AIExecutionResult(
@@ -444,6 +449,7 @@ class LocalGGUFAdapter(BaseAIProviderAdapter):
                         error_class="EmptyResponseError",
                         error_message="Local GGUF model generated an empty response.",
                         mock=False,
+                        execution_provenance=ExecutionProvenance.FAILED,
                     )
         except Exception as exc:
             logger.debug("LocalProvider inference failed or unavailable: %s", exc)
@@ -460,6 +466,7 @@ class LocalGGUFAdapter(BaseAIProviderAdapter):
                     error_class=err_cls,
                     error_message=f"Local GGUF inference failed: {exc}",
                     mock=False,
+                    execution_provenance=ExecutionProvenance.FAILED,
                 )
 
         if is_production_mode():
@@ -473,6 +480,7 @@ class LocalGGUFAdapter(BaseAIProviderAdapter):
                 error_class="LocalModelUnavailable",
                 error_message="Local GGUF model is not available or failed inference in production mode",
                 mock=False,
+                execution_provenance=ExecutionProvenance.FAILED,
             )
 
         content = generate_dynamic_pedagogical_content(request, model_desc)
@@ -493,6 +501,8 @@ class LocalGGUFAdapter(BaseAIProviderAdapter):
             success=True,
             status=ModelExecutionStatus.MODEL_SUCCESS,
             mock=True,
+            fallback_used=True,
+            execution_provenance=ExecutionProvenance.DEGRADED_FALLBACK,
         )
 
 
@@ -539,6 +549,7 @@ class OpenAICompatibleAdapter(BaseAIProviderAdapter):
                 error_class="MissingAPIKeyError",
                 error_message=f"Missing API key for provider '{self.config.provider_name}'",
                 mock=False,
+                execution_provenance=ExecutionProvenance.FAILED,
             )
 
         t0 = time.perf_counter()
@@ -578,6 +589,7 @@ class OpenAICompatibleAdapter(BaseAIProviderAdapter):
                         error_class="MalformedResponseError",
                         error_message="Provider response missing or invalid 'choices' list.",
                         mock=False,
+                        execution_provenance=ExecutionProvenance.FAILED,
                     )
                 choice = choices[0]
                 message = choice.get("message") if isinstance(choice, dict) else None
@@ -593,6 +605,7 @@ class OpenAICompatibleAdapter(BaseAIProviderAdapter):
                         error_class="EmptyResponseError",
                         error_message="Provider returned an empty response.",
                         mock=False,
+                        execution_provenance=ExecutionProvenance.FAILED,
                     )
                 content = str(content)
                 usage = resp_data.get("usage", {})
@@ -617,6 +630,7 @@ class OpenAICompatibleAdapter(BaseAIProviderAdapter):
                     success=True,
                     status=ModelExecutionStatus.MODEL_SUCCESS,
                     mock=False,
+                    execution_provenance=ExecutionProvenance.REAL_MODEL,
                 )
         except Exception as err:
             st, err_cls, err_msg = map_exception_to_error_status(err)
@@ -631,6 +645,7 @@ class OpenAICompatibleAdapter(BaseAIProviderAdapter):
                 error_class=err_cls,
                 error_message=err_msg,
                 mock=False,
+                execution_provenance=ExecutionProvenance.FAILED,
             )
 
 
@@ -658,6 +673,7 @@ class AnthropicAdapter(BaseAIProviderAdapter):
                 error_class="MissingAPIKeyError",
                 error_message=f"Missing API key for provider '{self.config.provider_name}'",
                 mock=False,
+                execution_provenance=ExecutionProvenance.FAILED,
             )
 
         t0 = time.perf_counter()
@@ -696,6 +712,7 @@ class AnthropicAdapter(BaseAIProviderAdapter):
                         error_message="Provider response missing or invalid 'content' block list.",
                         latency_ms=round((time.perf_counter() - t0) * 1000.0, 2),
                         mock=False,
+                        execution_provenance=ExecutionProvenance.FAILED,
                     )
                 first_block = content_blocks[0] if isinstance(content_blocks[0], dict) else {}
                 content = first_block.get("text")
@@ -711,6 +728,7 @@ class AnthropicAdapter(BaseAIProviderAdapter):
                         error_message="Provider returned an empty response.",
                         latency_ms=round((time.perf_counter() - t0) * 1000.0, 2),
                         mock=False,
+                        execution_provenance=ExecutionProvenance.FAILED,
                     )
                 content = str(content)
                 usage = resp_data.get("usage", {})
@@ -733,6 +751,7 @@ class AnthropicAdapter(BaseAIProviderAdapter):
                     success=True,
                     status=ModelExecutionStatus.MODEL_SUCCESS,
                     mock=False,
+                    execution_provenance=ExecutionProvenance.REAL_MODEL,
                 )
         except Exception as e:
             st, err_cls, err_msg = map_exception_to_error_status(e)
@@ -748,6 +767,7 @@ class AnthropicAdapter(BaseAIProviderAdapter):
                 error_message=err_msg,
                 latency_ms=round((time.perf_counter() - t0) * 1000.0, 2),
                 mock=False,
+                execution_provenance=ExecutionProvenance.FAILED,
             )
 
 
@@ -770,6 +790,7 @@ class GeminiAdapter(BaseAIProviderAdapter):
                 error_class="MissingAPIKeyError",
                 error_message=f"Missing API key for provider '{self.config.provider_name}'",
                 mock=False,
+                execution_provenance=ExecutionProvenance.FAILED,
             )
 
         t0 = time.perf_counter()
@@ -802,6 +823,7 @@ class GeminiAdapter(BaseAIProviderAdapter):
                         error_message="Provider returned no candidates (blocked or empty).",
                         latency_ms=round((time.perf_counter() - t0) * 1000.0, 2),
                         mock=False,
+                        execution_provenance=ExecutionProvenance.FAILED,
                     )
                 candidate = candidates[0] if isinstance(candidates[0], dict) else {}
                 content_obj = candidate.get("content", {})
@@ -820,6 +842,7 @@ class GeminiAdapter(BaseAIProviderAdapter):
                         error_message="Provider returned an empty response.",
                         latency_ms=round((time.perf_counter() - t0) * 1000.0, 2),
                         mock=False,
+                        execution_provenance=ExecutionProvenance.FAILED,
                     )
                 content = str(content)
                 prompt_tokens = max(1, int(len(request.prompt.split()) * 1.33))
@@ -841,6 +864,7 @@ class GeminiAdapter(BaseAIProviderAdapter):
                     success=True,
                     status=ModelExecutionStatus.MODEL_SUCCESS,
                     mock=False,
+                    execution_provenance=ExecutionProvenance.REAL_MODEL,
                 )
         except Exception as e:
             st, err_cls, err_msg = map_exception_to_error_status(e)
@@ -856,6 +880,7 @@ class GeminiAdapter(BaseAIProviderAdapter):
                 error_message=err_msg,
                 latency_ms=round((time.perf_counter() - t0) * 1000.0, 2),
                 mock=False,
+                execution_provenance=ExecutionProvenance.FAILED,
             )
 
 

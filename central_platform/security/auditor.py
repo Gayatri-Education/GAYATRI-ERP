@@ -27,7 +27,9 @@ Enforces Master Plan Section 31 requirements across all 21 threat vectors:
 from __future__ import annotations
 
 import os
+from pathlib import Path
 import re
+import threading
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -35,6 +37,93 @@ from typing import Any, Dict, List, Optional, Set, Union
 
 from central_platform.auth.tokens import decode_and_verify_token, is_token_revoked
 from central_platform.models.schema import User, UserRole
+
+
+class RateLimitBackend:
+    """Abstract contract for sliding window rate limiting across deployment tiers (QA-009)."""
+
+    def is_allowed(self, key: str, limit: Optional[int] = None, window_seconds: float = 60.0) -> bool:
+        raise NotImplementedError
+
+    def get_status(self, key: str, limit: Optional[int] = None, window_seconds: float = 60.0, record: bool = False) -> Dict[str, Any]:
+        raise NotImplementedError
+
+
+class InMemoryRateLimiterBackend(RateLimitBackend):
+    """In-memory sliding window rate limiter for single-process / desktop environments.
+
+    Concurrency Guarantee:
+        Guarantees strict sliding-window enforcement within the local Python process.
+        Thread-safe using internal RLock. For multi-worker cluster deployments, use
+        SharedRateLimiterBackend or an external distributed cache backend.
+    """
+
+    def __init__(self, rate_limit_per_minute: int = 60):
+        self.default_limit = rate_limit_per_minute
+        self._timestamps: Dict[str, List[float]] = {}
+        self._lock = threading.RLock()
+
+    def is_allowed(self, key: str, limit: Optional[int] = None, window_seconds: float = 60.0) -> bool:
+        status = self.get_status(key, limit=limit, window_seconds=window_seconds, record=True)
+        return status["allowed"]
+
+    def get_status(self, key: str, limit: Optional[int] = None, window_seconds: float = 60.0, record: bool = False) -> Dict[str, Any]:
+        lim = limit or self.default_limit
+        now = time.time()
+        cutoff = now - window_seconds
+
+        with self._lock:
+            timestamps = self._timestamps.setdefault(key, [])
+            valid_timestamps = [t for t in timestamps if t > cutoff]
+            self._timestamps[key] = valid_timestamps
+
+            allowed = len(valid_timestamps) < lim
+            if allowed and record:
+                valid_timestamps.append(now)
+
+            remaining = max(0, lim - len(valid_timestamps))
+            reset_seconds = max(0.0, valid_timestamps[0] + window_seconds - now) if valid_timestamps else 0.0
+
+            return {
+                "allowed": allowed,
+                "current_count": len(valid_timestamps),
+                "limit": lim,
+                "remaining": remaining,
+                "reset_seconds": round(reset_seconds, 2),
+                "backend": "in_memory_sliding_window",
+                "guarantee": "process_local",
+            }
+
+
+class SharedRateLimiterBackend(RateLimitBackend):
+    """Shared/Distributed rate limiter contract for multi-worker production deployments.
+
+    Concurrency Guarantee:
+        Supports multi-worker processes (e.g. Gunicorn / Uvicorn worker pools).
+        When an external store (such as Redis or centralized platform state) is configured,
+        rate limits are coordinated globally across all workers.
+    """
+
+    def __init__(self, rate_limit_per_minute: int = 60, shared_store: Optional[Any] = None):
+        self.default_limit = rate_limit_per_minute
+        self.shared_store = shared_store
+        self._fallback = InMemoryRateLimiterBackend(rate_limit_per_minute=rate_limit_per_minute)
+
+    def is_allowed(self, key: str, limit: Optional[int] = None, window_seconds: float = 60.0) -> bool:
+        if self.shared_store is not None and hasattr(self.shared_store, "is_allowed"):
+            return self.shared_store.is_allowed(key, limit or self.default_limit, window_seconds)
+        return self._fallback.is_allowed(key, limit, window_seconds)
+
+    def get_status(self, key: str, limit: Optional[int] = None, window_seconds: float = 60.0, record: bool = False) -> Dict[str, Any]:
+        if self.shared_store is not None and hasattr(self.shared_store, "get_status"):
+            res = self.shared_store.get_status(key, limit or self.default_limit, window_seconds, record=record)
+            res["backend"] = "shared_distributed"
+            res["guarantee"] = "cluster_wide"
+            return res
+        res = self._fallback.get_status(key, limit, window_seconds, record=record)
+        res["backend"] = "shared_fallback_in_memory"
+        res["guarantee"] = "process_local_fallback"
+        return res
 
 
 @dataclass
@@ -73,7 +162,7 @@ class SecurityAuditor:
         (re.compile(r"AIza[0-9A-Za-z-_]{20,40}"), "GOOGLE_API_KEY"),
         (re.compile(r"sk-[a-zA-Z0-9]{20,48}"), "OPENAI_API_KEY"),
         (re.compile(r"ghp_[a-zA-Z0-9]{36}"), "GITHUB_TOKEN"),
-        (re.compile(r"(password|passwd|secret|token)\s*=\s*['\"][^'\"]+['\"]", re.IGNORECASE), "CREDENTIAL_ASSIGNMENT"),
+        (re.compile(r"(password|passwd|secret|token)\s*=\s*(?:['\"][^'\"]+['\"]|[^\s,;]+)", re.IGNORECASE), "CREDENTIAL_ASSIGNMENT"),
         (re.compile(r"Bearer\s+[A-Za-z0-9-_=]+\.[A-Za-z0-9-_=]+\.?[A-Za-z0-9-_.+/=]*", re.IGNORECASE), "BEARER_TOKEN"),
     ]
 
@@ -97,26 +186,31 @@ class SecurityAuditor:
     ALLOWED_FILE_EXTENSIONS: Set[str] = {".pdf", ".png", ".jpg", ".jpeg", ".txt", ".json", ".md", ".csv"}
     DANGEROUS_EXTENSIONS: Set[str] = {".exe", ".bat", ".sh", ".cmd", ".vbs", ".js", ".php", ".py", ".dll", ".so"}
 
-    def __init__(self, rate_limit_per_minute: int = 60):
+    def __init__(
+        self,
+        rate_limit_per_minute: int = 60,
+        rate_limit_backend: Optional[RateLimitBackend] = None,
+    ):
+        if rate_limit_backend is not None and hasattr(rate_limit_backend, "default_limit") and rate_limit_per_minute == 60:
+            rate_limit_per_minute = rate_limit_backend.default_limit
         self.rate_limit_per_minute = rate_limit_per_minute
-        self._user_request_timestamps: Dict[str, List[float]] = {}
+        self.rate_limit_backend = rate_limit_backend or InMemoryRateLimiterBackend(
+            rate_limit_per_minute=rate_limit_per_minute
+        )
 
-    # ── Rate Limiting ─────────────────────────────────────────────────────────
+    # ── Rate Limiting (QA-009) ────────────────────────────────────────────────
 
     def check_rate_limit(self, user_id: str, max_requests: Optional[int] = None) -> bool:
-        """Sliding window rate limiter."""
-        limit = max_requests or self.rate_limit_per_minute
-        now = time.time()
-        timestamps = self._user_request_timestamps.setdefault(user_id, [])
-        cutoff = now - 60.0
-        valid_timestamps = [t for t in timestamps if t > cutoff]
-        self._user_request_timestamps[user_id] = valid_timestamps
+        """Sliding window rate limiter enforcing request throttling."""
+        return self.rate_limit_backend.is_allowed(user_id, limit=max_requests or self.rate_limit_per_minute)
 
-        if len(valid_timestamps) >= limit:
-            return False
-
-        valid_timestamps.append(now)
-        return True
+    def check_rate_limit_detailed(
+        self, user_id: str, max_requests: Optional[int] = None
+    ) -> Dict[str, Any]:
+        """Sliding window rate limit status with diagnostic telemetry."""
+        return self.rate_limit_backend.get_status(
+            user_id, limit=max_requests or self.rate_limit_per_minute, record=True
+        )
 
     # ── Prompt Injection & Safety ─────────────────────────────────────────────
 
@@ -197,16 +291,37 @@ class SecurityAuditor:
             threat_category="FILE_UPLOAD_ABUSE" if violations else None,
         )
 
-    def sanitize_path(self, base_dir: str, requested_path: str) -> Optional[str]:
-        """Safely resolve requested path ensuring it stays strictly within base directory."""
-        # Normalize paths
-        base_abs = os.path.abspath(base_dir)
-        target_abs = os.path.abspath(os.path.join(base_dir, requested_path))
-        
-        # Check if target path starts with base directory
-        if not target_abs.startswith(base_abs):
+    def sanitize_path(
+        self, base_dir: Union[str, Path], requested_path: Union[str, Path]
+    ) -> Optional[str]:
+        """Safely resolve requested path ensuring it stays strictly within base directory (QA-008).
+
+        Uses canonical path comparison via pathlib.Path.resolve() and relative_to() to prevent:
+        - Prefix containment collisions (e.g. /data/uploads_evil against /data/uploads)
+        - Directory traversal escapes (../)
+        - Absolute path overrides (/etc/passwd, C:\\Windows)
+        - Null bytes and malformed characters
+        """
+        if not base_dir or not requested_path:
             return None
-        return target_abs
+
+        req_str = str(requested_path)
+        if "\x00" in req_str:
+            return None
+
+        try:
+            base = Path(base_dir).resolve()
+            p_req = Path(req_str)
+            if p_req.is_absolute():
+                target = p_req.resolve()
+            else:
+                target = (base / p_req).resolve()
+
+            # Enforce that target is strictly equal to base or a subpath within base
+            target.relative_to(base)
+            return str(target)
+        except (ValueError, RuntimeError, OSError):
+            return None
 
     # ── Tenant & IDOR Isolation ───────────────────────────────────────────────
 

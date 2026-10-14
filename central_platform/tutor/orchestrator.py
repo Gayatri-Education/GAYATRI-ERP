@@ -229,13 +229,6 @@ class GenericTutorOrchestrator:
         # ── 5. Learning State Resolution (Partitioned by course) ───────────
         canonical_state = self.learning_state.get_canonical_state(req.student_id, req.course_id)
 
-        target_concept = req.concept_id
-        if not target_concept:
-            if canonical_state.slr and getattr(canonical_state.slr, "active_concept_id", None):
-                target_concept = canonical_state.slr.active_concept_id
-            else:
-                target_concept = f"{req.course_id}_foundations"
-
         # Enforce user existence for relational integrity (Phase 2 / F-003: No auto-creation)
         if not self.db.get_user(req.student_id):
             raise EnrollmentError(
@@ -248,7 +241,17 @@ class GenericTutorOrchestrator:
                 raise EnrollmentError(f"Session '{req.session_id}' belongs to another student.")
             if existing_session.course_id != req.course_id:
                 raise ValueError(f"Session '{req.session_id}' belongs to course '{existing_session.course_id}', not '{req.course_id}'.")
-        else:
+
+        target_concept = req.concept_id
+        if not target_concept:
+            if existing_session and existing_session.concept_id:
+                target_concept = existing_session.concept_id
+            elif canonical_state.slr and getattr(canonical_state.slr, "active_concept_id", None):
+                target_concept = canonical_state.slr.active_concept_id
+            else:
+                target_concept = f"{req.course_id}_foundations"
+
+        if not existing_session:
             self.db.create_session(
                 Session(
                     id=req.session_id,
@@ -260,6 +263,9 @@ class GenericTutorOrchestrator:
                     class_id=class_id,
                 )
             )
+        elif req.concept_id and req.concept_id != existing_session.concept_id:
+            existing_session.concept_id = target_concept
+            self.db.create_session(existing_session)
 
         mastery_info = canonical_state.mastery.get(target_concept)
         current_mastery = mastery_info.score if mastery_info else 0.50
@@ -340,6 +346,20 @@ class GenericTutorOrchestrator:
 
         try:
             # ── 10. 7-Layer Context Assembly ──────────────────────────────────
+            effective_history = list(req.conversation_history or [])
+            if not effective_history and req.session_id:
+                try:
+                    past_events = self.db.get_learning_events_for_session(req.session_id)
+                    for ev in past_events:
+                        if ev.event_type == "TUTOR_TURN_COMPLETED" and isinstance(ev.payload, dict):
+                            q = ev.payload.get("student_message") or ev.payload.get("query")
+                            a = ev.payload.get("response_text") or ev.payload.get("response")
+                            if q and a:
+                                effective_history.append({"role": "user", "content": q})
+                                effective_history.append({"role": "assistant", "content": a})
+                except Exception as exc:
+                    logger.warning(f"Could not load session conversation history: {exc}")
+
             assembled_context = self.context_builder.build_context(
                 query=clean_message,
                 student_id=req.student_id,
@@ -349,7 +369,7 @@ class GenericTutorOrchestrator:
                 session_id=req.session_id,
                 course_version_id=version_id,
                 organization_id=course.organization_id,
-                conversation_history=req.conversation_history,
+                conversation_history=effective_history,
                 instructions=instructions,
                 rag_results=raw_rag_results,
             )
@@ -368,19 +388,52 @@ class GenericTutorOrchestrator:
 
             # ── 11. Pedagogy Response Planning ────────────────────────────────
             structured_interp = self.query_engine.fallback_interpret(clean_message)
+            intent = structured_interp.intent
+            msg_lower = clean_message.lower()
+
+            if intent in ("summary", "revision") or any(w in msg_lower for w in ["summarize", "summary", "recap", "wrap up", "in short"]):
+                ped_action = NextActionType.REVIEW
+                rec_mode = "SUMMARY"
+                reason = "Student requested summary / review of concept."
+            elif intent in ("challenge",) or any(w in msg_lower for w in ["harder", "difficult", "challenging"]):
+                ped_action = NextActionType.CHALLENGE
+                rec_mode = "CHALLENGE"
+                reason = "Student requested a harder challenge problem."
+            elif intent in ("clarification", "remediation") or any(w in msg_lower for w in ["don't understand", "dont understand", "still don't", "confused", "unclear"]):
+                ped_action = NextActionType.REMEDIATE if canonical_state.misconceptions else NextActionType.EXPLAIN
+                rec_mode = "REMEDIATE" if canonical_state.misconceptions else "EXPLAIN"
+                reason = "Student expressed confusion / requested clarification."
+            elif intent in ("hint",) or any(w in msg_lower for w in ["hint", "give me a hint", "clue"]):
+                ped_action = NextActionType.HINT
+                rec_mode = "QUESTION"
+                reason = "Student requested a progressive hint."
+            elif intent in ("answer_check",) or any(w in msg_lower for w in ["equals", "equal to", "is it", "my answer"]):
+                ped_action = NextActionType.CONTINUE
+                rec_mode = "QUESTION"
+                reason = "Student provided an answer to check."
+            elif current_mastery < 0.6:
+                ped_action = NextActionType.EXPLAIN
+                rec_mode = "EXPLAIN"
+                reason = f"Concept mastery is foundational ({current_mastery:.2f})."
+            else:
+                ped_action = NextActionType.PRACTICE
+                rec_mode = "QUESTION"
+                reason = f"Concept mastery is developing ({current_mastery:.2f})."
+
             action_decision = NextActionDecision(
-                action=NextActionType.EXPLAIN if current_mastery < 0.6 else NextActionType.PRACTICE,
+                action=ped_action,
                 target_concept_id=target_concept,
                 target_concept_name=target_concept,
-                recommended_mode="EXPLAIN" if current_mastery < 0.6 else "QUESTION",
-                reason=f"Mastery is {current_mastery:.2f}",
+                recommended_mode=rec_mode,
+                reason=reason,
             )
             response_plan = self.planner_engine.create_deterministic_plan(
                 interpretation=structured_interp,
                 action_decision=action_decision,
                 assembled_context=assembled_context,
             )
-            response_plan.anti_answer_leakage_guard = True
+            if course_policy and getattr(course_policy, "anti_answer_leakage", True):
+                response_plan.anti_answer_leakage_guard = True
 
             # ── 12. AI Gateway Execution ──────────────────────────────────────
             ai_req = AIExecutionRequest(
@@ -471,6 +524,10 @@ class GenericTutorOrchestrator:
                 payload={
                     "course_id": req.course_id,
                     "version_id": version_id,
+                    "student_message": clean_message,
+                    "query": clean_message,
+                    "response_text": generated_text,
+                    "response": generated_text,
                     "val_valid": val_result.is_valid,
                     "latency_ms": ai_res.latency_ms,
                     "pedagogical_action": action_decision.action.value,

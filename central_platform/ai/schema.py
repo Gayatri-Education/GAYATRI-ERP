@@ -55,6 +55,15 @@ class ModelExecutionStatus(str, Enum):
     MODEL_INVALID_RESPONSE = "MODEL_INVALID_RESPONSE"
 
 
+class ExecutionProvenance(str, Enum):
+    """Explicit AI execution provenance status (QA-001, QA-002)."""
+    REAL_MODEL = "REAL_MODEL"
+    MOCK = "MOCK"
+    DEGRADED_FALLBACK = "DEGRADED_FALLBACK"
+    FAILED = "FAILED"
+
+
+
 
 @dataclass
 class AIModelDescriptor:
@@ -160,14 +169,22 @@ class AIExecutionResult:
     status: ModelExecutionStatus = ModelExecutionStatus.MODEL_SUCCESS
     mock: bool = False
     cached: bool = False
+    execution_provenance: ExecutionProvenance = ExecutionProvenance.MOCK
 
     def to_dict(self) -> Dict[str, Any]:
+        prov_val = (
+            self.execution_provenance.value
+            if isinstance(self.execution_provenance, ExecutionProvenance)
+            else str(self.execution_provenance)
+        )
         return {
             "request_id": self.request_id,
             "content": self.content,
             "provider": self.provider,
             "model": self.model,
             "mock": self.mock,
+            "execution_provenance": prov_val,
+            "real_model": prov_val == ExecutionProvenance.REAL_MODEL.value,
             "status": self.status.value if isinstance(self.status, ModelExecutionStatus) else str(self.status),
             "prompt_tokens": self.prompt_tokens,
             "completion_tokens": self.completion_tokens,
@@ -184,12 +201,19 @@ class AIExecutionResult:
 
     @property
     def provenance(self) -> Dict[str, Any]:
-        """Machine-readable provenance record (F-014)."""
+        """Machine-readable provenance record (F-014 / QA-001)."""
+        prov_val = (
+            self.execution_provenance.value
+            if isinstance(self.execution_provenance, ExecutionProvenance)
+            else str(self.execution_provenance)
+        )
         return {
             "provider": self.provider,
             "model": self.model,
             "mock": self.mock,
             "status": self.status.value if isinstance(self.status, ModelExecutionStatus) else str(self.status),
+            "execution_provenance": prov_val,
+            "real_model": prov_val == ExecutionProvenance.REAL_MODEL.value,
         }
 
 

@@ -124,7 +124,7 @@ INTENT_RULES: list[tuple[QueryIntent, re.Pattern]] = [
     # 4. Assessment Modes
     (QueryIntent.QUIZ, re.compile(r"\b(quiz|quiz\s+me|quick\s+quiz|mini\s+quiz|test\s+my\s+knowledge)\b", re.I)),
     (QueryIntent.EXAM, re.compile(r"\b(exam|exam\s+mode|mock\s+exam|mock\s+test|final\s+exam|exam\s+simulation|full\s+assessment)\b", re.I)),
-    (QueryIntent.PRACTICE, re.compile(r"\b(practice|practice\s+(question|problem|exercise)|want\s+to\s+practice|provide\s+a?\s*practice)\b", re.I)),
+    (QueryIntent.PRACTICE, re.compile(r"\b(practice|practice\s+(question|problem|exercise)|want\s+to\s+practice|provide\s+a?\s*practice|(harder|more\s+difficult|challenging)\s+(example|problem|question))\b", re.I)),
 
     # 5. Core Subject Queries
     (QueryIntent.DERIVATION, re.compile(r"\b(derive|derivation|prove\s+that|show\s+that)\b", re.I)),
@@ -140,7 +140,7 @@ INTENT_RULES: list[tuple[QueryIntent, re.Pattern]] = [
     (QueryIntent.FOLLOW_UP, re.compile(r"\b(why\s+is\s+it|and\s+then\?|what\s+about\s+in|why\s+did\s+work\s+become|can\s+you\s+explain\s+that\s+further|can\s+you\s+give\s+another\s+example|what\s+is\s+the\s+formula\s+for\s+it|how\s+do\s+i\s+solve\s+it|is\s+that\s+always\s+true|what\s+if\s+pressure|what\s+is\s+the\s+sign\s+of\s+delta\s+s\s+in\s+that\s+case|how\s+does\s+temperature\s+affect\s+it|why\s+is\s+the\s+angle\s+smaller|what\s+is\s+the\s+oxidation\s+state\s+there|can\s+you\s+clarify\s+that\s+step|what\s+does\s+that\s+symbol\s+mean|why\s+is\s+it\s+spontaneous\s+then)\b", re.I)),
     (QueryIntent.WHY, re.compile(r"\b(why\s+(does|is|do|did|are))\b", re.I)),
     (QueryIntent.HOW, re.compile(r"\b(how\s+(does|do|can|is|should|would))\b", re.I)),
-    (QueryIntent.CLARIFICATION, re.compile(r"\b(clarify|confused|did\s+not\s+understand|please\s+clarify)\b", re.I)),
+    (QueryIntent.CLARIFICATION, re.compile(r"\b(clarify|confused|did\s+not\s+understand|don'?t\s+understand|do\s+not\s+understand|still\s+don'?t|unclear|please\s+clarify)\b", re.I)),
     (QueryIntent.GREETING, re.compile(r"^(hi|hello|hey|greetings|good\s+morning|good\s+evening|namaste)\b", re.I)),
     (QueryIntent.OUT_OF_SCOPE, re.compile(r"\b(world\s+cup|capital\s+of|python\s+script|president|pasta|smartphone|poem|flat\s+tire|stock\s+price|guitar|inception|binary\s+search|mars|hamlet|train\s+a\s+dog|weather\s+in|wooden\s+chair|linux)\b", re.I)),
     (QueryIntent.CONCEPT_EXPLANATION, re.compile(r"\b(explain|tell\s+me\s+about|understand|concept\s+of)\b", re.I)),

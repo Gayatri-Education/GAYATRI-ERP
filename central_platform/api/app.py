@@ -42,6 +42,7 @@ from central_platform.api.schemas import (
 
 # Versioned Routers
 from central_platform.api.routes.admin import router as admin_router
+from central_platform.api.routes.agents import router as agents_router
 from central_platform.api.routes.ai import router as ai_router
 from central_platform.api.routes.analytics import router as analytics_router
 from central_platform.api.routes.assessments import router as assessments_router
@@ -157,6 +158,7 @@ def create_app() -> FastAPI:
     app.include_router(sync_router, prefix="/api/v1")
     app.include_router(tools_router, prefix="/api/v1")
     app.include_router(tutor_router, prefix="/api/v1")
+    app.include_router(agents_router, prefix="/api/v1")
 
     # 5. Live Operational Probes & Health Subsystem
     health_svc = PlatformHealthService()

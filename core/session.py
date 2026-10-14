@@ -20,6 +20,12 @@ logger = logging.getLogger("gayatri.session")
 from core.security.validation import validate_session_id
 
 
+import atexit
+import os
+
+DEFAULT_LOCAL_USER_ID = os.environ.get("GAYATRI_USER_ID", "local_learner")
+
+
 class SessionStore:
     """SQLite-backed session persistence.
 
@@ -32,6 +38,7 @@ class SessionStore:
         from core.config import DB_PATH
         self.db_path = Path(db_path) if db_path else Path(DB_PATH)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.default_user_id = os.environ.get("GAYATRI_USER_ID", "local_learner")
         self._lock = threading.RLock()
         self._db_conn: sqlite3.Connection | None = None
         self._create_schema()
@@ -42,6 +49,16 @@ class SessionStore:
         self._shutdown_event = threading.Event()
         self._writer_thread = threading.Thread(target=self._writer_loop, daemon=True, name="Gayatri-DBWriter")
         self._writer_thread.start()
+        try:
+            atexit.register(self.shutdown)
+        except Exception:
+            pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.shutdown()
 
     def _writer_loop(self):
         """Background thread consuming the async DB write queue."""
@@ -62,10 +79,19 @@ class SessionStore:
         self._write_queue.join()
 
     def shutdown(self):
-        """Gracefully shutdown the DB writer thread."""
+        """Gracefully shutdown the DB writer thread, ensuring all pending writes are committed."""
+        self.flush()
         self._shutdown_event.set()
         if self._writer_thread.is_alive():
             self._writer_thread.join(timeout=2.0)
+        with self._lock:
+            if self._db_conn is not None:
+                try:
+                    self._db_conn.commit()
+                    self._db_conn.close()
+                except Exception:
+                    pass
+                self._db_conn = None
 
     def _enqueue_write(self, func, *args, **kwargs):
         """Put a DB write task onto the background queue."""
@@ -161,8 +187,8 @@ class SessionStore:
 
         logger.info(f"Session DB ready: {self.db_path}")
 
-    def save_session(self, session_id: str, conversation: Any, tutor_context: Any = None) -> None:
-        """Queue a session for async background saving (Audit #28)."""
+    def save_session(self, session_id: str, conversation: Any, tutor_context: Any = None, sync: bool = False) -> None:
+        """Queue a session for async background saving (Audit #28) or save synchronously."""
         session_id = validate_session_id(session_id)
 
         # Deepcopy the state we need before queueing it to avoid race conditions!
@@ -170,14 +196,25 @@ class SessionStore:
         messages = list(conversation.get_all()) if hasattr(conversation, "get_all") else list(conversation)
 
         mode = getattr(conversation, "mode", "general_assistant")
-        user_id = getattr(conversation, "user_id", "local_user_1")
-        self._enqueue_write(
-            self._save_session_internal,
-            session_id, title, messages, tutor_context, mode, user_id
-        )
+        user_id = getattr(conversation, "user_id", self.default_user_id)
+        if sync:
+            self._save_session_internal(
+                session_id, title, messages, tutor_context, mode, user_id
+            )
+        else:
+            self._enqueue_write(
+                self._save_session_internal,
+                session_id, title, messages, tutor_context, mode, user_id
+            )
 
-    def _save_session_internal(self, session_id: str, title: str, messages: list[dict], tutor_context: Any = None, mode: str = "general_assistant", user_id: str = "local_user_1") -> None:
+    def save_session_sync(self, session_id: str, conversation: Any, tutor_context: Any = None) -> None:
+        """Synchronously persist session to SQLite immediately, bypassing the async queue."""
+        self.save_session(session_id, conversation, tutor_context=tutor_context, sync=True)
+
+    def _save_session_internal(self, session_id: str, title: str, messages: list[dict], tutor_context: Any = None, mode: str = "general_assistant", user_id: str | None = None) -> None:
         """Synchronously persist the conversation to SQLite."""
+        if user_id is None:
+            user_id = self.default_user_id
         with self._lock:
             conn = self.conn
             now = datetime.now().isoformat()
@@ -473,8 +510,11 @@ class SessionStore:
                 query += " AND mode = ?"
                 params.append(mode)
             if user_id is not None:
-                query += " AND user_id = ?"
-                params.append(user_id)
+                if user_id in ("local_learner", "local_user_1"):
+                    query += " AND user_id IN ('local_learner', 'local_user_1')"
+                else:
+                    query += " AND user_id = ?"
+                    params.append(user_id)
             if profile_id is not None:
                 query += " AND profile_id = ?"
                 params.append(profile_id)
@@ -488,7 +528,7 @@ class SessionStore:
                     "profile_id": row["profile_id"] if "profile_id" in row.keys() else "default",
                     "title": row["title"] or row["id"][:20],
                     "mode": row["mode"] if "mode" in row.keys() else "general_assistant",
-                    "user_id": row["user_id"] if "user_id" in row.keys() else "local_user_1",
+                    "user_id": row["user_id"] if "user_id" in row.keys() else self.default_user_id,
                     "created_at": row["created_at"],
                     "updated_at": row["updated_at"],
                     "message_count": row["message_count"],
@@ -519,11 +559,8 @@ class SessionStore:
             return row[0]
 
     def close(self) -> None:
-        """Close the database connection."""
-        with self._lock:
-            if self._db_conn:
-                self._db_conn.close()
-                self._db_conn = None
+        """Close the session store and writer thread cleanly."""
+        self.shutdown()
 
 
 # Global session store instance

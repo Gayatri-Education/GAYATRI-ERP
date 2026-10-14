@@ -6,6 +6,7 @@ Updated to use real settings persistence, provider management, and model catalog
 from __future__ import annotations
 
 import json
+import os
 import threading
 import uuid
 
@@ -101,6 +102,7 @@ class Bridge(QObject):
         self._orchestrator = None
         self._generation_active = False
         self._session_id = str(uuid.uuid4())
+        self._user_id = os.environ.get("GAYATRI_USER_ID", "local_learner")
 
     def _get_orchestrator(self):
         from core.agents.registry import agent_registry
@@ -267,13 +269,25 @@ class Bridge(QObject):
         orch.new_session(self._session_id)
         logger.info(f"New chat started: {self._session_id}")
 
+    @Slot(str)
+    def set_user_id(self, user_id: str) -> None:
+        """Set the active user identity for session retrieval."""
+        if user_id and isinstance(user_id, str):
+            self._user_id = user_id.strip()
+            logger.info(f"Active user identity set to: {self._user_id}")
+
+    @Slot(result=str)
+    def get_user_id(self) -> str:
+        """Return the current active user identity."""
+        return self._user_id
+
     @Slot(result=str)
     def get_sessions(self) -> str:
         """Return list of past sessions as JSON."""
         try:
             from core.session import get_session_store
             store = get_session_store()
-            sessions = store.list_sessions(user_id="local_user_1")
+            sessions = store.list_sessions(user_id=self._user_id)
             result = [
                 {
                     "id": s["id"],
@@ -302,10 +316,10 @@ class Bridge(QObject):
         try:
             from core.session import get_session_store
             store = get_session_store()
-            sessions = store.list_sessions(mode=mode, user_id="local_user_1")
+            sessions = store.list_sessions(mode=mode, user_id=self._user_id)
             if not sessions and mode in ("tutor", "chemistry_tutor"):
                 alt_mode = "chemistry_tutor" if mode == "tutor" else "tutor"
-                sessions = store.list_sessions(mode=alt_mode, user_id="local_user_1")
+                sessions = store.list_sessions(mode=alt_mode, user_id=self._user_id)
             result = [
                 {
                     "id": s["id"],
@@ -734,6 +748,9 @@ class Bridge(QObject):
                 student.current_concept = "THERMO_INTERNAL_ENERGY"
             elif mode_upper == "EVALUATE" and not student.misconceptions:
                 student.misconceptions.append("THERMO_SIGN_CONVENTION")
+            elif mode_upper == "HINT":
+                if student.active_hint_level >= 5:
+                    student.active_hint_level = 0
 
             event_logger = EventLogger()
             event_logger.log_event(

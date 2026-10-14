@@ -34,6 +34,26 @@ class ValidationCategory(str, Enum):
     HTTPS_SECURITY = "HTTPS_SECURITY"
 
 
+class ModelReadinessState(str, Enum):
+    """Explicit model readiness states (QA-003)."""
+    CONFIGURED = "CONFIGURED"
+    LOADABLE = "LOADABLE"
+    EXECUTABLE = "EXECUTABLE"
+    HEALTHY = "HEALTHY"
+    MISSING = "MISSING"
+    CORRUPT = "CORRUPT"
+    FAILED = "FAILED"
+
+
+class ReleaseTier(str, Enum):
+    """Formal release certification tiering (QA-005)."""
+    PRE_PRODUCTION = "PRE_PRODUCTION"
+    RELEASE_CANDIDATE = "RELEASE_CANDIDATE"
+    PRODUCTION_READY = "PRODUCTION_READY"
+    RELEASED = "RELEASED"
+
+
+
 @dataclass
 class ValidationResult:
     category: ValidationCategory
@@ -308,8 +328,28 @@ class DeploymentValidator:
                 with open(manifest_file, "r", encoding="utf-8") as f:
                     manifest_data = json.load(f)
                 models = manifest_data.get("models", [manifest_data] if "model_id" in manifest_data else [])
-                ai_up = len(models) > 0
-                ai_info = {"status": "UP" if ai_up else "DOWN", "models_registered": len(models)}
+                primary = models[0] if models and isinstance(models[0], dict) else {}
+                local_rel = primary.get("local_path") or primary.get("artifact_path")
+                has_physical = bool(local_rel and (self.root_dir / local_rel).is_file())
+                is_prod = self.env_vars.get("APP_ENV", "development").lower() == "production"
+                if is_prod and not has_physical:
+                    ai_up = False
+                    ai_info = {
+                        "status": "DOWN",
+                        "readiness_state": ModelReadinessState.CONFIGURED.value,
+                        "error": f"Model artifact {local_rel} not found on disk in production mode.",
+                    }
+                else:
+                    ai_up = len(models) > 0
+                    ai_info = {
+                        "status": "UP" if ai_up else "DOWN",
+                        "models_registered": len(models),
+                        "physical_artifact_present": has_physical,
+                        "readiness_state": (
+                            ModelReadinessState.HEALTHY.value if has_physical
+                            else (ModelReadinessState.CONFIGURED.value if not is_prod else ModelReadinessState.MISSING.value)
+                        ),
+                    }
             else:
                 ai_info = {"status": "DOWN", "error": "model_manifest.json missing"}
         except Exception as exc:
@@ -322,9 +362,61 @@ class DeploymentValidator:
             from central_platform.rag.service import RAGService
             test_db = PlatformDatabase(db_path=self.db_path)
             rag = RAGService(db=test_db)
-            rag_res = rag.query("health_probe", course_id="crs-health-probe")
-            rag_up = isinstance(rag_res, dict)
-            rag_info = {"status": "UP", "service": "RAGService"}
+            is_prod = self.env_vars.get("APP_ENV", "development").lower() == "production"
+
+            published_sources = test_db.list_rag_sources(status="published")
+            if published_sources:
+                probe_src = published_sources[0]
+                chunks = test_db.get_rag_chunks(probe_src.id, limit=1)
+                if chunks and chunks[0].clean_text:
+                    probe_words = [w for w in chunks[0].clean_text.split() if len(w) > 3][:3]
+                    probe_query = " ".join(probe_words) if probe_words else (probe_src.subject or "chemistry")
+                else:
+                    probe_query = probe_src.subject or "chemistry"
+                rag_res = rag.query(probe_query, course_id=probe_src.course_id)
+                has_evidence = (
+                    isinstance(rag_res, dict)
+                    and rag_res.get("status") == "RAG_OK"
+                    and rag_res.get("count", 0) > 0
+                    and len(rag_res.get("results", [])) > 0
+                    and bool(rag_res["results"][0].get("citation"))
+                )
+                if has_evidence:
+                    rag_up = True
+                    rag_info = {
+                        "status": "UP",
+                        "service": "RAGService",
+                        "retrieval_verified": True,
+                        "evidence_count": rag_res["count"],
+                        "citation": rag_res["results"][0]["citation"],
+                    }
+                else:
+                    rag_up = False
+                    rag_info = {
+                        "status": "DOWN",
+                        "service": "RAGService",
+                        "retrieval_verified": False,
+                        "error": "RAG probe returned empty or ungrounded results despite published sources.",
+                    }
+            elif is_prod:
+                # Production gate failure (QA-004): empty retrieval cannot pass in production
+                rag_up = False
+                rag_info = {
+                    "status": "DOWN",
+                    "service": "RAGService",
+                    "error": "Production release blocker: Zero published RAG sources found in database. Empty retrieval cannot be marked healthy.",
+                }
+            else:
+                # Non-production development mode
+                fb_res = rag._legacy_fallback_query("equilibrium", top_k=1)
+                fb_ok = isinstance(fb_res, dict) and fb_res.get("status") == "RAG_OK" and fb_res.get("count", 0) > 0
+                rag_up = True
+                rag_info = {
+                    "status": "UP",
+                    "service": "RAGService",
+                    "mode": "FALLBACK_VERIFIED" if fb_ok else "UNSEEDED_DEV",
+                    "evidence_count": fb_res.get("count", 0) if fb_ok else 0,
+                }
         except Exception as exc:
             rag_info = {"status": "DOWN", "error": str(exc)}
 
@@ -377,7 +469,7 @@ class DeploymentValidator:
         )
 
     def validate_model_providers(self) -> ValidationResult:
-        """Validates model manifest configuration and AI provider availability."""
+        """Validates model manifest configuration, artifact integrity, and AI provider availability (QA-003)."""
         manifest_path = self.root_dir / "model_manifest.json"
         if not manifest_path.exists():
             return ValidationResult(
@@ -385,7 +477,7 @@ class DeploymentValidator:
                 check_name="model_providers",
                 status=ValidationStatus.FAIL,
                 message="model_manifest.json file not found.",
-                details={"manifest_path": str(manifest_path)},
+                details={"manifest_path": str(manifest_path), "readiness_state": ModelReadinessState.MISSING.value},
             )
 
         try:
@@ -399,20 +491,98 @@ class DeploymentValidator:
             else:
                 models = []
 
+            if not models:
+                return ValidationResult(
+                    category=ValidationCategory.MODEL_PROVIDERS,
+                    check_name="model_providers",
+                    status=ValidationStatus.FAIL,
+                    message="No models defined in model_manifest.json.",
+                    details={"models_count": 0, "readiness_state": ModelReadinessState.FAILED.value},
+                )
+
+            is_prod = self.env_vars.get("APP_ENV", "development").lower() == "production"
+            primary = models[0] if isinstance(models[0], dict) else {}
+            local_rel = primary.get("local_path") or primary.get("artifact_path")
+            expected_checksum = primary.get("checksum")
+
+            has_physical = False
+            checksum_matches = None
+            readiness_state = ModelReadinessState.CONFIGURED
+            artifact_path = (self.root_dir / local_rel) if local_rel else None
+
+            if artifact_path and artifact_path.is_file():
+                has_physical = True
+                readiness_state = ModelReadinessState.LOADABLE
+                if expected_checksum:
+                    import hashlib
+                    hasher = hashlib.sha256()
+                    with open(artifact_path, "rb") as af:
+                        while chunk := af.read(65536):
+                            hasher.update(chunk)
+                    actual_checksum = hasher.hexdigest()
+                    checksum_matches = (actual_checksum.lower() == expected_checksum.lower())
+                    if not checksum_matches:
+                        readiness_state = ModelReadinessState.CORRUPT
+                        if is_prod:
+                            return ValidationResult(
+                                category=ValidationCategory.MODEL_PROVIDERS,
+                                check_name="model_providers",
+                                status=ValidationStatus.FAIL,
+                                message=f"Model artifact checksum mismatch for '{local_rel}'. Expected {expected_checksum[:12]}..., got {actual_checksum[:12]}...",
+                                details={
+                                    "models_count": len(models),
+                                    "readiness_state": ModelReadinessState.CORRUPT.value,
+                                    "expected_checksum": expected_checksum,
+                                    "actual_checksum": actual_checksum,
+                                },
+                            )
+                try:
+                    from core.providers.local import LocalProvider
+                    if LocalProvider.is_available():
+                        readiness_state = ModelReadinessState.HEALTHY
+                    else:
+                        readiness_state = ModelReadinessState.EXECUTABLE
+                except Exception:
+                    readiness_state = ModelReadinessState.LOADABLE
+
+            if is_prod and not has_physical:
+                return ValidationResult(
+                    category=ValidationCategory.MODEL_PROVIDERS,
+                    check_name="model_providers",
+                    status=ValidationStatus.FAIL,
+                    message=f"Production release blocker: local model artifact missing at '{local_rel}'. Production gate requires verified physical model.",
+                    details={
+                        "models_count": len(models),
+                        "readiness_state": ModelReadinessState.CONFIGURED.value,
+                        "missing_artifact": str(artifact_path),
+                        "production_blocker": True,
+                    },
+                )
+
+            status = ValidationStatus.PASS
+            msg = f"Model manifest verified with {len(models)} model definition(s). Readiness state: {readiness_state.value}."
+            if not has_physical:
+                msg += " (Warning: Physical model file not found on disk; development mode active)."
+
             return ValidationResult(
                 category=ValidationCategory.MODEL_PROVIDERS,
                 check_name="model_providers",
-                status=ValidationStatus.PASS,
-                message=f"Model manifest verified with {len(models)} model definitions.",
-                details={"models_count": len(models)},
+                status=status,
+                message=msg,
+                details={
+                    "models_count": len(models),
+                    "readiness_state": readiness_state.value,
+                    "physical_artifact_present": has_physical,
+                    "checksum_verified": checksum_matches,
+                },
             )
         except Exception as e:
             return ValidationResult(
                 category=ValidationCategory.MODEL_PROVIDERS,
                 check_name="model_providers",
                 status=ValidationStatus.FAIL,
-                message=f"Failed to parse model_manifest.json: {str(e)}",
-                details={"error": str(e)},
+                message=f"Failed to parse or validate model_manifest.json: {str(e)}",
+                details={"error": str(e), "readiness_state": ModelReadinessState.FAILED.value},
             )
 
     def validate_static_assets(self) -> ValidationResult:
@@ -505,3 +675,28 @@ class DeploymentValidator:
             results=results,
             summary=summary,
         )
+
+    @staticmethod
+    def determine_release_tier(
+        test_pass_rate: float,
+        open_p0_count: int,
+        open_p1_count: int,
+        real_model_verified: bool,
+        real_rag_verified: bool,
+        security_audit_passed: bool,
+    ) -> ReleaseTier:
+        """Determine formal release certification tier based strictly on verifiable evidence (QA-005).
+
+        Rules:
+        - Any open P0, failing security audit, or test pass rate < 0.95 -> PRE_PRODUCTION
+        - Any open P1, unverified real model, unverified real RAG, or test pass rate < 1.0 -> RELEASE_CANDIDATE
+        - 100% test pass rate, 0 open P0, 0 open P1, and all verified -> PRODUCTION_READY
+        """
+        if open_p0_count > 0 or not security_audit_passed or test_pass_rate < 0.95:
+            return ReleaseTier.PRE_PRODUCTION
+        if open_p1_count > 0 or not real_model_verified or not real_rag_verified or test_pass_rate < 1.0:
+            return ReleaseTier.RELEASE_CANDIDATE
+        if test_pass_rate == 1.0 and open_p0_count == 0 and open_p1_count == 0 and security_audit_passed:
+            return ReleaseTier.PRODUCTION_READY
+        return ReleaseTier.PRE_PRODUCTION
+
