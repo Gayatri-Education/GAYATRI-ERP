@@ -54,12 +54,15 @@ from central_platform.api.routes.courses import router as courses_router
 from central_platform.api.routes.curricula import router as curricula_router
 from central_platform.api.routes.communications import router as communications_router
 from central_platform.api.routes.enrollments import router as enrollments_router
+from central_platform.api.routes.examinations import router as examinations_router
+from central_platform.api.routes.grading import router as grading_router
 from central_platform.api.routes.identity import router as identity_router
 from central_platform.api.routes.instructions import router as instructions_router
 from central_platform.api.routes.learning import router as learning_router
 from central_platform.api.routes.notifications import router as notifications_router
 from central_platform.api.routes.organizations import router as organizations_router
 from central_platform.api.routes.rag import router as rag_router
+from central_platform.api.routes.reports import router as reports_router
 from central_platform.api.routes.sessions import router as sessions_router
 from central_platform.api.routes.sis import router as sis_router
 from central_platform.api.routes.students import router as students_router
@@ -152,6 +155,9 @@ def create_app() -> FastAPI:
     app.include_router(attendance_router, prefix="/api/v1")
     app.include_router(timetable_router, prefix="/api/v1")
     app.include_router(communications_router, prefix="/api/v1")
+    app.include_router(examinations_router, prefix="/api/v1")
+    app.include_router(grading_router, prefix="/api/v1")
+    app.include_router(reports_router, prefix="/api/v1")
     app.include_router(students_router, prefix="/api/v1")
     app.include_router(teachers_router, prefix="/api/v1")
     app.include_router(admin_router, prefix="/api/v1")

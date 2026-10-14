@@ -3,7 +3,7 @@
 **Governing Contract:** `DEVELOPMENT.md`  
 **Primary Repository:** `https://github.com/Gayatri-Education/GAYATRI-ERP`  
 **Upstream Reference:** `https://github.com/Gayatri-Education/Gayatri`  
-**Current Phase:** Phase 04 (Examinations, Grading & Report Cards)  
+**Current Phase:** Phase 05 (Finance, Payment Gateways & Reconciliation)  
 **Last Updated:** 2026-10-14  
 
 ---
@@ -17,7 +17,7 @@
 | **Phase 02A**| AI Learning Suite Correctness & Reliability | `NOT_STARTED` | No | No | No | - | - | - | [Phase 02A Plan](plans/PHASE_02A_PLAN.md) |
 | **Phase 02B**| Core ERP: SIS & Admissions Foundation | **PASSED** | Yes | Yes | Yes | 8/8 (100%) | 1576/1576 (100%) | **PASSED** | [Phase 02B Report](reports/PHASE_02B_REPORT.md) |
 | **Phase 03** | Attendance, Timetable & Communications | **PASSED** | Yes | Yes | Yes | 8/8 (100%) | 1584/1584 (100%) | **PASSED** | [Phase 03 Report](reports/PHASE_03_REPORT.md) |
-| **Phase 04** | Examinations, Grading & Report Cards | **IN_PROGRESS** | Yes | Yes | In Progress | Pending | Pending | Pending Gate | [Phase 04 Plan](plans/PHASE_04_PLAN.md) |
+| **Phase 04** | Examinations, Grading & Report Cards | **PASSED** | Yes | Yes | Yes | 8/8 (100%) | 1592/1592 (100%) | **PASSED** | [Phase 04 Report](reports/PHASE_04_REPORT.md) |
 | **Phase 05** | Finance, Payment Gateways & Reconciliation | `NOT_STARTED` | No | No | No | - | - | - | [Phase 05 Plan](plans/PHASE_05_PLAN.md) |
 | **Phase 06** | Full ERP Expansion (HR, Transport, Hostel, Assets, Visitors, CMS) | `NOT_STARTED` | No | No | No | - | - | - | [Phase 06 Plan](plans/PHASE_06_PLAN.md) |
 | **Phase 07** | Offline Sync Hardening & Edge Biometric Daemon | `NOT_STARTED` | No | No | No | - | - | - | [Phase 07 Plan](plans/PHASE_07_PLAN.md) |
@@ -70,6 +70,20 @@
 - [x] Daily teacher substitutions resolve on class schedule queries without altering canonical slots.
 - [x] Notification template variable interpolation and dispatch queue verified.
 - [x] Full platform regression suite remains 100% green (1,584/1,584 passed).
+
+---
+
+## Phase 04 Exit Gate Checklist
+
+- [x] Exam series and subject schedule lifecycle tested with max/pass marks validation.
+- [x] Bounds-checked marks entry rejects out-of-bounds (negative or > max_marks) values.
+- [x] Finalized marks locking prevents unverified modifications.
+- [x] Institutional grading scale maps percentage intervals to letter grades and grade points.
+- [x] Multi-subject term aggregation calculates total marks, percentage, and GPA.
+- [x] Cryptographic SHA-256 document checksum generated for tamper-evident report cards.
+- [x] Report cards gated behind publication status before portal release.
+- [x] Multi-tenant isolation verified across examinations, grading, and reports.
+- [x] Full platform regression suite remains 100% green (1,592/1,592 passed).
 
 
 
