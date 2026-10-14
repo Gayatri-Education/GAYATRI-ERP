@@ -3,7 +3,7 @@
 **Governing Contract:** `DEVELOPMENT.md`  
 **Primary Repository:** `https://github.com/Gayatri-Education/GAYATRI-ERP`  
 **Upstream Reference:** `https://github.com/Gayatri-Education/Gayatri`  
-**Current Phase:** Phase 08 (Unified Analytics, Quality, Accessibility and Institution Pilot Verification)  
+**Current Phase:** Phase 09 (Production Release Gate & Controlled Rollout)  
 **Last Updated:** 2026-10-15  
 
 ---
@@ -21,8 +21,8 @@
 | **Phase 05** | Finance, Payment Gateways & Reconciliation | **PASSED** | Yes | Yes | Yes | 9/9 (100%) | 1601/1601 (100%) | **PASSED** | [Phase 05 Report](reports/PHASE_05_REPORT.md) |
 | **Phase 06** | Full ERP Expansion (HR, Transport, Hostel, Assets, Visitors, CMS) | **PASSED** | Yes | Yes | Yes | 10/10 (100%) | 1611/1611 (100%) | **PASSED** | [Phase 06 Report](reports/PHASE_06_REPORT.md) |
 | **Phase 07** | Offline Sync Hardening & Edge Biometric Daemon | **PASSED** | Yes | Yes | Yes | 10/10 (100%) | 1621/1621 (100%) | **PASSED** | [Phase 07 Report](reports/PHASE_07_REPORT.md) |
-| **Phase 08** | Unified Analytics, Accessibility & Pilot Verification | `NOT_STARTED` | No | No | No | - | - | - | [Phase 08 Plan](plans/PHASE_08_PLAN.md) |
-| **Phase 09** | Production Release Gate & Controlled Rollout | `NOT_STARTED` | No | No | No | - | - | - | [Phase 09 Plan](plans/PHASE_09_PLAN.md) |
+| **Phase 08** | Unified Analytics, Accessibility & Pilot Verification | **PASSED** | Yes | Yes | Yes | 10/10 (100%) | 1631/1631 (100%) | **PASSED** | [Phase 08 Report](reports/PHASE_08_REPORT.md) |
+| **Phase 09** | Production Release Gate & Controlled Rollout | `IN_PROGRESS` | No | No | No | - | - | - | [Phase 09 Plan](plans/PHASE_09_PLAN.md) |
 
 ---
 
@@ -129,7 +129,26 @@
 - [x] Sync health observability dashboard metrics and multi-tenant isolation.
 - [x] Full platform regression suite remains 100% green (1,621/1,621 passed).
 
+---
 
+## Phase 08 Exit Gate Checklist
 
+- [x] Canonical SQL table reconciliation for institutional KPIs with SHA-256 integrity hash.
+- [x] Parent privacy policy enforcement across Standard, Restricted, Anonymized, and Blocked tiers.
+- [x] Dual-mode institution journeys verified for K-12 School and Coaching / Test-Prep Academy.
+- [x] Tabular data exports generated in CSV and JSON formats with row counts and date filters.
+- [x] Multi-tenant export data isolation strictly enforced with zero cross-tenant leakage.
+- [x] Support diagnostic packages generated with PRAGMA integrity checks and secret redaction.
+- [x] Atomic database backup snapshot creation and verified restoration tooling.
+- [x] Forward and rollback integrity verified for Migration 016 (`016_analytics_exports_diagnostics.sql`).
+- [x] Full platform regression suite remains 100% green (1,631/1,631 passed).
 
+---
 
+## Phase 09 Exit Gate Checklist (In Progress)
+
+- [ ] Production build artifacts verification and lockfile determinism.
+- [ ] Fail-fast environment configuration and migration validation on empty database.
+- [ ] End-to-end multi-persona production readiness validation.
+- [ ] Release candidate package, rollback playbook, and final deployment documentation.
+- [ ] 100% full platform regression pass rate maintained.

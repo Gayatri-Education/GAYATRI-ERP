@@ -74,6 +74,7 @@ from central_platform.api.routes.tools import router as tools_router
 from central_platform.api.routes.transport import router as transport_router
 from central_platform.api.routes.cms import router as cms_router
 from central_platform.api.routes.edge_sync import router as edge_sync_router
+from central_platform.api.routes.institutional_analytics import router as institutional_analytics_router
 from central_platform.api.routes.tutor import router as tutor_router
 from central_platform.api.routes.users import router as users_router
 from central_platform.health.service import PlatformHealthService
@@ -186,6 +187,7 @@ def create_app() -> FastAPI:
     app.include_router(transport_router, prefix="/api/v1")
     app.include_router(cms_router, prefix="/api/v1")
     app.include_router(edge_sync_router, prefix="/api/v1")
+    app.include_router(institutional_analytics_router, prefix="/api/v1")
 
     # 5. Live Operational Probes & Health Subsystem
     health_svc = PlatformHealthService()
