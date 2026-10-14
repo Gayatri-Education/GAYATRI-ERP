@@ -200,7 +200,7 @@ class TestAIExecutionIntegrity:
         fake_model_dir = tmp_path / "models"
         fake_model_dir.mkdir(parents=True, exist_ok=True)
         fake_file = fake_model_dir / "qwen.gguf"
-        fake_file.write_bytes(b"bad_corrupted_model_bytes")
+        fake_file.write_bytes(b"GGUF" + b"\x00" * 2048)
 
         fake_manifest = tmp_path / "model_manifest.json"
         fake_manifest.write_text(json.dumps({
@@ -214,3 +214,177 @@ class TestAIExecutionIntegrity:
         assert res_corrupt.status == ValidationStatus.FAIL
         assert res_corrupt.details["readiness_state"] == ModelReadinessState.CORRUPT.value
         assert "checksum mismatch" in res_corrupt.message
+
+    def test_manifest_missing_and_empty_models(self, tmp_path):
+        """Manifest missing, malformed, or empty returns UNCONFIGURED or FAILED."""
+        # 1. Missing manifest
+        v_missing = DeploymentValidator(root_dir=tmp_path / "nonexistent")
+        res_missing = v_missing.validate_model_providers()
+        assert res_missing.status == ValidationStatus.FAIL
+        assert res_missing.details["readiness_state"] == ModelReadinessState.UNCONFIGURED.value
+
+        # 2. Malformed JSON
+        mal_manifest = tmp_path / "model_manifest.json"
+        mal_manifest.write_text("{not valid json...", encoding="utf-8")
+        v_mal = DeploymentValidator(root_dir=tmp_path)
+        res_mal = v_mal.validate_model_providers()
+        assert res_mal.status == ValidationStatus.FAIL
+        assert res_mal.details["readiness_state"] == ModelReadinessState.FAILED.value
+
+        # 3. Empty models array
+        mal_manifest.write_text(json.dumps({"models": []}), encoding="utf-8")
+        res_empty = v_mal.validate_model_providers()
+        assert res_empty.status == ValidationStatus.FAIL
+        assert res_empty.details["readiness_state"] == ModelReadinessState.UNCONFIGURED.value
+
+    def test_model_path_traversal_detection(self, tmp_path):
+        """Model artifact path attempting directory traversal outside root is rejected."""
+        manifest = tmp_path / "model_manifest.json"
+        manifest.write_text(json.dumps({
+            "models": [{"model_id": "traversal", "local_path": "../../etc/shadow"}]
+        }), encoding="utf-8")
+
+        v = DeploymentValidator(root_dir=tmp_path)
+        res = v.validate_model_providers()
+        assert res.status == ValidationStatus.FAIL
+        assert res.details["readiness_state"] == ModelReadinessState.CORRUPT.value
+        assert "Path traversal detected" in res.message
+
+    def test_truncated_or_empty_model_file(self, tmp_path):
+        """Model file smaller than 1024 bytes is rejected as truncated/corrupt."""
+        model_dir = tmp_path / "models"
+        model_dir.mkdir(parents=True, exist_ok=True)
+        tiny_file = model_dir / "tiny.gguf"
+        tiny_file.write_bytes(b"too small")
+
+        manifest = tmp_path / "model_manifest.json"
+        manifest.write_text(json.dumps({
+            "models": [{"model_id": "m1", "local_path": "models/tiny.gguf"}]
+        }), encoding="utf-8")
+
+        v = DeploymentValidator(root_dir=tmp_path)
+        res = v.validate_model_providers()
+        assert res.status == ValidationStatus.FAIL
+        assert res.details["readiness_state"] == ModelReadinessState.CORRUPT.value
+        assert "truncated" in res.message
+
+    def test_invalid_gguf_magic_header(self, tmp_path):
+        """GGUF file without 'GGUF' magic bytes at offset 0 is rejected as corrupt."""
+        model_dir = tmp_path / "models"
+        model_dir.mkdir(parents=True, exist_ok=True)
+        bad_header_file = model_dir / "bad_magic.gguf"
+        bad_header_file.write_bytes(b"PK03" + b"\x00" * 2048)
+
+        manifest = tmp_path / "model_manifest.json"
+        manifest.write_text(json.dumps({
+            "models": [{"model_id": "m1", "local_path": "models/bad_magic.gguf"}]
+        }), encoding="utf-8")
+
+        v = DeploymentValidator(root_dir=tmp_path)
+        res = v.validate_model_providers()
+        assert res.status == ValidationStatus.FAIL
+        assert res.details["readiness_state"] == ModelReadinessState.CORRUPT.value
+        assert "invalid GGUF magic header" in res.message
+
+    def test_valid_gguf_header_and_checksum_without_probe_is_not_healthy(self, tmp_path):
+        """Physical model presence and checksum alone reports LOADABLE, never HEALTHY without inference probe."""
+        import hashlib
+        model_dir = tmp_path / "models"
+        model_dir.mkdir(parents=True, exist_ok=True)
+        good_file = model_dir / "valid.gguf"
+        content = b"GGUF" + b"\x01" * 4096
+        good_file.write_bytes(content)
+        checksum = hashlib.sha256(content).hexdigest()
+
+        manifest = tmp_path / "model_manifest.json"
+        manifest.write_text(json.dumps({
+            "models": [{"model_id": "m1", "local_path": "models/valid.gguf", "checksum": checksum}]
+        }), encoding="utf-8")
+
+        v = DeploymentValidator(root_dir=tmp_path, env_vars={"APP_ENV": "development"})
+        res = v.validate_model_providers(probe_inference=False)
+        assert res.status == ValidationStatus.PASS
+        # Crucial GQA-001 invariant: without inference probe, state must NOT be HEALTHY
+        assert res.details["readiness_state"] == ModelReadinessState.LOADABLE.value
+        assert res.details["inference_verified"] is False
+        assert "bounded inference probe required" in res.message
+
+    def test_inference_probe_success_with_real_model(self, tmp_path):
+        """Inference probe succeeds when real model executes and returns REAL_MODEL provenance."""
+        import hashlib
+        model_dir = tmp_path / "models"
+        model_dir.mkdir(parents=True, exist_ok=True)
+        good_file = model_dir / "valid.gguf"
+        content = b"GGUF" + b"\x01" * 4096
+        good_file.write_bytes(content)
+        checksum = hashlib.sha256(content).hexdigest()
+
+        manifest = tmp_path / "model_manifest.json"
+        manifest.write_text(json.dumps({
+            "models": [{"model_id": "m1", "local_path": "models/valid.gguf", "checksum": checksum}]
+        }), encoding="utf-8")
+
+        v = DeploymentValidator(root_dir=tmp_path, env_vars={"APP_ENV": "production"})
+
+        # Mock LocalProvider real execution
+        with patch("core.providers.local.LocalProvider.health", return_value={"available": True}), \
+             patch("core.providers.local.LocalProvider.is_available", return_value=True), \
+             patch("core.providers.local.LocalProvider.chat_stream", return_value=["Energy ", "is conserved."]):
+            probe_res = v.validate_model_inference_probe()
+            assert probe_res.status == ValidationStatus.PASS
+            assert probe_res.details["readiness_state"] == ModelReadinessState.INFERENCE_VERIFIED.value
+            assert probe_res.details["real_model"] is True
+            assert probe_res.details["execution_provenance"] == "REAL_MODEL"
+
+            # When probe_inference=True in validate_model_providers, state becomes HEALTHY
+            full_res = v.validate_model_providers(probe_inference=True)
+            assert full_res.status == ValidationStatus.PASS
+            assert full_res.details["readiness_state"] == ModelReadinessState.HEALTHY.value
+            assert full_res.details["inference_verified"] is True
+
+    def test_inference_probe_fails_on_empty_completion(self, tmp_path):
+        """Inference probe fails if the model returns an empty completion."""
+        v = DeploymentValidator(root_dir=tmp_path)
+        with patch("core.providers.local.LocalProvider.health", return_value={"available": True}), \
+             patch("core.providers.local.LocalProvider.is_available", return_value=True), \
+             patch("core.providers.local.LocalProvider.chat_stream", return_value=[]):
+            probe_res = v.validate_model_inference_probe()
+            assert probe_res.status == ValidationStatus.FAIL
+            assert probe_res.details["readiness_state"] == ModelReadinessState.FAILED.value
+            assert "empty completion" in probe_res.message or "failed" in probe_res.message
+
+    def test_inference_probe_fails_on_mock_or_fallback(self, tmp_path):
+        """Inference probe rejects MOCK or DEGRADED_FALLBACK provenance as a failure for production readiness."""
+        v = DeploymentValidator(root_dir=tmp_path, env_vars={"APP_ENV": "development"})
+        # When local provider is unavailable in dev, gateway uses fallback
+        with patch("core.providers.local.LocalProvider.health", return_value={"available": False, "reason_code": "missing_file"}), \
+             patch("central_platform.ai.adapters.is_production_mode", return_value=False):
+            probe_res = v.validate_model_inference_probe()
+            assert probe_res.status == ValidationStatus.FAIL
+            assert probe_res.details["readiness_state"] == ModelReadinessState.FAILED.value
+            assert "failed real-model verification" in probe_res.message
+
+    def test_release_tier_requires_real_model(self):
+        """DeploymentValidator.determine_release_tier requires real_model_verified=True for PRODUCTION_READY."""
+        # 1. 100% pass rate but real_model not verified -> RELEASE_CANDIDATE, not PRODUCTION_READY
+        tier = DeploymentValidator.determine_release_tier(
+            test_pass_rate=1.0,
+            open_p0_count=0,
+            open_p1_count=0,
+            real_model_verified=False,
+            real_rag_verified=True,
+            security_audit_passed=True,
+        )
+        assert tier == DeploymentValidator.ReleaseTier.RELEASE_CANDIDATE
+
+        # 2. All verified -> PRODUCTION_READY
+        tier_ready = DeploymentValidator.determine_release_tier(
+            test_pass_rate=1.0,
+            open_p0_count=0,
+            open_p1_count=0,
+            real_model_verified=True,
+            real_rag_verified=True,
+            security_audit_passed=True,
+        )
+        assert tier_ready == DeploymentValidator.ReleaseTier.PRODUCTION_READY
+

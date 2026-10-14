@@ -30,6 +30,7 @@ def package_release(
     output_dir: Path | None = None,
     version: str = "3.0.0",
     signing_key_b64: str | None = None,
+    platform: str = "cross-platform",
 ) -> dict:
     """Package release files and produce a signed integrity manifest."""
     root = source_root or Path(__file__).resolve().parent.parent
@@ -44,6 +45,8 @@ def package_release(
     include_files = [
         "launch.bat",
         "setup.bat",
+        "launch.sh",
+        "setup.sh",
         "requirements.txt",
         "requirements.lock",
         "pyproject.toml",
@@ -79,7 +82,7 @@ def package_release(
     manifest_data = {
         "project": "Gayatri AI",
         "version": version,
-        "platform": "windows-x64",
+        "platform": platform,
         "target_python": ">=3.12, <3.13",
         "packaged_at": datetime.now().isoformat(),
         "total_files": len(file_manifest),

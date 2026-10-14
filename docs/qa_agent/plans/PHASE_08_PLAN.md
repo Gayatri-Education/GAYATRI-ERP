@@ -1,57 +1,81 @@
-# Phase 08 Plan — Reliability, Recovery & Observability
+# Phase 08 Implementation Plan: Security Hardening & Independent Adversarial Verification
 
-**Objective:** Ensure system failures are detectable, recoverable, and diagnosable across all failure domains, verifying automated fallback policies, degraded execution modes, deep health probing, and observability sanitization.
-
----
-
-## 1. Scope & Targeted Subsystems
-
-1. **Failure Taxonomy (`central_platform/recovery/manager.py`):**
-   - Authoritative failure categories: `MISSING_MODEL`, `CORRUPT_MODEL`, `PROVIDER_TIMEOUT`, `PROVIDER_MALFORMED`, `RAG_UNAVAILABLE`, `DATABASE_UNAVAILABLE`, `BROKEN_MIGRATION`, `BROKEN_UPLOAD`, `INTERRUPTED_PUBLISH`, `EXPIRED_INSTRUCTION`, `DUPLICATE_SYNC`, `APP_CRASH_MID_TURN`.
-   - Recovery status: `RECOVERED`, `DEGRADED_FALLBACK`, `UNRECOVERABLE`.
-   - Commit decisions: `COMMIT`, `ROLLBACK`, `NOOP`, `RETRY`.
-
-2. **Provider Failures & Circuit Breaking:**
-   - Fallback routing on provider timeout or exhaustion.
-   - Circuit breaker transition (`CLOSED` -> `OPEN` -> `HALF_OPEN`).
-   - Explicit `DEGRADED_FALLBACK` execution provenance.
-
-3. **RAG Retrieval Outage & Graceful Degradation:**
-   - Degrade to structured syllabus context when vector store fails.
-   - Anti-hallucination guarantee: No fake citations or false-grounding claims during outage.
-
-4. **Database Outages & Read-Only Snapshots:**
-   - Database connection failure -> in-memory cached state with explicit `read_only: True` flag.
-
-5. **Malformed Model Output Self-Healing:**
-   - Markdown code fence JSON extraction.
-   - Regex balanced brace extraction and trailing comma cleanup.
-   - Empty/corrupt output handling with default pedagogical payload.
-
-6. **Deep Health Probe & Liveness/Readiness Separation:**
-   - Liveness: Process up.
-   - Readiness: Database connection and critical dependencies responsive.
-   - Deep Health: Verifies database schema/read-write, physical model artifact on disk (not just manifest json), and storage accessibility. Does not return green if physical artifacts are absent.
-
-7. **Kill Switch & Security Sanitization:**
-   - Global and targeted kill switch in `AIGatewayService` and `PolicyEngine`.
-   - Sanitized logging: Zero API key, password, or bearer token leakage.
+**Phase:** Phase 08  
+**Date:** 2026-10-14  
+**Target Defects:**
+- `GQA-013` (P1): Regex string matching claimed as complete security proof; cross-cuts Phases 01, 05, 06, and 07.
 
 ---
 
-## 2. Dev Loop Steps
+## 1. Objectives & Scope
 
-1. **Plan Authoring:** Commit `docs/qa_agent/plans/PHASE_08_PLAN.md`.
-2. **Implementation Enhancements:**
-   - Enhance `PlatformHealthService` in `central_platform/health/service.py` to add `probe_deep_health()` that checks real physical model file presence and database schema viability.
-   - Verify `FailureRecoveryManager` contracts and self-healing output repair in `central_platform/recovery/manager.py`.
-   - Verify log sanitization helper ensuring sensitive credentials cannot be leaked in logs or error diagnostics.
-3. **Focused Tests:**
-   - Author `tests/test_qa_phase08_reliability_observability.py`.
-   - Run focused suite covering Phase 08 and previous recovery tests (`test_phase24_failure_recovery_master.py`, `test_phase38_failure_recovery.py`, `test_phase23_reliability_failure_injection_recovery.py`).
-4. **Full Regression:**
-   - Run `pytest -q` across the entire codebase.
-5. **Decisions & Reporting:**
-   - Log `DEC-008` in `docs/qa_agent/decisions/DECISION_LOG.md`.
-   - Write `docs/qa_agent/reports/PHASE_08_REPORT.md`.
-   - Update `docs/qa_agent/MASTER_PROGRESS.md`.
+1. **Clarify SecurityAuditor Architectural Principle (GQA-013)**:
+   - Formally document that regex/pattern matching in `SecurityAuditor` represents defense-in-depth heuristics, not formal certification of threat immunity.
+   - Primary security guarantees must be backed by structural enforcement:
+     - 100% Parameterized queries for SQL injection prevention.
+     - Canonical path resolution (`Path.resolve().relative_to(base)`) and symlink containment for path traversal.
+     - Strict object-level authorization across tenant and identity boundaries.
+     - Cryptographic verification with durable revocation tracking for JWTs.
+     - Contextual HTML entity escaping and strict sanitization for XSS prevention.
+     - Strict extension and magic byte verification for file uploads.
+
+2. **CORS & Trust Boundary Hardening**:
+   - In `central_platform/api/app.py`, synchronize CORS configuration directly with authoritative `PlatformSettings.allowed_origins`.
+   - Ensure wildcard origins (`"*"`) are strictly prohibited in production mode.
+
+3. **Contextual HTML/Markdown XSS Sanitization & Safe Link Policy**:
+   - Enhance `SecurityAuditor` with robust `sanitize_html(text: str, allow_formatting: bool = True) -> str` and `is_safe_url(url: str) -> bool`.
+   - Disallow script, iframe, style, svg, object, embed, form, input tags.
+   - Strip all inline event handlers (`onload`, `onerror`, `onclick`, etc.).
+   - Disallow dangerous URL schemes (`javascript:`, `vbscript:`, `data:`, `file:`).
+
+4. **Object-Level Authorization Matrix**:
+   - Verify that data access checks verify both role and object ownership / tenant boundaries across all route groups (Student, Teacher, Org Admin, Super Admin, Anonymous).
+   - Test IDOR boundaries for student records, class notes, course offerings, and user profiles.
+
+5. **SQL Injection Defense-in-Depth Verification**:
+   - Verify that SQL queries across `PlatformDatabase` use parameterized bindings (`?`).
+   - Run adversarial non-destructive SQL injection payloads across search, filters, and ID lookups to prove parameterization immunity.
+
+6. **Decompression Bomb & Upload Constraints**:
+   - In file upload validation, add decompression bomb safeguards (e.g., compressed ratio limits, max uncompressed byte checks) for archive and DOCX/PDF uploads.
+
+7. **Threat-to-Test Matrix**:
+   - Produce a comprehensive Threat-to-Test Matrix mapping every claimed security vector to explicit automated tests with coverage status.
+
+---
+
+## 2. Implementation Steps
+
+### Step 1: SecurityAuditor Clarification & HTML/XSS Sanitizer
+- In `central_platform/security/auditor.py`:
+  - Update module docstring to state defense-in-depth nature of regex heuristics (GQA-013).
+  - Add `sanitize_html(text: str, allow_formatting: bool = False) -> str`.
+  - Add `is_safe_url(url: str) -> bool`.
+  - Enhance `sanitize_prompt()` to utilize `sanitize_html()`.
+  - Add `validate_archive_safety(content_bytes: bytes, max_extracted_bytes: int = 20 * 1024 * 1024) -> SecurityAuditResult`.
+
+### Step 2: Canonical CORS in FastAPI App
+- In `central_platform/api/app.py`:
+  - Update CORS middleware registration to source `allow_origins` strictly from `get_authoritative_settings().allowed_origins`.
+
+### Step 3: Author Focused Security Test Suite
+- Author `tests/test_qa_phase08_security_adversarial.py` covering:
+  - Threat vector 1: IDOR and cross-tenant access.
+  - Threat vector 2: Authentication bypass, malformed tokens, and revoked tokens.
+  - Threat vector 3: Prompt injection, encoded/obfuscated instructions, and indirect RAG injection.
+  - Threat vector 4: Markdown/HTML XSS, SVG payloads, event handlers, and unsafe URL schemes (`javascript:`, `data:`).
+  - Threat vector 5: Path traversal, prefix collisions, and symlink escape attempts.
+  - Threat vector 6: SQL injection parameter binding resilience.
+  - Threat vector 7: File upload size limits, disallowed dangerous extensions, and decompression bomb protection.
+  - Threat vector 8: Production CORS configuration enforcing authoritative origins.
+  - Threat vector 9: Recursive secret redaction in nested logs and error payloads.
+  - Threat vector 10: Multi-worker distributed rate limiting fail-closed policy.
+
+### Step 4: Verification & Regression Run
+- Run focused suite and full repository regression (`pytest -q --tb=short`).
+
+### Step 5: Finalize Documentation & Advance
+- Update `docs/qa_agent/decisions/DECISION_LOG.md` (DEC-020).
+- Generate `docs/qa_agent/reports/PHASE_08_REPORT.md` including the Threat-to-Test Matrix.
+- Update `docs/qa_agent/MASTER_PROGRESS.md` marking Phase 08 PASSED and GQA-013 RESOLVED.

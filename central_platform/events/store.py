@@ -304,6 +304,8 @@ class LearningEventStore:
                 if etype in ("concept_introduced", "concept_reinforced", "question_attempted"):
                     concepts_introduced.add(ev.concept_id)
                 if etype == "concept_mastered":
+                    if p.get("authoritative") is False or p.get("mock") is True or p.get("fallback") is True:
+                        continue
                     concepts_mastered.add(ev.concept_id)
                     concept_mastery[ev.concept_id] = round(ev.score if ev.score is not None else 0.95, 4)
 
@@ -312,8 +314,19 @@ class LearningEventStore:
                 questions_attempted += 1
 
             if etype in ("answer_submitted", "answer_corrected"):
+                # Safe Fallback Policy (GQA-003): Non-authoritative, mock, or uncertain events
+                # must NEVER mutate student concept mastery.
+                if (
+                    p.get("authoritative") is False
+                    or p.get("evaluation_unavailable") is True
+                    or p.get("mock") is True
+                    or p.get("fallback") is True
+                ):
+                    continue
                 correctness = str(p.get("correctness", "")).lower()
-                is_correct = correctness == "correct" or (ev.score is not None and ev.score >= 0.7)
+                if correctness in ("uncertain", "evaluation_unavailable"):
+                    continue
+                is_correct = correctness == "correct" or (ev.score is not None and ev.score >= 0.7 and correctness != "incorrect")
                 if is_correct:
                     questions_correct += 1
                     # Incremental BKT-style mastery gain

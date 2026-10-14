@@ -222,8 +222,8 @@ class StructuredJSONParser(BaseParser):
         meta = default_metadata or {}
         try:
             data = json.loads(content)
-        except Exception:
-            return []
+        except Exception as exc:
+            raise ValueError(f"Document parser error: Malformed JSON: {exc}") from exc
 
         sections: List[ParsedSection] = []
 
@@ -290,8 +290,10 @@ class PDFParser(BaseParser):
 
     def parse_bytes(self, content_bytes: bytes, default_metadata: Optional[Dict[str, Any]] = None) -> List[ParsedSection]:
         meta = default_metadata or {}
-        # Attempt basic PDF text extraction if pypdf or pdfplumber is available, else fallback to text stream extraction
-        text_content = ""
+        # Validate PDF magic header
+        if not content_bytes.startswith(b"%PDF") and b"%PDF-" not in content_bytes[:1024]:
+            raise ValueError("Invalid PDF document: missing %PDF header.")
+
         try:
             import io
             import pypdf
@@ -314,6 +316,8 @@ class PDFParser(BaseParser):
                     )
             if sections:
                 return sections
+        except ValueError:
+            raise
         except Exception as exc:
             logger.debug("Primary pypdf extraction failed, falling back to regex: %s", exc)
 
@@ -329,9 +333,7 @@ class PDFParser(BaseParser):
         except Exception as exc:
             logger.debug("PDF regex stream extraction failed: %s", exc)
 
-        # Final fallback to standard TextParser on decoded bytes
-        text_parser = TextParser()
-        return text_parser.parse_text(content_bytes.decode("utf-8", errors="replace"), meta)
+        return []
 
 
 class DocxParser(BaseParser):
@@ -343,31 +345,43 @@ class DocxParser(BaseParser):
         import io
         import xml.etree.ElementTree as ET
 
+        if not content_bytes.startswith(b"PK\x03\x04"):
+            raise ValueError("Invalid DOCX document: missing PK ZIP package header.")
+
         try:
             with zipfile.ZipFile(io.BytesIO(content_bytes)) as docx_zip:
-                if "word/document.xml" in docx_zip.namelist():
-                    xml_content = docx_zip.read("word/document.xml")
-                    tree = ET.fromstring(xml_content)
-                    # Find all paragraph tags <w:p>
-                    paragraphs: List[str] = []
-                    for p in tree.iter():
-                        if p.tag.endswith("}p"):
-                            # Collect all text in paragraph
-                            p_text = "".join(node.text for node in p.iter() if node.tag.endswith("}t") and node.text)
-                            if p_text.strip():
-                                paragraphs.append(p_text.strip())
-                    if paragraphs:
-                        text = "\n\n".join(paragraphs)
-                        return TextParser().parse_text(text, meta)
+                if "word/document.xml" not in docx_zip.namelist():
+                    raise ValueError("Invalid DOCX document: missing word/document.xml package entry.")
+                xml_content = docx_zip.read("word/document.xml")
+                tree = ET.fromstring(xml_content)
+                # Find all paragraph tags <w:p>
+                paragraphs: List[str] = []
+                for p in tree.iter():
+                    if p.tag.endswith("}p"):
+                        # Collect all text in paragraph
+                        p_text = "".join(node.text for node in p.iter() if node.tag.endswith("}t") and node.text)
+                        if p_text.strip():
+                            paragraphs.append(p_text.strip())
+                if paragraphs:
+                    text = "\n\n".join(paragraphs)
+                    return TextParser().parse_text(text, meta)
+        except zipfile.BadZipFile as exc:
+            raise ValueError(f"Corrupt DOCX package: {exc}") from exc
+        except ValueError:
+            raise
         except Exception as exc:
-            logger.debug("DOCX XML extraction failed, falling back to text: %s", exc)
+            logger.debug("DOCX XML extraction failed: %s", exc)
+            raise ValueError(f"Failed to parse DOCX document structure: {exc}") from exc
 
-        # Fallback to text parsing
-        return TextParser().parse_text(content_bytes.decode("utf-8", errors="replace"), meta)
+        return []
 
 
 class DocumentParserRouter:
     """Dispatches document content to appropriate format parser based on file extension or source type."""
+
+    ALLOWED_EXTENSIONS = {
+        "pdf", "docx", "doc", "html", "htm", "md", "markdown", "json", "txt", "text", ""
+    }
 
     @classmethod
     def parse(
@@ -381,6 +395,9 @@ class DocumentParserRouter:
 
         # Resolve source type from filename extension if source_type is generic
         ext = Path(file_name).suffix.lower().lstrip(".") if file_name else ""
+        if ext and ext not in cls.ALLOWED_EXTENSIONS:
+            raise ValueError(f"Unsupported document extension: '.{ext}'")
+
         fmt = source_type.lower()
         if fmt in ["auto", "text", ""]:
             if ext in ["pdf"]:

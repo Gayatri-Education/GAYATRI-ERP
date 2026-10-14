@@ -134,11 +134,18 @@ async def login(req: LoginRequest, db: PlatformDatabase = Depends(get_db)):
 
 
 @router.post("/logout", response_model=ApiResponse[dict])
-async def logout(authorization: Optional[str] = Header(default=None, alias="Authorization")):
-    """Log out current user and invalidate active session token."""
+async def logout(
+    body: Optional[dict] = None,
+    authorization: Optional[str] = Header(default=None, alias="Authorization"),
+):
+    """Log out current user and invalidate active session tokens."""
     raw_token = extract_bearer_token(authorization)
     if raw_token:
-        revoke_token(raw_token)
+        revoke_token(raw_token, reason="user_logout")
+    if body and isinstance(body, dict):
+        ref_tok = body.get("refresh_token")
+        if ref_tok:
+            revoke_token(ref_tok, reason="user_logout_refresh")
     return ApiResponse(ok=True, data={"logged_out": True})
 
 
@@ -166,7 +173,7 @@ async def refresh_access_token(
     authorization: Optional[str] = Header(default=None, alias="Authorization"),
     db: PlatformDatabase = Depends(get_db),
 ):
-    """Exchange a valid refresh token for a newly issued short-lived access token."""
+    """Exchange a valid refresh token for a newly issued short-lived access token with rotation."""
     token = None
     if body and body.refresh_token:
         token = body.refresh_token
@@ -190,7 +197,29 @@ async def refresh_access_token(
     user_id = payload["user_id"]
     org_id = payload.get("organization_id", "org-default")
     user = db.get_user(user_id)
-    role_str = user.role.value if user and isinstance(user.role, UserRole) else "student"
+    if user:
+        if not user.is_active or user.is_deleted:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Account is inactive or deleted",
+            )
+        creds = db.get_user_credentials(user.id)
+        if creds and creds.get("is_suspended"):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Account is suspended",
+            )
+        role_str = user.role.value if isinstance(user.role, UserRole) else str(user.role)
+    else:
+        if is_production_mode():
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authenticated user record not found in platform directory",
+            )
+        role_str = "student"
+
+    # Refresh token rotation (GQA-005): revoke used refresh token to prevent replay
+    revoke_token(token, user_id=user_id, reason="refresh_token_rotated")
 
     new_access_token = create_access_token(
         user_id=user_id,
@@ -198,10 +227,21 @@ async def refresh_access_token(
         organization_id=org_id,
         expires_minutes=60,
     )
+    new_refresh_token = create_refresh_token(
+        user_id=user_id,
+        organization_id=org_id,
+        expires_days=7,
+    )
     return ApiResponse(
         ok=True,
-        data={"access_token": new_access_token, "expires_in": 3600},
+        data={
+            "access_token": new_access_token,
+            "refresh_token": new_refresh_token,
+            "token_type": "bearer",
+            "expires_in": 3600,
+        },
     )
+
 
 
 @router.post("/password-reset", response_model=ApiResponse[dict])

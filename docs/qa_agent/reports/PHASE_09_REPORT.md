@@ -1,69 +1,90 @@
-# QA Phase 09 Completion Report: Training & Model Build Pipeline
+# Phase 09 Verification Report: Training Pipeline, Dataset Integrity & Model Evaluation
 
-**Phase:** Phase 09 — Training & Model Build Pipeline  
-**Status:** COMPLETED & PASSED  
-**Execution Timestamp:** 2026-10-14  
+**Phase:** Phase 09  
+**Defects Addressed:** GQA-010 (Incomplete training evaluator ignores `must_contain` criteria)  
+**Related Findings:** QA-012 (Checked subprocess execution), QA-013 (Dataset decontamination & validation), QA-014 (Pedagogical evaluation matrix)  
+**Date:** 2026-10-14  
+**Status:** PASSED  
+**Certified By:** Gayatri QA Autonomous Agent  
 
 ---
 
 ## 1. Executive Summary
 
-Phase 09 resolved critical defects in model training scripts, dataset verification, validation split integrity, and GGUF quantization validation:
-- **QA-012 Resolved:** Replaced all unchecked `os.system` shell command invocations in `training/train_slm.py` and `training/train_colab.py` with `run_checked_command` utilizing `subprocess.run(..., check=True)`, ensuring execution halts immediately with diagnostic detail on non-zero exit codes.
-- **QA-013 Resolved:** Implemented `training/dataset_validator.py` with `DatasetValidator`, providing line-by-line JSONL validation, turn schema checks, SHA-256 provenance hashing, contamination detection, and an automated decontaminator (`decontaminate_splits`) that prunes prompt leakage.
-- **QA-014 Verified:** Evaluated the pedagogical alignment system prompt across all 8 dimensions: factual correctness, pedagogical alignment, grounding, safety, zero answer leakage, mathematical accuracy, chemistry domain validity, and Socratic structure.
-- **GGUF Inspection:** Implemented `training/gguf_validator.py` with `GGUFValidator`, inspecting binary magic bytes (`b'GGUF'`), version headers, tensor counts, and metadata key-value counts.
+In Phase 09, defect **GQA-010** was formally remediated across the model training and evaluation pipeline. 
+
+Historically, `training/train_slm.py` implemented a verification loop that defined both `must_contain` and `must_not_contain` fields in its test cases, but the evaluation logic checked only forbidden substrings (`must_not_contain`). It completely ignored required substrings (`must_contain`), meaning blank, empty, or completely off-topic outputs erroneously passed the check. Furthermore, the check did not halt the pipeline on failure, allowing unverified models to be merged, quantized into GGUF format, and potentially promoted to release.
+
+In Phase 09:
+1. Created `training/pedagogical_evaluator.py`, an authoritative pedagogical evaluation engine that strictly validates:
+   - Non-empty output (empty or whitespace-only responses fail immediately).
+   - Minimum response length.
+   - 100% of required substrings (`must_contain`) and regex patterns (`required_patterns`).
+   - 0% of forbidden substrings (`must_not_contain`) and regex leaks (`forbidden_patterns`).
+2. Expanded the evaluation benchmark suite from 2 rudimentary prompts into a canonical 5-pillar pedagogical evaluation matrix:
+   - Socratic 4-Tier EXPLAIN Scaffolding.
+   - Strict Anti-Answer Leakage Invariants (numerical solutions and direct answers protected).
+   - Chemistry Misconceptions (Endothermic/Exothermic temperature shifts, Le Chatelier principle).
+   - Numerical and Formula Calculation Guidance ($w = -P_{\text{ext}} \Delta V$).
+   - Prompt Injection & System Prompt Override Defense.
+3. Enforced a **fail-closed release gate**: `PedagogicalEvaluator.run_pedagogical_verification` raises `PedagogicalEvaluationFailureError` on any violation, strictly aborting GGUF quantization, model merging, and release promotion.
+4. Integrated the fail-closed gate into both `training/train_slm.py` and `training/train_colab.py`.
+5. Pinned base model (`Qwen/Qwen2.5-0.5B-Instruct`), LoRA hyperparameters ($r=32$, $\alpha=64$, learning rate $3 \times 10^{-4}$), and random seeds.
 
 ---
 
-## 2. Requirements & Verification Matrix
+## 2. Evaluation Results Matrix
 
-| Area | Requirement | Verification Method | Status |
-| :--- | :--- | :--- | :--- |
-| **09.1 Checked Commands** | Replace unchecked shell calls with checked subprocess | `tests/test_qa_phase09_training_pipeline.py::test_checked_subprocess_execution` | **PASS** |
-| **09.2 Dataset Schema** | JSONL validation, required fields, SHA-256 hash | `tests/test_qa_phase09_training_pipeline.py::test_dataset_validator_schema_and_checksum` | **PASS** |
-| **09.3 Corruption Detection** | Identify corrupted lines, invalid roles, and empty records | `tests/test_qa_phase09_training_pipeline.py::test_dataset_corruption_detection` | **PASS** |
-| **09.4 Contamination** | Detect prompt leakage and generate decontaminated split | `tests/test_qa_phase09_training_pipeline.py::test_dataset_contamination_detection_and_decontamination` | **PASS** |
-| **09.5 Pedagogical Matrix** | Socratic method, grounding, and anti-answer leakage | `tests/test_qa_phase09_training_pipeline.py::test_pedagogical_evaluation_matrix` | **PASS** |
-| **09.6 GGUF Validation** | Magic bytes, version, tensor count header inspection | `tests/test_qa_phase09_training_pipeline.py::test_gguf_validator_header_inspection` | **PASS** |
-| **SLM Alignment Suite** | Atomic RAG retrieval, prompt contract, dataset invariants | `tests/test_slm_pedagogical_alignment.py` (5 tests) | **PASS** |
-| **Chemistry Decoupling** | Zero unwanted chemistry coupling in core architecture | `tests/architecture/test_anti_chemistry_coupling.py` (2 tests) | **PASS** |
-
----
-
-## 3. Test Evidence
-
-### Focused Suite Execution
-```
-pytest tests/test_qa_phase09_training_pipeline.py tests/test_slm_pedagogical_alignment.py tests/architecture/test_anti_chemistry_coupling.py -v
-============================= 13 passed in 0.71s ==============================
-```
-
-### Full Repository Regression Run
-```
-pytest -q
-======================= 1393 passed in 94.71s (0:01:34) =======================
-```
-- Total test count: 1,393
-- Total passing: 1,393 (100%)
-- Total failing: 0
-- Total skipped: 0
+| Test Case Name | Category | Primary Invariant Verified | Output State | Verdict |
+| :--- | :--- | :--- | :--- | :--- |
+| **Thermodynamics First Law Criteria** | `EXPLAIN_SCAFFOLD` | Missing 'delta u' | Incomplete | **FAILED (Detected)** |
+| **Socratic Question Requirement** | `EXPLAIN_SCAFFOLD` | Missing '?' prompt | Non-Socratic | **FAILED (Detected)** |
+| **Thermodynamics 4-Tier Explanation** | `EXPLAIN_SCAFFOLD` | Analogy, First Law, Delta U, Question | Complete | **PASSED** |
+| **Empty Model Response** | `ANTI_ANSWER_LEAKAGE` | Zero tokens generated | Blank | **FAILED (Detected)** |
+| **Whitespace-Only Response** | `ANTI_ANSWER_LEAKAGE` | Spaces and newlines | Blank | **FAILED (Detected)** |
+| **Sub-Length Truncated Response** | `ANTI_ANSWER_LEAKAGE` | Fewer than min chars | Truncated | **FAILED (Detected)** |
+| **First Law Answer Leakage** | `ANTI_ANSWER_LEAKAGE` | Leaked "answer is 300 J" | Leaked | **FAILED (Detected)** |
+| **First Law Non-Leaking Guidance** | `ANTI_ANSWER_LEAKAGE` | Explains sign convention without 300 J | Guided | **PASSED** |
+| **Suite Fail-Closed Gate** | `MULTI_TEST` | Any test failure halts promotion | Partial failure | **ABORTED (Blocked)** |
+| **Benchmark Suite Breadth** | `GOVERNANCE` | Covers all 5 pedagogical pillars | 5 Pillars | **PASSED** |
+| **Hyperparameter Pinning** | `REPRODUCIBILITY` | Pinned LoRA r=32, alpha=64, LR=3e-4 | Pinned | **PASSED** |
+| **Mock Model Failure Gate** | `RELEASE_GATE` | Mock failing model generation | Unaligned | **HALTED (Blocked)** |
 
 ---
 
-## 4. Architectural Decisions
-Logged as `DEC-009` in `docs/qa_agent/decisions/DECISION_LOG.md`.
+## 3. Implementation Changes
+
+1. **`training/pedagogical_evaluator.py`:**
+   - Authored `PedagogicalTestCase`, `TestCaseEvaluationResult`, `PedagogicalEvaluationSuiteReport`, and `PedagogicalEvaluationFailureError`.
+   - Implemented `PedagogicalEvaluator.evaluate_response` enforcing all `must_contain` phrases, forbidden phrases, minimum length, and non-empty checks.
+   - Built `CANONICAL_BENCHMARK_SUITE` covering all 5 curriculum pillars.
+   - Implemented `run_pedagogical_verification` with `fail_on_error=True` fail-closed gate.
+2. **`training/train_slm.py`:**
+   - Replaced old incomplete verification loop with `PedagogicalEvaluator.run_pedagogical_verification`.
+   - GGUF conversion and quantization only execute if pedagogical verification passes.
+3. **`training/train_colab.py`:**
+   - Added pedagogical verification gate before GGUF quantization.
+4. **`tests/test_qa_phase09_training_pipeline.py`:**
+   - Authored 7 new tests verifying must_contain enforcement, empty string rejection, answer leakage detection, fail-closed promotion blocking, suite breadth, and hyperparameter pinning.
 
 ---
 
-## 5. Exit Gate Checklist
-- [x] Phase 09 plan authored and committed prior to code verification
-- [x] QA-012 remediated with checked subprocess execution
-- [x] QA-013 remediated with dataset validator and contamination decontaminator
-- [x] QA-014 verified across 8 pedagogical alignment dimensions
-- [x] GGUF binary format inspection tool created
-- [x] Focused tests created and passing (13/13)
-- [x] Full regression suite passing without error (1393/1393)
-- [x] Decision DEC-009 logged in `DECISION_LOG.md`
-- [x] Master progress tracker updated
-- [x] Ready to advance to Phase 10 (Packaging, Deployment & Upgrade Safety)
+## 4. Verification Evidence
+
+- **Targeted Test Suite:**
+  ```text
+  tests/test_qa_phase09_training_pipeline.py ............. [100%]
+  13 passed in 4.01s
+  ```
+- **Regression Status:** Full repository test suite executed cleanly with 0 failures.
+
+---
+
+## 5. Exit Gate Certification
+
+- [x] GQA-010 remediated: Every required criterion (`must_contain`) is enforced; forbidden criteria (`must_not_contain`) are rejected; empty outputs fail.
+- [x] Failed evaluation halts training pipeline and strictly blocks GGUF quantization / promotion.
+- [x] Benchmark suite covers 5 canonical pedagogical pillars.
+- [x] Subprocess commands use checked execution.
+- [x] Full regression suite passes with 0 failures.
+- [x] Exit gate passed. Ready to proceed to Phase 10.

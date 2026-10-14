@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import re
 import time
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -32,15 +34,55 @@ from central_platform.ai.schema import (
     ModelExecutionStatus,
     ModelTier,
     ProviderConfig,
+    ProviderRuntimeStatus,
     ProviderType,
     RoutingDecision,
     TaskType,
+    TokenMeasurementProvenance,
 )
 
 from central_platform.db import PlatformDatabase
 from central_platform.models.schema import AIExecutionLog
 
 logger = logging.getLogger("gayatri.central_platform.ai.gateway")
+
+
+@dataclass
+class ProviderRuntimeTelemetry:
+    """Runtime operational and health telemetry for a single provider (GQA-004)."""
+    provider_name: str
+    status: ProviderRuntimeStatus = ProviderRuntimeStatus.CONFIGURED
+    last_successful_inference_at: Optional[str] = None
+    last_attempt_at: Optional[str] = None
+    last_error: Optional[str] = None
+    last_error_class: Optional[str] = None
+    consecutive_failures: int = 0
+    successful_requests: int = 0
+    failed_requests: int = 0
+    total_latency_ms: float = 0.0
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "provider_name": self.provider_name,
+            "status": self.status.value if isinstance(self.status, ProviderRuntimeStatus) else str(self.status),
+            "last_successful_inference_at": self.last_successful_inference_at,
+            "last_attempt_at": self.last_attempt_at,
+            "last_error": self.last_error,
+            "last_error_class": self.last_error_class,
+            "consecutive_failures": self.consecutive_failures,
+            "successful_requests": self.successful_requests,
+            "failed_requests": self.failed_requests,
+        }
+
+
+def sanitize_ai_error_message(err_msg: Optional[str]) -> Optional[str]:
+    """Sanitize sensitive credentials, API keys, and bearer tokens from error text (GQA-015)."""
+    if not err_msg:
+        return err_msg
+    s = re.sub(r"(?i)\bBearer\s+[a-zA-Z0-9_\-\.]+", "Bearer [REDACTED]", err_msg)
+    s = re.sub(r"(?i)\b(?:sk|key|token|secret|api_key)[a-zA-Z0-9_\-\.]{8,}", "[REDACTED_SECRET]", s)
+    s = re.sub(r"(?i)(?:api_key|secret|token)\s*=\s*['\"][^'\"]+['\"]", "secret=[REDACTED]", s)
+    return s
 
 
 class AIGatewayService:
@@ -51,6 +93,9 @@ class AIGatewayService:
         self.policy_engine = PolicyEngine()
         self.router = ModelRouter()
         self.adapters: Dict[str, BaseAIProviderAdapter] = {}
+        self.provider_telemetry: Dict[str, ProviderRuntimeTelemetry] = {}
+        self.last_active_provider: Optional[str] = None
+        self.last_active_model: Optional[str] = None
         self._init_default_providers()
 
     def _init_default_providers(self) -> None:
@@ -198,6 +243,10 @@ class AIGatewayService:
             self.adapters[config.provider_name] = LocalGGUFAdapter(config)
         else:
             self.adapters[config.provider_name] = MockAIAdapter(config)
+        self.provider_telemetry[config.provider_name] = ProviderRuntimeTelemetry(
+            provider_name=config.provider_name,
+            status=ProviderRuntimeStatus.ENABLED if config.enabled else ProviderRuntimeStatus.CONFIGURED,
+        )
 
     def execute(self, request: AIExecutionRequest) -> AIExecutionResult:
         """Execute AI request through the complete Gateway pipeline."""
@@ -332,28 +381,67 @@ class AIGatewayService:
 
             # 5. Dispatch to Adapter
             cb = self.policy_engine.get_circuit_breaker(p_name)
+            telem = self.provider_telemetry.setdefault(
+                p_name, ProviderRuntimeTelemetry(provider_name=p_name)
+            )
+            telem.last_attempt_at = datetime.now(timezone.utc).isoformat()
             try:
                 result = adapter.execute(exec_req, model_desc)
                 if result.success:
                     cb.record_success()
-                    self.policy_engine.record_spend(result.estimated_cost_usd)
+                    telem.successful_requests += 1
+                    telem.consecutive_failures = 0
+                    telem.status = ProviderRuntimeStatus.HEALTHY
+                    telem.last_successful_inference_at = datetime.now(timezone.utc).isoformat()
+                    telem.total_latency_ms += result.latency_ms
+                    self.last_active_provider = p_name
+                    self.last_active_model = model_desc.model_name
+
+                    # Record real token metrics with measurement provenance (GQA-015)
+                    self.policy_engine.record_usage(
+                        prompt_tokens=result.prompt_tokens,
+                        completion_tokens=result.completion_tokens,
+                        cost_usd=result.estimated_cost_usd,
+                        provenance=result.token_provenance,
+                    )
                     if idx > 0:
                         result.fallback_used = True
                         result.original_provider = routing.target_provider
 
+                    result.error_message = sanitize_ai_error_message(result.error_message)
                     self._log_execution(result, request)
                     return result
                 else:
                     cb.record_failure()
-                    last_error = result.error_message or "Execution failed"
+                    sanitized_err = sanitize_ai_error_message(result.error_message) or "Execution failed"
+                    telem.failed_requests += 1
+                    telem.consecutive_failures += 1
+                    telem.last_error = sanitized_err
+                    telem.last_error_class = result.error_class or "ProviderExecutionFailed"
+                    if cb.state.value == "OPEN" or telem.consecutive_failures >= 3:
+                        telem.status = ProviderRuntimeStatus.UNAVAILABLE
+                    else:
+                        telem.status = ProviderRuntimeStatus.DEGRADED
+
+                    last_error = sanitized_err
                     last_error_status = result.status
                     last_error_class = result.error_class or "ProviderExecutionFailed"
             except Exception as err:
                 cb.record_failure()
-                last_error = str(err)
+                sanitized_err = sanitize_ai_error_message(str(err))
+                telem.failed_requests += 1
+                telem.consecutive_failures += 1
+                telem.last_error = sanitized_err
+                telem.last_error_class = type(err).__name__
+                if cb.state.value == "OPEN" or telem.consecutive_failures >= 3:
+                    telem.status = ProviderRuntimeStatus.UNAVAILABLE
+                else:
+                    telem.status = ProviderRuntimeStatus.DEGRADED
+
+                last_error = sanitized_err
                 last_error_status = ModelExecutionStatus.MODEL_UNAVAILABLE
                 last_error_class = type(err).__name__
-                logger.warning(f"Provider {p_name} execution error: {err}")
+                logger.warning(f"Provider {p_name} execution error: {sanitized_err}")
 
         # All providers failed
         fail_res = AIExecutionResult(
@@ -386,6 +474,7 @@ class AIGatewayService:
             # Privacy invariant: Store cryptographic hash, never raw prompt
             p_hash = hashlib.sha256(request.prompt.encode("utf-8")).hexdigest()[:16]
             task_type_val = request.task_type.value if isinstance(request.task_type, TaskType) else str(request.task_type)
+            safe_error_class = sanitize_ai_error_message(result.error_class)
 
             log_entry = AIExecutionLog(
                 id=f"log-{result.request_id}",
@@ -401,7 +490,7 @@ class AIGatewayService:
                 completion_tokens=result.completion_tokens,
                 latency_ms=result.latency_ms,
                 status="SUCCESS" if result.success else "FAILED",
-                error_class=result.error_class,
+                error_class=safe_error_class,
                 estimated_cost_usd=result.estimated_cost_usd,
                 fallback_used=result.fallback_used,
                 prompt_hash=p_hash,
@@ -413,22 +502,81 @@ class AIGatewayService:
 
 
     def get_status(self) -> Dict[str, Any]:
-        """Return real-time AI Gateway status and metrics."""
+        """Return real-time, evidence-based AI Gateway status and metrics (GQA-004, GQA-015)."""
         enabled_providers = [p.provider_name for p in self.router.providers.values() if p.enabled]
-        active_provider = enabled_providers[0] if enabled_providers else "none"
-        active_model = (
-            self.router.providers[active_provider].models[0].model_name
-            if active_provider in self.router.providers and self.router.providers[active_provider].models
-            else "none"
-        )
+
+        # Determine evidence-verified active provider
+        active_provider = "none"
+        active_model = "none"
+
+        if self.last_active_provider and self.last_active_provider in self.router.providers:
+            telem = self.provider_telemetry.get(self.last_active_provider)
+            if telem and telem.status == ProviderRuntimeStatus.HEALTHY:
+                active_provider = self.last_active_provider
+                active_model = self.last_active_model or (
+                    self.router.providers[active_provider].models[0].model_name
+                    if self.router.providers[active_provider].models else "none"
+                )
+
+        if active_provider == "none":
+            healthy_candidates = [
+                p_name for p_name in enabled_providers
+                if self.provider_telemetry.get(p_name) and self.provider_telemetry[p_name].status == ProviderRuntimeStatus.HEALTHY
+            ]
+            if healthy_candidates:
+                active_provider = healthy_candidates[0]
+                active_model = (
+                    self.router.providers[active_provider].models[0].model_name
+                    if self.router.providers[active_provider].models else "none"
+                )
+            elif enabled_providers:
+                # Enabled in config but no verified runtime inference yet
+                active_provider = enabled_providers[0]
+                active_model = (
+                    self.router.providers[active_provider].models[0].model_name
+                    if self.router.providers[active_provider].models else "none"
+                )
+
         remaining_budget = max(0.0, round(self.policy_engine.daily_budget_usd - self.policy_engine.daily_spend_usd, 2))
 
+        # Evidence-based gateway health
+        if self.policy_engine.global_kill_switch:
+            gw_status = "DEGRADED"
+        elif any(t.status == ProviderRuntimeStatus.HEALTHY for t in self.provider_telemetry.values()):
+            gw_status = "HEALTHY"
+        elif any(t.status == ProviderRuntimeStatus.DEGRADED for t in self.provider_telemetry.values()):
+            gw_status = "DEGRADED"
+        elif all(t.status == ProviderRuntimeStatus.UNAVAILABLE for t in self.provider_telemetry.values() if t.provider_name in enabled_providers) and enabled_providers:
+            gw_status = "UNAVAILABLE"
+        else:
+            gw_status = "HEALTHY"
+
+        providers_status_dict = {
+            p_name: self.provider_telemetry[p_name].to_dict()
+            for p_name in self.router.providers.keys()
+            if p_name in self.provider_telemetry
+        }
+
+        active_telem = self.provider_telemetry.get(active_provider)
+        last_succ = active_telem.last_successful_inference_at if active_telem else None
+
         return {
-            "gateway_status": "DEGRADED" if self.policy_engine.global_kill_switch else "HEALTHY",
+            "gateway_status": gw_status,
             "active_provider": active_provider,
             "active_model": active_model,
             "available_providers": enabled_providers,
-            "token_usage_today": int(self.policy_engine.daily_spend_usd * 10000),  # Representative count
+            "token_usage_today": self.policy_engine.daily_tokens_total,
+            "tokens_measured_today": self.policy_engine.daily_tokens_measured,
+            "tokens_estimated_today": self.policy_engine.daily_tokens_estimated,
+            "token_provenance": self.policy_engine.token_provenance,
+            "token_breakdown": {
+                "total": self.policy_engine.daily_tokens_total,
+                "measured": self.policy_engine.daily_tokens_measured,
+                "estimated": self.policy_engine.daily_tokens_estimated,
+                "provenance": self.policy_engine.token_provenance,
+            },
             "budget_remaining_usd": remaining_budget,
             "kill_switch_active": self.policy_engine.global_kill_switch,
+            "providers_status": providers_status_dict,
+            "last_successful_inference_at": last_succ,
         }

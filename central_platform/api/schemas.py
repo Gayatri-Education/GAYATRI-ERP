@@ -1109,8 +1109,14 @@ class AIStatusResponse(BaseModel):
     active_model: str = "Qwen2.5-3B-Instruct-Q4_K_M"
     available_providers: List[str] = Field(default_factory=lambda: ["local_llama", "ollama", "openai", "gemini"])
     token_usage_today: int = 4210
+    tokens_measured_today: int = 0
+    tokens_estimated_today: int = 0
+    token_provenance: str = "UNKNOWN"
+    token_breakdown: Dict[str, Any] = Field(default_factory=dict)
     budget_remaining_usd: float = 98.45
     kill_switch_active: bool = False
+    providers_status: Dict[str, Any] = Field(default_factory=dict)
+    last_successful_inference_at: Optional[str] = None
 
 
 class AIExecutionLogResponse(BaseModel):

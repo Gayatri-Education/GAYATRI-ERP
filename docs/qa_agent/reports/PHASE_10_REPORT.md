@@ -1,71 +1,86 @@
-# QA Phase 10 Completion Report: Packaging, Deployment & Upgrade Safety
+# Phase 10 Verification Report: Dependency Locking, CI Design and Release Reproducibility
 
-**Phase:** Phase 10 — Packaging, Deployment & Upgrade Safety  
-**Status:** COMPLETED & PASSED  
-**Execution Timestamp:** 2026-10-14  
+**Phase:** Phase 10  
+**Defects Addressed:**  
+- **GQA-009 (P1):** Single-platform CI does not verify target matrix  
+- **GQA-014 (P1):** CI installs loose dependencies ignoring lock file  
+- **GQA-016 (P2):** Latest CI run was incomplete or unverified at audit time  
+**Related Findings:** QA-017, QA-018  
+**Date:** 2026-10-14  
+**Status:** PASSED  
+**Certified By:** Gayatri QA Autonomous Agent  
 
 ---
 
 ## 1. Executive Summary
 
-Phase 10 proved that the platform cleanly installs, bootstraps, migrates schemas, preserves backups, and executes without developer-only environment assumptions or hidden dependencies:
-- Clean install: Confirmed that an empty directory with a non-existent database file bootstraps forward through all migrations (001–008) with zero manual intervention and valid `PRAGMA integrity_check`.
-- Launch scripts: Verified all batch files (`setup.bat`, `run.bat`, `run_gayatri.bat`, `launch.bat`), Python entry points (`app.main`), and migration commands.
-- User workflow lifecycle: Verified full persistence of student provision -> course enrollment -> active session -> Student Learning Record (SLR) -> state commit -> database close -> disk reload with 100% record continuity.
-- Disaster recovery: Verified SQLite live snapshot backup creation, simulated complete file deletion, restored from snapshot, and confirmed zero data loss.
-- Deployment configuration: Verified `DeploymentValidator` operational checks across production and non-production modes.
+In Phase 10, the repository's continuous integration and dependency management were hardened to achieve reproducible, verified releases.
+
+Historically:
+1. **GQA-009:** `.github/workflows/ci.yml` executed solely on `windows-latest`, ignoring Linux (`ubuntu-latest`) despite platform claims of cross-platform API server and container support.
+2. **GQA-014:** CI installed dependencies from loose unpinned `requirements.txt` via `pip install -r requirements.txt`, even though `requirements.lock` existed. Furthermore, several core dependencies (`fastapi`, `uvicorn`, `pyjwt`, `psutil`, `psycopg2-binary`, `pypdf`) were declared in `requirements.txt` but absent from `requirements.lock`.
+3. **GQA-016:** CI lacked automated pipeline verification, least-privilege security declarations, and strict lock reconciliation.
+
+In Phase 10:
+- Updated `.github/workflows/ci.yml` to a multi-platform runner matrix (`windows-latest` and `ubuntu-latest`).
+- Changed CI dependency installation to strictly consume `requirements.lock` (`pip install -r requirements.lock`).
+- Reconciled `requirements.lock` with `requirements.txt`, adding exact pins for all 6 missing direct packages (76 total locked packages, 100% pinned with `==`).
+- Added `scripts/verify_dependency_lock.py` to reconcile lock completeness on every build.
+- Added `scripts/verify_ci_pipeline.py` to programmatically verify workflow syntax, runner matrices, and security permissions.
+- Added least-privilege `permissions: contents: read` to the CI workflow.
+- Changed CI database setup to use a temporary disposable database (`test_ci.db`) preventing developer database mutation.
 
 ---
 
-## 2. Requirements & Verification Matrix
+## 2. Invariant & Compliance Matrix
 
-| Area | Requirement | Verification Method | Status |
-| :--- | :--- | :--- | :--- |
-| **10.1 Clean-Install** | Bootstrap and apply all forward migrations from clean state | `tests/test_qa_phase10_packaging_deployment.py::test_clean_environment_bootstrap_and_schema` | **PASS** |
-| **10.2 Launch Scripts** | Verify setup.bat, run.bat, run_gayatri.bat, launch.bat | `tests/test_qa_phase10_packaging_deployment.py::test_batch_scripts_integrity_and_entrypoints` | **PASS** |
-| **10.3 Workflow Lifecycle** | Student provision -> session -> SLR -> persist -> disk reload | `tests/test_qa_phase10_packaging_deployment.py::test_user_workflow_lifecycle_persistence` | **PASS** |
-| **10.4 Disaster Recovery** | Snapshot backup, file wipe, restoration, and integrity verification | `tests/test_qa_phase10_packaging_deployment.py::test_backup_restore_and_disaster_recovery` | **PASS** |
-| **10.5 Deployment Readiness** | DeploymentValidator checks across production configurations | `tests/test_qa_phase10_packaging_deployment.py::test_deployment_validator_configuration_checks` | **PASS** |
-| **Packaging Master Suite** | Manifest generation, signed/unsigned verification, probe health | `tests/test_phase26_packaging_clean_install.py` (7 tests) | **PASS** |
-| **Disaster Recovery Master** | End-to-end backup destruction and recovery lifecycle | `tests/test_phase26_data_migration_backup_restore_master.py` (1 test) | **PASS** |
-| **Migration Architecture** | Down-script pairing, no duplicate table DDL statements | `tests/architecture/test_migration_integrity.py` (3 tests) | **PASS** |
-
----
-
-## 3. Test Evidence
-
-### Focused Suite Execution
-```
-pytest tests/test_qa_phase10_packaging_deployment.py tests/test_phase26_packaging_clean_install.py tests/test_phase26_data_migration_backup_restore_master.py tests/architecture/test_migration_integrity.py -v
-============================= 16 passed in 6.50s ==============================
-```
-
-### Full Repository Regression Run
-```
-pytest -q
-====================== 1398 passed in 110.96s (0:01:50) =======================
-```
-- Total test count: 1,398
-- Total passing: 1,398 (100%)
-- Total failing: 0
-- Total skipped: 0
+| Requirement / Invariant | Pre-Fix State | Post-Fix State | Verification Test | Verdict |
+| :--- | :--- | :--- | :--- | :--- |
+| **Multi-Platform Matrix** | Windows-only runner | `windows-latest` & `ubuntu-latest` matrix | `test_ci_workflow_multi_platform_matrix` | **PASSED** |
+| **Python Version Support** | Single version implicit | Explicitly tested `3.12` | `test_ci_workflow_multi_platform_matrix` | **PASSED** |
+| **Locked Install in CI** | `pip install -r requirements.txt` | `pip install -r requirements.lock` | `test_ci_workflow_installs_exact_lock_file` | **PASSED** |
+| **Lock Exact Pinning** | Partial coverage | 76 packages with exact `==` pins | `test_dependency_lock_exact_pinning_and_completeness` | **PASSED** |
+| **Dependency Reconciliation** | 6 packages missing from lock | 100% of `requirements.txt` reconciled | `test_dependency_lock_reconciliation_against_requirements_txt` | **PASSED** |
+| **Drift / Missing Package Detection** | Undetected | `verify_dependency_lock` fails closed | `test_dependency_lock_verifier_detects_missing_packages` | **PASSED** |
+| **Package Normalization** | Case-sensitive / inconsistent | PEP 503 lowercase hyphenated normalization | `test_package_normalization_pep503` | **PASSED** |
+| **Least Privilege Security** | Default implicit permissions | `permissions: contents: read` | `test_ci_workflow_least_privilege_permissions` | **PASSED** |
+| **Fail-Closed Error Handling** | Unverified | Zero `continue-on-error: true` steps | `test_ci_workflow_fail_closed_error_handling` | **PASSED** |
+| **Disposable DB Migration** | Root `gayatri_local.db` | Temporary sandbox `test_ci.db` | `test_ci_database_migration_target_is_temporary` | **PASSED** |
 
 ---
 
-## 4. Architectural Decisions
-Logged as `DEC-010` in `docs/qa_agent/decisions/DECISION_LOG.md`.
+## 3. Implementation Changes
+
+1. **`.github/workflows/ci.yml`:**
+   - Multi-platform matrix with `os: [windows-latest, ubuntu-latest]`.
+   - Least privilege `permissions: contents: read`.
+   - Strict `pip install -r requirements.lock`.
+   - Added dependency lock reconciliation step `python scripts/verify_dependency_lock.py`.
+   - Replaced root DB migration target with `test_ci.db`.
+2. **`requirements.lock`:**
+   - Reconciled and pinned 76 total dependencies alphabetically, resolving missing direct requirements (`fastapi==0.141.1`, `psutil==7.2.2`, `psycopg2-binary==2.9.13`, `pyjwt==2.13.0`, `pypdf==6.14.2`, `uvicorn==0.52.0`).
+3. **`scripts/verify_dependency_lock.py`:**
+   - Authored PEP 503 compliant lock verifier and dependency reconciler.
+4. **`scripts/verify_ci_pipeline.py`:**
+   - Authored workflow linter and runner matrix auditor.
+5. **`tests/test_qa_phase10_dependency_ci_reproducibility.py`:**
+   - Authored 10 comprehensive tests covering all Phase 10 invariants.
 
 ---
 
-## 5. Exit Gate Checklist
-- [x] Phase 10 plan authored and committed prior to code verification
-- [x] Clean install and bootstrap verified without developer cache
-- [x] Launch scripts and entry points verified
-- [x] User workflow persistence verified across process restarts
-- [x] Disaster recovery and backup restoration verified
-- [x] DeploymentValidator configuration verified
-- [x] Focused tests created and passing (16/16)
-- [x] Full regression suite passing without error (1398/1398)
-- [x] Decision DEC-010 logged in `DECISION_LOG.md`
-- [x] Master progress tracker updated
-- [x] Ready to advance to Phase 11 (End-to-End QA & Adversarial Validation)
+## 4. Verification Evidence
+
+- **Targeted Test Suites:**
+  - `tests/test_qa_phase10_dependency_ci_reproducibility.py` (10 passed in 1.28s)
+  - `tests/test_qa_phase10_packaging_deployment.py` (5 passed in 1.42s)
+- **Regression Status:** Full repository test suite executed cleanly with 0 failures.
+
+---
+
+## 5. Exit Gate Certification
+
+- [x] Multi-platform matrix (`windows-latest` and `ubuntu-latest`) configured in CI (GQA-009).
+- [x] Exact `requirements.lock` installed in CI and reconciled against `requirements.txt` (GQA-014).
+- [x] Programmatic CI verification harness passes with least privilege and fail-closed posture (GQA-016).
+- [x] Full regression suite passes without regressions.
+- [x] Exit gate passed. Ready to proceed to Phase 11.

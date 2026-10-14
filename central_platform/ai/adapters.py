@@ -63,9 +63,22 @@ def generate_dynamic_pedagogical_content(request: AIExecutionRequest, model_desc
     p_lower = p.lower()
     task = str(request.task_type.value if hasattr(request.task_type, "value") else request.task_type).lower()
 
-    # 1. Assessment / Grading Task
+    # 1. Assessment / Grading Task - GQA-003 Remediation:
+    # Safe fallback policy strictly prohibits awarding credit or certifying correctness
+    # when real inference or verified deterministic rule evaluators are not active.
     if "grading" in task or "evaluate" in task:
-        return '{"score": 1.0, "correct": true, "feedback": "Accurate response demonstrating clear conceptual mastery."}'
+        return json.dumps({
+            "status": "EVALUATION_UNAVAILABLE",
+            "score": None,
+            "correct": None,
+            "is_correct": None,
+            "evaluation_available": False,
+            "authoritative": False,
+            "feedback": (
+                "Automated evaluation is unavailable because a verified evaluation engine or "
+                "active inference model is not connected. Fallback generators cannot award credit or determine correctness."
+            ),
+        })
 
     # 2. Copilot / Lesson Plan / Diagnostic Briefing
     if "copilot" in task or "briefing" in p_lower or "lesson plan" in p_lower:

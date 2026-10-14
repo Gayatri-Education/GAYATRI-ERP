@@ -108,9 +108,11 @@ def create_app() -> FastAPI:
     )
 
     # 1. Register CORS Middleware
+    from central_platform.config import get_authoritative_settings
+    settings = get_authoritative_settings()
+    allowed_origins = settings.allowed_origins
+
     if is_prod:
-        raw_origins = os.environ.get("GAYATRI_ALLOWED_ORIGINS") or os.environ.get("ALLOWED_ORIGINS", "")
-        allowed_origins = [o.strip() for o in raw_origins.split(",") if o.strip()]
         app.add_middleware(
             CORSMiddleware,
             allow_origins=allowed_origins,
@@ -119,11 +121,9 @@ def create_app() -> FastAPI:
             allow_headers=["Authorization", "Content-Type", "X-Request-ID", "Accept", "Origin"],
         )
     else:
-        raw_origins = os.environ.get("GAYATRI_ALLOWED_ORIGINS") or os.environ.get("ALLOWED_ORIGINS")
-        allowed_origins = [o.strip() for o in raw_origins.split(",") if o.strip()] if raw_origins else ["*"]
         app.add_middleware(
             CORSMiddleware,
-            allow_origins=allowed_origins,
+            allow_origins=allowed_origins if allowed_origins else ["*"],
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],

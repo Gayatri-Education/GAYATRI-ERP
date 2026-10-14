@@ -1,46 +1,63 @@
-# Phase 06 Implementation Plan — Adaptive Learning & Pedagogical Correctness
+# Phase 06 Plan: Session Persistence, Write Acknowledgements, Data Integrity & Migrations
 
-## 1. Context & Objectives
-- **Severity Focus:** P0/P1 for core tutor behavior.
-- **Goal:** Validate and guarantee that Gayatri AI actually adapts to learner behavior across a continuous, multi-turn educational interaction loop.
-- **Key Target Areas:**
-  - Complete canonical behavior chain:
-    Concept presented → Student answers incorrectly → Evaluator detects error and identifies specific misconception → Mastery decreases → Difficulty decreases via DifficultyManager → Tutor shifts to HINT/REMEDIATE → Student retries with guidance → Correct answer evaluated → Mastery increases → Difficulty increases → Recommendation advances to summary or next topic.
-  - Socratic policy adherence: non-leakage of answers on hints, multi-tiered hint progression (Levels 1 through 5).
-  - Numerical and conceptual answer evaluation correctness (tolerance, unit checks, misconception classification).
-  - Learner archetype differentiation (weak vs. average vs. strong learners receive distinct recommendations).
-  - State persistence durability across session reload/restart during tutoring turns.
+**Phase Goal:** Remediate audit findings `GQA-007` (test isolation/data protection) and `GQA-011` (async session writer swallowed worker exceptions) by establishing reliable write acknowledgements, durable queue guarantees, bounded retry for transient locks, graceful shutdown with failure exposure, connection threading safety, and robust schema migration validation.
 
-## 2. Requirements & Acceptance Criteria
-1. **Behavior Chain Integration:**
-   - Integrate `DifficultyManager` directly into `StudentProfile` and `TutorController` so evaluation outcomes dynamically adjust difficulty level (L1–L5) and question difficulty routing (easy/medium/hard).
-   - Ensure `TutorController.handle_evaluate` updates both `mastery` and `current_difficulty`.
-   - Ensure `TutorResponse` and event logs capture `difficulty_level`, `mastery_delta`, and `misconception`.
-2. **Pedagogical Correctness & Invariants:**
-   - Test numerical evaluation with tolerances and unit validation.
-   - Verify specific chemistry misconceptions (e.g., `THERMO_SIGN_CONVENTION`, `HESS_LAW_DIRECTION`, `GIBBS_SIGN_CONFUSION`).
-   - Socratic policy: verify hints do not prematurely leak final numerical or reaction answers.
-3. **Learner Archetype Diversity:**
-   - Verify that weak, average, and advanced learner profiles produce divergent adaptive actions (e.g. `REMEDIATE_PREREQUISITE`, `TEST_AND_HINT`, `MASTERED`).
-4. **State Durability Across Turns:**
-   - Ensure student profile and tutor context persist correctly to disk and restore without losing active concept, mastery, or detected misconceptions.
+---
 
-## 3. Targeted Test Suite
-Create `tests/test_qa_phase06_adaptive_learning.py` testing:
-- Canonical multi-turn adaptive cycle end-to-end using real components (`TutorController`, `StudentProfile`, `StudentAnswerEvaluator`, `AdaptiveLearningEngine`, `DifficultyManager`).
-- Misconception detection, repeated misconception tracking, and remediation routing.
-- Numerical tolerance and unit-checking evaluation.
-- Learner archetype branching (weak, medium, strong).
-- Hint ladder progression (Level 1 through 5) without answer leakage.
-- Persistence and restoration across simulated restart.
+## 1. Architectural Scope & Target Findings
 
-## 4. Execution Sequence
-1. Write this plan to `docs/qa_agent/plans/PHASE_06_PLAN.md`.
-2. Update `core/tutor/adaptive.py` to add `current_difficulty` and `update_difficulty()` to `StudentProfile`.
-3. Update `core/tutor/controller.py` to bind difficulty transitions in `handle_evaluate` and adapt default question difficulty in `handle_question`.
-4. Create `tests/test_qa_phase06_adaptive_learning.py`.
-5. Run focused tests: `pytest tests/test_qa_phase06_adaptive_learning.py tests/test_phase6_*.py -v`.
-6. Run full regression suite: `pytest -q`.
-7. Record decision DEC-006 in `docs/qa_agent/decisions/DECISION_LOG.md`.
-8. Write `docs/qa_agent/reports/PHASE_06_REPORT.md`.
-9. Update `docs/qa_agent/MASTER_PROGRESS.md`.
+### GQA-011: Async Session Writer Swallows Worker Exceptions
+- **Problem:** `core/session.py:_writer_loop()` caught all exceptions from write operations and called `self._write_queue.task_done()` after logging. Calling `store.flush()` (`self._write_queue.join()`) returned without error even when writes failed and data was lost. Furthermore, `save_session` provided no acknowledgement token, future, or error reporting mechanism.
+- **Remediation:**
+  1. Introduce `WriteAcknowledgement` and `WriteStatus` (`PENDING`, `DURABLE`, `FAILED`).
+  2. `save_session(..., sync=False)` returns a `WriteAcknowledgement` holding a `concurrent.futures.Future`.
+  3. The background writer executes write operations with bounded retry (up to 3 attempts with exponential backoff on `sqlite3.OperationalError` with `busy` or `locked`).
+  4. Terminal exceptions increment `store.failed_write_count`, record structured error metadata (operation ID, session ID, error class without private conversation content), and set the future exception.
+  5. `store.flush(raise_on_failure=True)` raises a `PersistenceFailureError` if any write failed during the flush cycle.
+  6. Shutdown lifecycle: `store.shutdown()` marks the store as terminating (`_is_shutting_down = True`), rejects subsequent enqueue attempts with `RuntimeError`, drains pending queue items, checks for terminal errors, joins the writer thread, and closes the connection cleanly.
+  7. Threading safety: protect all connection operations with the store's re-entrant lock (`_lock`), ensuring the background writer thread and caller read/write threads never create C-level concurrency collisions.
+
+### GQA-007 / Authoritative Database Scoping & Migration Verification
+- **Problem:** Ensure services write to the authoritative database for their mode, prevent divergent SQLite databases, and ensure schema migrations handle initial/clean states, forward migrations, and checksum verification.
+- **Remediation:**
+  1. Authoritative store resolution: Desktop/offline uses `core.config.DB_PATH` or `GAYATRI_DB_PATH`; Platform services use `central_platform.db.PlatformDatabase`.
+  2. Verify migration suite in `scripts/migrate_db.py`: clean database initialization, forward migration idempotency, checksum tampering detection, and rollback support.
+  3. Verify idempotency in learning event ingestion and mastery state projection: duplicate learning-event IDs never inflate scores or mastery.
+
+---
+
+## 2. Implementation Steps
+
+1. **Write Acknowledgement & Safe Writer Loop (`core/session.py`):**
+   - Define `WriteStatus` (`PENDING`, `DURABLE`, `FAILED`) and `WriteAcknowledgement`.
+   - Update `SessionStore.__init__`:
+     - Add `self.failed_write_count: int = 0`
+     - Add `self._last_exception: Optional[Exception] = None`
+     - Add `self._is_shutting_down: bool = False`
+   - Update `SessionStore._enqueue_write`:
+     - Raise `RuntimeError` if store is shutting down.
+     - Return `WriteAcknowledgement` with attached `concurrent.futures.Future`.
+   - Update `SessionStore._writer_loop`:
+     - Implement bounded retry (up to 3 retries with backoff) for transient SQLite busy/locked errors.
+     - On success: set `future.set_result(True)`.
+     - On failure: set `future.set_exception(err)`, increment `self.failed_write_count`, store `self._last_exception`, log structured error metadata without sensitive student text.
+   - Update `SessionStore.flush(raise_on_failure: bool = True)`:
+     - Join queue; if `raise_on_failure` and `self._last_exception` is set, raise `PersistenceFailureError`.
+   - Update `SessionStore.shutdown()`:
+     - Reject new writes, drain queue, raise/log if terminal failures, join writer thread, close connection.
+
+2. **Fault Injection & Edge Case Testing (`tests/test_qa_phase06_session_persistence_migrations.py`):**
+   - Test async queue write acknowledgement (`is_pending`, `is_durable`, `wait()`).
+   - Test fault injection: injected writer exception triggers `is_durable == False`, `ack.wait()` raises exception, and `flush(raise_on_failure=True)` raises `PersistenceFailureError`.
+   - Test transient lock retry: locked DB retries and recovers when lock is released.
+   - Test rejection of enqueue writes after `store.shutdown()` begins.
+   - Test graceful shutdown persists all queued writes cleanly across restarts.
+   - Test database migration runner: empty DB setup, incremental migrations, checksum mismatch detection, and rollback.
+   - Test event ingestion idempotency: duplicate event IDs do not duplicate records or mutate mastery twice.
+
+3. **Verification & Master Regression:**
+   - Run focused Phase 06 test suite.
+   - Run full repository regression (`pytest -q --tb=short`).
+   - Record decisions in `docs/qa_agent/decisions/DECISION_LOG.md` (DEC-018).
+   - Produce `docs/qa_agent/reports/PHASE_06_REPORT.md`.
+   - Update `docs/qa_agent/MASTER_PROGRESS.md` marking Phase 06 PASSED.
