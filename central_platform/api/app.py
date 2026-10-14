@@ -40,8 +40,9 @@ from central_platform.api.schemas import (
     TeacherInstructionCreateRequest,
 )
 
-# Versioned Routers
+from central_platform.api.routes.academic import router as academic_router
 from central_platform.api.routes.admin import router as admin_router
+from central_platform.api.routes.admissions import router as admissions_router
 from central_platform.api.routes.agents import router as agents_router
 from central_platform.api.routes.ai import router as ai_router
 from central_platform.api.routes.analytics import router as analytics_router
@@ -58,6 +59,7 @@ from central_platform.api.routes.notifications import router as notifications_ro
 from central_platform.api.routes.organizations import router as organizations_router
 from central_platform.api.routes.rag import router as rag_router
 from central_platform.api.routes.sessions import router as sessions_router
+from central_platform.api.routes.sis import router as sis_router
 from central_platform.api.routes.students import router as students_router
 from central_platform.api.routes.sync import router as sync_router
 from central_platform.api.routes.teachers import router as teachers_router
@@ -141,6 +143,9 @@ def create_app() -> FastAPI:
     app.include_router(auth_router, prefix="/api/v1")
     app.include_router(users_router, prefix="/api/v1")
     app.include_router(identity_router, prefix="/api/v1")
+    app.include_router(academic_router, prefix="/api/v1")
+    app.include_router(admissions_router, prefix="/api/v1")
+    app.include_router(sis_router, prefix="/api/v1")
     app.include_router(students_router, prefix="/api/v1")
     app.include_router(teachers_router, prefix="/api/v1")
     app.include_router(admin_router, prefix="/api/v1")

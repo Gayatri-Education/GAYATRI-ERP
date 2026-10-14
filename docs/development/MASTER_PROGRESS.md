@@ -3,7 +3,7 @@
 **Governing Contract:** `DEVELOPMENT.md`  
 **Primary Repository:** `https://github.com/Gayatri-Education/GAYATRI-ERP`  
 **Upstream Reference:** `https://github.com/Gayatri-Education/Gayatri`  
-**Current Phase:** Phase 02B (Core ERP: SIS & Admissions Foundation)  
+**Current Phase:** Phase 03 (Attendance, Timetable & Communications Foundation)  
 **Last Updated:** 2026-10-14  
 
 ---
@@ -15,8 +15,8 @@
 | **Phase 00** | Independent Baseline & Product Contract | **PASSED** | Yes | Yes | Yes | 1562/1562 | 1562/1562 (100%) | **PASSED** | [Phase 00 Report](reports/PHASE_00_REPORT.md) |
 | **Phase 01** | Shared Platform Foundation & Safe Execution | **PASSED** | Yes | Yes | Yes | 6/6 (100%) | 1568/1568 (100%) | **PASSED** | [Phase 01 Report](reports/PHASE_01_REPORT.md) |
 | **Phase 02A**| AI Learning Suite Correctness & Reliability | `NOT_STARTED` | No | No | No | - | - | - | [Phase 02A Plan](plans/PHASE_02A_PLAN.md) |
-| **Phase 02B**| Core ERP: SIS & Admissions Foundation | **IN_PROGRESS** | Yes | Yes | In Progress | Pending | Pending | Pending Gate | [Phase 02B Plan](plans/PHASE_02B_PLAN.md) |
-| **Phase 03** | Attendance, Timetable & Communications | `NOT_STARTED` | No | No | No | - | - | - | [Phase 03 Plan](plans/PHASE_03_PLAN.md) |
+| **Phase 02B**| Core ERP: SIS & Admissions Foundation | **PASSED** | Yes | Yes | Yes | 8/8 (100%) | 1576/1576 (100%) | **PASSED** | [Phase 02B Report](reports/PHASE_02B_REPORT.md) |
+| **Phase 03** | Attendance, Timetable & Communications | **IN_PROGRESS** | Yes | Yes | In Progress | Pending | Pending | Pending Gate | [Phase 03 Plan](plans/PHASE_03_PLAN.md) |
 | **Phase 04** | Examinations, Grading & Report Cards | `NOT_STARTED` | No | No | No | - | - | - | [Phase 04 Plan](plans/PHASE_04_PLAN.md) |
 | **Phase 05** | Finance, Payment Gateways & Reconciliation | `NOT_STARTED` | No | No | No | - | - | - | [Phase 05 Plan](plans/PHASE_05_PLAN.md) |
 | **Phase 06** | Full ERP Expansion (HR, Transport, Hostel, Assets, Visitors, CMS) | `NOT_STARTED` | No | No | No | - | - | - | [Phase 06 Plan](plans/PHASE_06_PLAN.md) |
@@ -46,4 +46,17 @@
 - [x] Migration 009 applied cleanly on top of 001–008 and proven reversible via down script.
 - [x] Full regression green (1,568/1,568 passing, 0 failures, 0 skips).
 - [x] Remaining P0/P1 foundation defects: 0.
+
+---
+
+## Phase 02B Exit Gate Checklist
+
+- [x] A real persisted application can complete the admission-to-student-to-class/course journey end to end.
+- [x] Duplicate submit/retry is idempotent; partial failure can resume or roll back safely.
+- [x] Guardian permissions and student relationship boundaries pass positive and negative tests.
+- [x] Student and class rosters reconcile across admin, teacher, student, parent and learning screens.
+- [x] School-only concepts are not mandatory for coaching institute tenants unless configured.
+- [x] Data import failures are itemized; invalid rows are not silently discarded.
+- [x] Full platform regression suite remains 100% green (1,576/1,576 passed).
+
 
