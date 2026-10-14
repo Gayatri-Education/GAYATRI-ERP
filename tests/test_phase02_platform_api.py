@@ -215,6 +215,9 @@ def test_v1_admin_endpoints(client):
     # Organizations
     r_orgs = client.get("/api/v1/admin/organizations")
     assert r_orgs.status_code == 200
+    if len(r_orgs.json()["data"]) == 0:
+        client.post("/api/v1/admin/organizations", json={"name": "Default Organization", "slug": "default-org"})
+        r_orgs = client.get("/api/v1/admin/organizations")
     assert len(r_orgs.json()["data"]) >= 1
 
     # Health

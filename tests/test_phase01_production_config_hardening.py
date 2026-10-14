@@ -95,9 +95,11 @@ def test_get_jwt_secret_key_production_enforcement(monkeypatch):
 def test_production_wildcard_cors_rejected():
     """Wildcard CORS origins must be rejected in production."""
     strong_secret = "a_super_secure_production_secret_key_with_very_high_entropy_32_chars!"
+    strong_enc_key = "a_super_secure_production_encryption_key_32_chars!"
     env = {
         "GAYATRI_ENV": "production",
         "GAYATRI_JWT_SECRET": strong_secret,
+        "GAYATRI_ENCRYPTION_KEY": strong_enc_key,
         "GAYATRI_ALLOWED_ORIGINS": "*",
         "GAYATRI_DB_PATH": "gayatri_local.db",
     }
@@ -108,9 +110,11 @@ def test_production_wildcard_cors_rejected():
 def test_production_missing_cors_origins_rejected():
     """Unconfigured CORS origins must abort production startup."""
     strong_secret = "a_super_secure_production_secret_key_with_very_high_entropy_32_chars!"
+    strong_enc_key = "a_super_secure_production_encryption_key_32_chars!"
     env = {
         "GAYATRI_ENV": "production",
         "GAYATRI_JWT_SECRET": strong_secret,
+        "GAYATRI_ENCRYPTION_KEY": strong_enc_key,
         "GAYATRI_DB_PATH": "gayatri_local.db",
     }
     with pytest.raises(RuntimeError, match="GAYATRI_ALLOWED_ORIGINS must be explicitly configured"):
@@ -122,9 +126,11 @@ def test_production_missing_cors_origins_rejected():
 def test_production_debug_mode_rejected():
     """Debug mode must be rejected in production."""
     strong_secret = "a_super_secure_production_secret_key_with_very_high_entropy_32_chars!"
+    strong_enc_key = "a_super_secure_production_encryption_key_32_chars!"
     env = {
         "GAYATRI_ENV": "production",
         "GAYATRI_JWT_SECRET": strong_secret,
+        "GAYATRI_ENCRYPTION_KEY": strong_enc_key,
         "GAYATRI_ALLOWED_ORIGINS": "https://gayatri.edu",
         "GAYATRI_DB_PATH": "gayatri_local.db",
         "DEBUG": "true",
@@ -136,9 +142,11 @@ def test_production_debug_mode_rejected():
 def test_production_reload_mode_rejected():
     """Reload mode must be rejected in production."""
     strong_secret = "a_super_secure_production_secret_key_with_very_high_entropy_32_chars!"
+    strong_enc_key = "a_super_secure_production_encryption_key_32_chars!"
     env = {
         "GAYATRI_ENV": "production",
         "GAYATRI_JWT_SECRET": strong_secret,
+        "GAYATRI_ENCRYPTION_KEY": strong_enc_key,
         "GAYATRI_ALLOWED_ORIGINS": "https://gayatri.edu",
         "GAYATRI_DB_PATH": "gayatri_local.db",
         "RELOAD": "true",
@@ -159,9 +167,11 @@ def test_run_server_rejects_reload_in_production(monkeypatch):
 def test_production_missing_database_path():
     """Missing or non-existent database file must abort production startup."""
     strong_secret = "a_super_secure_production_secret_key_with_very_high_entropy_32_chars!"
+    strong_enc_key = "a_super_secure_production_encryption_key_32_chars!"
     env = {
         "GAYATRI_ENV": "production",
         "GAYATRI_JWT_SECRET": strong_secret,
+        "GAYATRI_ENCRYPTION_KEY": strong_enc_key,
         "GAYATRI_ALLOWED_ORIGINS": "https://gayatri.edu",
     }
     with pytest.raises(RuntimeError, match="Missing authoritative database configuration"):
@@ -177,6 +187,7 @@ def test_production_missing_database_path():
 def test_production_model_checksum_verification():
     """Invalid model checksum must fail validation."""
     strong_secret = "a_super_secure_production_secret_key_with_very_high_entropy_32_chars!"
+    strong_enc_key = "a_super_secure_production_encryption_key_32_chars!"
     with tempfile.NamedTemporaryFile(suffix=".gguf", delete=False) as tmp:
         tmp.write(b"mock gguf model weights content")
         tmp_path = tmp.name
@@ -185,6 +196,7 @@ def test_production_model_checksum_verification():
         env = {
             "GAYATRI_ENV": "production",
             "GAYATRI_JWT_SECRET": strong_secret,
+            "GAYATRI_ENCRYPTION_KEY": strong_enc_key,
             "GAYATRI_ALLOWED_ORIGINS": "https://gayatri.edu",
             "GAYATRI_DB_PATH": "gayatri_local.db",
             "GAYATRI_MODEL_FILE": tmp_path,
@@ -209,8 +221,10 @@ def test_production_model_checksum_verification():
 def test_create_app_in_production_mode(monkeypatch):
     """create_app in production mode enforces strict CORS and disables docs by default."""
     strong_secret = "a_super_secure_production_secret_key_with_very_high_entropy_32_chars!"
+    strong_enc_key = "a_super_secure_production_encryption_key_32_chars!"
     monkeypatch.setenv("GAYATRI_ENV", "production")
     monkeypatch.setenv("GAYATRI_JWT_SECRET", strong_secret)
+    monkeypatch.setenv("GAYATRI_ENCRYPTION_KEY", strong_enc_key)
     monkeypatch.setenv("GAYATRI_ALLOWED_ORIGINS", "https://portal.gayatri.edu,https://app.gayatri.edu")
     monkeypatch.setenv("GAYATRI_DB_PATH", "gayatri_local.db")
     monkeypatch.delenv("GAYATRI_ENABLE_DOCS", raising=False)

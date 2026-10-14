@@ -142,7 +142,12 @@ class DeploymentValidator:
     ):
         self.root_dir = Path(root_dir) if root_dir else Path.cwd()
         self.env_vars = env_vars if env_vars is not None else dict(os.environ)
-        self.db_path = db_path or str(self.root_dir / "gayatri_local.db")
+        self.db_path = (
+            db_path
+            or self.env_vars.get("GAYATRI_DB_PATH")
+            or os.environ.get("GAYATRI_DB_PATH")
+            or str(self.root_dir / "gayatri_local.db")
+        )
 
     def validate_environment(self) -> ValidationResult:
         """Validates environment variables and runtime configuration using authoritative settings."""

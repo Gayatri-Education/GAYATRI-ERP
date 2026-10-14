@@ -33,6 +33,14 @@ def ensure_isolated_test_database(tmp_path_factory):
     try:
         conn.execute("PRAGMA foreign_keys = ON;")
         run_all_migrations(conn)
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM organizations WHERE id = 'org-default'")
+        if cur.fetchone()[0] == 0:
+            cur.execute(
+                "INSERT INTO organizations (id, name, slug, created_at, updated_at) "
+                "VALUES ('org-default', 'Default Organization', 'default', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            )
+            conn.commit()
     finally:
         conn.close()
 
