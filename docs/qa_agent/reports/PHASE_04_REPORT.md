@@ -1,41 +1,46 @@
-# Phase 04 Completion Report — Session, Database & Persistence Integrity
+# Phase 04 — Completion Report: Gateway Status, Metrics, Logging and Degraded-State Visibility
 
-## 1. Executive Summary
-Phase 04 resolved items **QA-010** (persistence durability during shutdown) and **QA-011** (hardcoded user identity and lack of tenant isolation).
-- Asynchronous database operations in `core/session.py` were hardened with mandatory flush on shutdown, worker thread join, clean SQLite connection closure, `atexit` registration, and context manager support (`__enter__`/`__exit__`).
-- Synchronous write capabilities (`save_session_sync`) were introduced for scenarios where write confirmation is required before proceeding.
-- Hardcoded `local_user_1` identity was replaced with configurable environment-driven `DEFAULT_LOCAL_USER_ID = os.environ.get("GAYATRI_USER_ID", "local_learner")`.
-- Dynamic tenant isolation was implemented: sessions are isolated by `user_id`. Queries for the default local learner seamlessly retrieve both `local_learner` and legacy `local_user_1` rows, ensuring 100% backward compatibility for existing user databases.
-- `Bridge` in `app/bridge/facade.py` was equipped with `set_user_id()`, `get_user_id()`, and updated session query slots.
+## Summary
+- **Status:** PASSED
+- **Source SHA before:** `0e83fdacdce905d395c389f53c866db5ede1f67f`
+- **Source SHA after:** `0e83fdacdce905d395c389f53c866db5ede1f67f` (working copy modified and verified)
+- **Date/environment:** 2026-10-14, Python 3.12.10, Windows 10 (AMD64)
+- **Defects Remediated:** GQA-004 (P1), GQA-015 (P2)
 
-## 2. Defects Remediated
-- **QA-010**: `core/session.py` background writer thread consumed `_write_queue`, but `shutdown()` set `_shutdown_event` without calling `flush()`, risking lost in-flight writes on sudden process exit.
-- **QA-011**: Hardcoded `local_user_1` in `core/session.py`, `core/conversation.py`, and `app/bridge/facade.py` prevented multi-user isolation.
+## Defects Addressed
+| ID | Root cause | Fix | Regression test | Evidence |
+|---|---|---|---|---|
+| GQA-004 | In `AIGatewayService.get_status()`, active/healthy status was chosen strictly by configuration order (`enabled_providers[0]`) rather than runtime verification. Providers were claimed healthy without running inference or verifying connectivity | Introduced `ProviderRuntimeStatus` lifecycle enum (`CONFIGURED`, `ENABLED`, `HEALTHY`, `DEGRADED`, `UNAVAILABLE`) and per-provider `ProviderRuntimeTelemetry`. Active provider selection strictly requires verified runtime inference; tracks `last_successful_inference_at`, consecutive failures, and circuit breaker trip state. Configured providers without execution evidence report `ENABLED`, never false-green `HEALTHY`. Repeated failures transition providers to `DEGRADED` and `UNAVAILABLE`. | `tests/test_qa_phase04_gateway_observability.py` (9 tests) & `tests/test_phase18_ai_governance_observability_platform.py` | `docs/qa_agent/plans/PHASE_04_PLAN.md` & full test suite (1,470 passed) |
+| GQA-015 | In `AIGatewayService.get_status()`, daily token usage was fabricated via synthetic calculation `int(daily_spend_usd * 10000)` | Replaced synthetic formula with genuine token usage tracking in `PolicyEngine`: tracks `daily_tokens_total`, `daily_tokens_measured`, and `daily_tokens_estimated` with `TokenMeasurementProvenance` (`MEASURED`, `ESTIMATED`, `UNKNOWN`, `MIXED`). Resets daily token tallies and spend on UTC calendar day boundary or >=86400s. Exposed real metrics in `AIStatusResponse` while maintaining backward-compatible integer `token_usage_today`. Sanitized credentials, Bearer tokens, and secrets from error strings and execution logs. | `tests/test_qa_phase04_gateway_observability.py` (9 tests) | `docs/qa_agent/plans/PHASE_04_PLAN.md` & full test suite (1,470 passed) |
 
-## 3. Files Modified & Added
-- Modified:
-  - `core/session.py`
-  - `core/conversation.py`
-  - `app/bridge/facade.py`
-  - `docs/qa_agent/decisions/DECISION_LOG.md` (DEC-004)
-  - `docs/qa_agent/MASTER_PROGRESS.md`
-- Added:
-  - `tests/test_qa_phase04_session_persistence.py`
+## Commands and Results
+| Command | Exit code | Passed | Failed | Skipped | Evidence path |
+|---|---:|---:|---:|---:|---|
+| `pytest tests/test_qa_phase04_gateway_observability.py -q --tb=short` | 0 | 9 | 0 | 0 | Clean stdout (1.29s) |
+| `pytest tests/test_qa_phase08_reliability_observability.py tests/test_phase18_ai_governance_observability_platform.py -q --tb=short` | 0 | 13 | 0 | 0 | Clean stdout (7.83s) |
+| `pytest tests/test_qa_phase01_authoritative_config.py tests/test_qa_phase02_ai_execution_integrity.py tests/test_qa_phase03_educational_correctness.py tests/test_qa_phase04_gateway_observability.py -q --tb=short` | 0 | 66 | 0 | 0 | Clean stdout (6.55s) |
+| `pytest -q --tb=short` (Full Repository Suite) | 0 | 1470 | 0 | 0 | Background task-858 (104.55s) |
 
-## 4. Verification & Test Evidence
-- **Targeted Test Suite**: `tests/test_qa_phase04_session_persistence.py`
-  - `test_async_queue_flush_durability`: **PASSED**
-  - `test_shutdown_persistence_and_cleanup`: **PASSED**
-  - `test_save_session_sync`: **PASSED**
-  - `test_session_store_context_manager`: **PASSED**
-  - `test_user_identity_dynamic_isolation`: **PASSED**
-  - `test_legacy_user_identity_compatibility`: **PASSED**
-  - `test_bridge_user_id_slots`: **PASSED**
-- **Existing Session & Dashboard Tests**: 20/20 passed in 3.80s.
-- **Full Regression Suite**: 1,364/1,364 passed in 89.95s.
+## Diff Review
+- **Files changed:**
+  - `central_platform/ai/schema.py`: Added `ProviderRuntimeStatus` and `TokenMeasurementProvenance` enums. Added `token_provenance` to `AIExecutionResult` dataclass, dictionary serializer, and `provenance` property.
+  - `central_platform/ai/policy_engine.py`: Added real token tracking attributes (`daily_tokens_total`, `daily_tokens_measured`, `daily_tokens_estimated`). Added `record_usage()` with measurement provenance. Hardened `_check_budget_reset()` to reset tallies on UTC calendar day boundary.
+  - `central_platform/ai/gateway.py`: Added `ProviderRuntimeTelemetry` dataclass and credential sanitizer `sanitize_ai_error_message()`. Enhanced `execute()` to track per-provider runtime telemetry and genuine token counts. Refactored `get_status()` to return evidence-based provider statuses, `last_successful_inference_at`, and real token metrics.
+  - `central_platform/api/schemas.py`: Extended `AIStatusResponse` with `tokens_measured_today`, `tokens_estimated_today`, `token_provenance`, `token_breakdown`, `providers_status`, and `last_successful_inference_at`.
+  - `central_platform/api/routes/ai.py`: Updated `get_ai_status()` route to forward new observability metrics to API consumers.
+  - `tests/test_qa_phase04_gateway_observability.py`: Authored 9 comprehensive tests verifying runtime statuses, token accumulation without synthetic multipliers, UTC day boundary resets, failover correlation preservation, and credential sanitization.
+  - `docs/qa_agent/plans/PHASE_04_PLAN.md`: Authored Phase 04 plan.
+- **Schema/API changes:** Backward-compatible additive extensions on `AIStatusResponse` and `AIExecutionResult`.
+- **Security/privacy effects:** Sanitizes raw Bearer tokens and API secrets from returned error messages and persisted database execution logs.
+- **Potential regressions:** Zero regressions across all 1,470 tests.
 
-## 5. Exit Gate Check
-- [x] All Phase 04 requirements met.
-- [x] Zero regressions across 1,364 tests.
-- [x] Backward compatibility preserved for legacy databases.
-- [x] Ready to advance to Phase 05 (Security Hardening, Path Traversal & Multi-Worker Rate Limiting).
+## Exit Gate Checklist
+- [x] “Healthy/active” means evidence-based runtime status, not configuration presence.
+- [x] Token and cost metrics have defined measurement provenance.
+- [x] Monitoring accurately displays degraded responses and does not disclose sensitive values.
+- [x] Full repo regression passes without weakened assertions (1,470 passed).
+- [x] No unresolved P0/P1 defects for Phase 04.
+
+## Decision
+- **Proceed to next phase:** YES
+- **Reason:** Phase 04 exit criteria fully satisfied. Ready to proceed to Phase 05: Authentication, revocation, authorization and distributed rate limiting (GQA-005, GQA-006, GQA-013).

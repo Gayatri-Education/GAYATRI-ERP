@@ -144,13 +144,18 @@ class TestPhase29FinalPlatformAuditMaster:
     # 4. Intelligence Audit
     # -------------------------------------------------------------------------
     def test_audit_intelligence_ai_gateway_and_resilience(self, tmp_path):
-        """Audit 4: Verify AI Gateway model routing, fallback handling, and provenance transparency (QA-001, QA-002)."""
+        """Audit 4a (Fallback Observability): Verify fallback handling and provenance transparency (QA-001, GQA-002).
+        
+        Note: This test explicitly validates fallback observability in development/test mode,
+        proving that simulated/fallback responses transparently declare MOCK or DEGRADED_FALLBACK
+        and never masquerade as REAL_MODEL.
+        """
         from central_platform.ai.schema import ExecutionProvenance
         db_path = str(tmp_path / "audit_ai.db")
         db = PlatformDatabase(db_path=db_path)
         gateway = AIGatewayService(db=db)
 
-        # Test request processing with Mock adapter fallback
+        # Test request processing with fallback/mock adapter in development mode
         req = AIExecutionRequest(
             prompt="Explain the ideal gas law PV = nRT",
             student_id="usr_audit_student",
@@ -164,6 +169,55 @@ class TestPhase29FinalPlatformAuditMaster:
         assert res.execution_provenance in (ExecutionProvenance.MOCK, ExecutionProvenance.DEGRADED_FALLBACK)
         assert res.provenance["real_model"] is False
         assert "execution_provenance" in res.to_dict()
+
+    def test_audit_intelligence_real_model_mandatory_in_production(self, tmp_path, monkeypatch):
+        """Audit 4b (Production Gate): Verify production mode rejects mock fallback and requires real execution (GQA-001, GQA-002)."""
+        from central_platform.ai.schema import ExecutionProvenance, ModelExecutionStatus
+        monkeypatch.setenv("GAYATRI_ENV", "production")
+        monkeypatch.setenv("APP_ENV", "production")
+
+        db_path = str(tmp_path / "audit_prod_ai.db")
+        db = PlatformDatabase(db_path=db_path)
+        gateway = AIGatewayService(db=db)
+
+        req = AIExecutionRequest(
+            prompt="Explain thermodynamics first law",
+            student_id="usr_audit_student",
+            task_type=TaskType.TUTORING,
+        )
+        # Without real model artifact on disk or cloud key, production must fail closed
+        res = gateway.execute(req)
+        assert res.success is False
+        assert res.execution_provenance == ExecutionProvenance.FAILED
+        assert res.provenance["real_model"] is False
+        assert res.status in (ModelExecutionStatus.MODEL_UNAVAILABLE, ModelExecutionStatus.MODEL_CONFIGURATION_ERROR)
+
+    def test_audit_intelligence_real_model_provenance_verification(self, tmp_path, monkeypatch):
+        """Audit 4c (Real Model Inference): Verify real model inference yields REAL_MODEL provenance and real_model=True (GQA-002)."""
+        from unittest.mock import patch
+        from central_platform.ai.schema import ExecutionProvenance, ModelExecutionStatus
+
+        db_path = str(tmp_path / "audit_real_ai.db")
+        db = PlatformDatabase(db_path=db_path)
+        gateway = AIGatewayService(db=db)
+
+        req = AIExecutionRequest(
+            prompt="Explain conservation of energy",
+            student_id="usr_audit_student",
+            task_type=TaskType.TUTORING,
+            preferred_provider="local_llama",
+        )
+
+        with patch("core.providers.local.LocalProvider.health", return_value={"available": True}), \
+             patch("core.providers.local.LocalProvider.is_available", return_value=True), \
+             patch("core.providers.local.LocalProvider.chat_stream", return_value=["Energy ", "cannot be created ", "or destroyed."]):
+            res = gateway.execute(req)
+            assert res.success is True
+            assert res.execution_provenance == ExecutionProvenance.REAL_MODEL
+            assert res.provenance["real_model"] is True
+            assert res.mock is False
+            assert "Energy" in res.content
+            assert res.status == ModelExecutionStatus.MODEL_SUCCESS
 
     # -------------------------------------------------------------------------
     # 5. UX & API Contract Audit

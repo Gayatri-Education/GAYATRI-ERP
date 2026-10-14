@@ -22,8 +22,79 @@ from core.security.validation import validate_session_id
 
 import atexit
 import os
+import time
+import uuid
+from concurrent.futures import Future
+from enum import Enum
+from typing import Optional
 
 DEFAULT_LOCAL_USER_ID = os.environ.get("GAYATRI_USER_ID", "local_learner")
+
+
+class WriteStatus(str, Enum):
+    PENDING = "PENDING"
+    DURABLE = "DURABLE"
+    FAILED = "FAILED"
+
+
+class PersistenceFailureError(RuntimeError):
+    """Raised when an asynchronous database write fails to persist durably (GQA-011)."""
+    pass
+
+
+class WriteAcknowledgement:
+    """Represents the durability lifecycle of an asynchronous database write (GQA-011)."""
+
+    def __init__(
+        self,
+        operation_id: str,
+        session_id: str,
+        future: Optional[Future] = None,
+        sync: bool = False,
+    ):
+        self.operation_id = operation_id
+        self.session_id = session_id
+        self._future = future
+        self._sync = sync
+        self._error: Optional[Exception] = None
+
+    @property
+    def status(self) -> WriteStatus:
+        if self._sync:
+            return WriteStatus.FAILED if self._error is not None else WriteStatus.DURABLE
+        if self._future is None or not self._future.done():
+            return WriteStatus.PENDING
+        return WriteStatus.FAILED if self._future.exception() is not None else WriteStatus.DURABLE
+
+    @property
+    def is_pending(self) -> bool:
+        return self.status == WriteStatus.PENDING
+
+    @property
+    def is_durable(self) -> bool:
+        return self.status == WriteStatus.DURABLE
+
+    @property
+    def is_failed(self) -> bool:
+        return self.status == WriteStatus.FAILED
+
+    def wait(self, timeout: Optional[float] = None) -> bool:
+        """Block until write is durably committed to disk, or raise exception on failure."""
+        if self._sync:
+            if self._error is not None:
+                raise self._error
+            return True
+        if self._future is None:
+            return True
+        self._future.result(timeout=timeout)
+        return True
+
+    def exception(self) -> Optional[Exception]:
+        if self._sync:
+            return self._error
+        if self._future is not None and self._future.done():
+            return self._future.exception()
+        return None
 
 
 class SessionStore:
@@ -43,10 +114,13 @@ class SessionStore:
         self._db_conn: sqlite3.Connection | None = None
         self._create_schema()
 
-        # Async Write Queue (Phase 3 Optimization)
+        # Async Write Queue (Phase 3 Optimization & GQA-011 Hardening)
         import queue
         self._write_queue = queue.Queue()
         self._shutdown_event = threading.Event()
+        self._is_shutting_down: bool = False
+        self.failed_write_count: int = 0
+        self._last_exception: Optional[Exception] = None
         self._writer_thread = threading.Thread(target=self._writer_loop, daemon=True, name="Gayatri-DBWriter")
         self._writer_thread.start()
         try:
@@ -61,26 +135,68 @@ class SessionStore:
         self.shutdown()
 
     def _writer_loop(self):
-        """Background thread consuming the async DB write queue."""
+        """Background thread consuming the async DB write queue with bounded retry and failure tracking (GQA-011)."""
         while not self._shutdown_event.is_set() or not self._write_queue.empty():
             try:
                 task = self._write_queue.get(timeout=0.1)
-                func, args, kwargs = task
+            except queue.Empty:
+                continue
+
+            op_id, session_id, func, args, kwargs, fut = task
+            max_retries = 3
+            delay = 0.05
+            success = False
+            last_err = None
+
+            for attempt in range(max_retries + 1):
                 try:
                     func(*args, **kwargs)
-                except Exception as e:
-                    logger.error(f"Async DB write failed: {e}")
-                self._write_queue.task_done()
-            except queue.Empty:
-                pass
+                    success = True
+                    break
+                except sqlite3.OperationalError as exc:
+                    err_msg = str(exc).lower()
+                    last_err = exc
+                    if ("locked" in err_msg or "busy" in err_msg) and attempt < max_retries:
+                        time.sleep(delay)
+                        delay = min(delay * 2, 0.5)
+                    else:
+                        break
+                except Exception as exc:
+                    last_err = exc
+                    break
 
-    def flush(self):
-        """Block until all pending async writes are written to disk."""
+            if success:
+                if fut is not None and not fut.done():
+                    fut.set_result(True)
+            else:
+                self.failed_write_count += 1
+                self._last_exception = last_err
+                logger.error(
+                    "Async DB write failed: op_id=%s session_id=%s error=%s",
+                    op_id,
+                    session_id,
+                    type(last_err).__name__,
+                )
+                if fut is not None and not fut.done():
+                    fut.set_exception(last_err or PersistenceFailureError("Write operation failed"))
+
+            self._write_queue.task_done()
+
+    def flush(self, raise_on_failure: bool = True):
+        """Block until all pending async writes are written to disk.
+        
+        If raise_on_failure is True and any write failed, raises PersistenceFailureError.
+        """
         self._write_queue.join()
+        if raise_on_failure and self._last_exception is not None:
+            err = self._last_exception
+            self._last_exception = None
+            raise PersistenceFailureError(f"Asynchronous DB write failed: {err}") from err
 
-    def shutdown(self):
+    def shutdown(self, raise_on_failure: bool = False):
         """Gracefully shutdown the DB writer thread, ensuring all pending writes are committed."""
-        self.flush()
+        self._is_shutting_down = True
+        self.flush(raise_on_failure=raise_on_failure)
         self._shutdown_event.set()
         if self._writer_thread.is_alive():
             self._writer_thread.join(timeout=2.0)
@@ -93,9 +209,17 @@ class SessionStore:
                     pass
                 self._db_conn = None
 
-    def _enqueue_write(self, func, *args, **kwargs):
-        """Put a DB write task onto the background queue."""
-        self._write_queue.put((func, args, kwargs))
+    def _enqueue_write(self, func, session_id: str, *args, **kwargs) -> WriteAcknowledgement:
+        """Put a DB write task onto the background queue, returning a WriteAcknowledgement."""
+        if self._is_shutting_down or self._shutdown_event.is_set():
+            raise RuntimeError("Cannot enqueue writes after SessionStore shutdown has started")
+        op_id = f"op-{uuid.uuid4().hex[:8]}"
+        fut = Future()
+        task = (op_id, session_id, func, (session_id, *args), kwargs, fut)
+        self._write_queue.put(task)
+        return WriteAcknowledgement(operation_id=op_id, session_id=session_id, future=fut, sync=False)
+
+
 
     @property
     def conn(self) -> sqlite3.Connection:
@@ -187,7 +311,13 @@ class SessionStore:
 
         logger.info(f"Session DB ready: {self.db_path}")
 
-    def save_session(self, session_id: str, conversation: Any, tutor_context: Any = None, sync: bool = False) -> None:
+    def save_session(
+        self,
+        session_id: str,
+        conversation: Any,
+        tutor_context: Any = None,
+        sync: bool = False,
+    ) -> WriteAcknowledgement:
         """Queue a session for async background saving (Audit #28) or save synchronously."""
         session_id = validate_session_id(session_id)
 
@@ -198,18 +328,33 @@ class SessionStore:
         mode = getattr(conversation, "mode", "general_assistant")
         user_id = getattr(conversation, "user_id", self.default_user_id)
         if sync:
-            self._save_session_internal(
-                session_id, title, messages, tutor_context, mode, user_id
-            )
+            op_id = f"op-sync-{uuid.uuid4().hex[:8]}"
+            ack = WriteAcknowledgement(operation_id=op_id, session_id=session_id, sync=True)
+            try:
+                self._save_session_internal(
+                    session_id, title, messages, tutor_context, mode, user_id
+                )
+            except Exception as exc:
+                ack._error = exc
+                raise
+            return ack
         else:
-            self._enqueue_write(
+            return self._enqueue_write(
                 self._save_session_internal,
-                session_id, title, messages, tutor_context, mode, user_id
+                session_id,
+                title,
+                messages,
+                tutor_context,
+                mode,
+                user_id,
             )
 
-    def save_session_sync(self, session_id: str, conversation: Any, tutor_context: Any = None) -> None:
+    def save_session_sync(
+        self, session_id: str, conversation: Any, tutor_context: Any = None
+    ) -> WriteAcknowledgement:
         """Synchronously persist session to SQLite immediately, bypassing the async queue."""
-        self.save_session(session_id, conversation, tutor_context=tutor_context, sync=True)
+        return self.save_session(session_id, conversation, tutor_context=tutor_context, sync=True)
+
 
     def _save_session_internal(self, session_id: str, title: str, messages: list[dict], tutor_context: Any = None, mode: str = "general_assistant", user_id: str | None = None) -> None:
         """Synchronously persist the conversation to SQLite."""

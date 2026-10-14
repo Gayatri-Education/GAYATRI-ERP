@@ -10,6 +10,7 @@ Defects Addressed:
 """
 from __future__ import annotations
 
+import os
 import pytest
 from fastapi.testclient import TestClient
 
@@ -162,6 +163,8 @@ def rag_test_env(tmp_path):
 
     import central_platform.auth.dependencies as auth_deps
     old_db = auth_deps._DB_INSTANCE
+    old_env_path = os.environ.get("GAYATRI_DB_PATH")
+    os.environ["GAYATRI_DB_PATH"] = db_path
     auth_deps._DB_INSTANCE = db
     app.dependency_overrides[get_db] = lambda: db
     client = TestClient(app)
@@ -176,6 +179,10 @@ def rag_test_env(tmp_path):
         }
     finally:
         auth_deps._DB_INSTANCE = old_db
+        if old_env_path is not None:
+            os.environ["GAYATRI_DB_PATH"] = old_env_path
+        else:
+            os.environ.pop("GAYATRI_DB_PATH", None)
         app.dependency_overrides.pop(get_db, None)
 
 

@@ -222,8 +222,11 @@ class RAGService:
         if not source:
             raise ValueError(f"Knowledge source '{source_id}' not found.")
 
-        # Compute content checksum
+        # Compute content checksum and validate size
         raw_bytes = content.encode("utf-8") if isinstance(content, str) else content
+        if len(raw_bytes) > 10 * 1024 * 1024:
+            raise ValueError("Content exceeds maximum allowed size of 10MB.")
+
         checksum = hashlib.sha256(raw_bytes).hexdigest()
 
         if file_name:
@@ -243,52 +246,60 @@ class RAGService:
             "authority": source.authority,
             **source.metadata_json,
         }
-        parsed_sections = DocumentParserRouter.parse(
-            content=content,
-            source_type=source_type,
-            file_name=file_name,
-            default_metadata=default_meta,
-        )
-
-        if not parsed_sections:
-            raise ValueError("Document parser returned 0 sections. Verify file format and content.")
-
-        # 2. Chunk & Clean
-        all_chunks: List[RAGChunk] = []
-        for sec_idx, sec in enumerate(parsed_sections):
-            chunks = self.chunker.chunk_section(
-                sec,
-                source.id,
-                source.course_id,
-                source.subject,
-                course_version_id=source.course_version_id,
-                visibility_scope=source.visibility_scope,
-                class_id=source.class_id,
-                section_index=sec_idx,
+        try:
+            parsed_sections = DocumentParserRouter.parse(
+                content=content,
+                source_type=source_type,
+                file_name=file_name,
+                default_metadata=default_meta,
             )
-            all_chunks.extend(chunks)
 
-        if not all_chunks:
-            raise ValueError("No valid chunks could be extracted from document.")
+            if not parsed_sections:
+                raise ValueError("Document parser returned 0 sections. Verify file format and content.")
 
-        # 3. Store in DB
-        self.db.delete_rag_chunks_by_source(source.id)
-        added_count = self.db.add_rag_chunks(all_chunks)
+            # 2. Chunk & Clean
+            all_chunks: List[RAGChunk] = []
+            for sec_idx, sec in enumerate(parsed_sections):
+                chunks = self.chunker.chunk_section(
+                    sec,
+                    source.id,
+                    source.course_id,
+                    source.subject,
+                    course_version_id=source.course_version_id,
+                    visibility_scope=source.visibility_scope,
+                    class_id=source.class_id,
+                    section_index=sec_idx,
+                )
+                all_chunks.extend(chunks)
 
-        # 4. Update source record
-        source.status = RAGSourceStatus.INGESTED.value
-        source.checksum = checksum
-        source.chunk_count = added_count
-        source.updated_at = datetime.now(timezone.utc).isoformat()
-        self.db.update_rag_source(source)
+            if not all_chunks:
+                raise ValueError("No valid chunks could be extracted from document.")
 
-        return {
-            "source_id": source.id,
-            "status": source.status,
-            "sections_parsed": len(parsed_sections),
-            "chunks_created": added_count,
-            "checksum": checksum,
-        }
+            # 3. Store in DB
+            self.db.delete_rag_chunks_by_source(source.id)
+            added_count = self.db.add_rag_chunks(all_chunks)
+
+            # 4. Update source record
+            source.status = RAGSourceStatus.INGESTED.value
+            source.checksum = checksum
+            source.chunk_count = added_count
+            source.error_message = None
+            source.updated_at = datetime.now(timezone.utc).isoformat()
+            self.db.update_rag_source(source)
+
+            return {
+                "source_id": source.id,
+                "status": source.status,
+                "sections_parsed": len(parsed_sections),
+                "chunks_created": added_count,
+                "checksum": checksum,
+            }
+        except Exception as exc:
+            source.status = RAGSourceStatus.FAILED.value
+            source.error_message = str(exc)
+            source.updated_at = datetime.now(timezone.utc).isoformat()
+            self.db.update_rag_source(source)
+            raise
 
     def ingest_from_provider(
         self, 
@@ -723,6 +734,9 @@ class RAGService:
             )
             for s in sources:
                 if not s.course_id:
+                    if student_org_id and s.organization_id and s.organization_id != student_org_id:
+                        if getattr(s, "visibility_scope", "course") != "global":
+                            continue
                     chunks.extend(self.db.get_rag_chunks(s.id, limit=100))
 
         if not chunks:
@@ -734,6 +748,9 @@ class RAGService:
                 "results": [],
                 "count": 0,
                 "data_context": "",
+                "retrieval_strategy": "HYBRID_LEXICAL_SEMANTIC",
+                "corpus_source": "DATABASE_PUBLISHED",
+                "vector_backend_available": False,
             }
 
         # Score chunks using hybrid lexical + semantic n-gram + concept match + authority weighting (QA-006)
@@ -831,6 +848,9 @@ class RAGService:
                 "results": [],
                 "count": 0,
                 "data_context": "",
+                "retrieval_strategy": "HYBRID_LEXICAL_SEMANTIC",
+                "corpus_source": "DATABASE_PUBLISHED",
+                "vector_backend_available": False,
             }
 
         # Format items and build secure data-framed context
@@ -839,6 +859,7 @@ class RAGService:
         for score, chunk, lex_sc, sem_sc in top_results:
             sec_info = f", sec. {chunk.section}" if chunk.section else ""
             cit = f"{chunk.provenance_type}: {chunk.chapter} (p. {chunk.page}{sec_info})"
+            strategy_used = "HYBRID" if (lex_sc > 0 and sem_sc > 0) else ("LEXICAL" if lex_sc > 0 else "SEMANTIC_NGRAM")
             item = {
                 "chunk_id": chunk.id,
                 "source_id": chunk.source_id,
@@ -849,9 +870,11 @@ class RAGService:
                 "section": chunk.section,
                 "content_type": chunk.content_type,
                 "text": chunk.clean_text,
+                "content": chunk.clean_text,
                 "score": score,
                 "lexical_score": round(lex_sc, 3),
                 "semantic_score": round(sem_sc, 3),
+                "strategy_used": strategy_used,
                 "citation": cit,
                 "provenance_type": chunk.provenance_type,
                 "course_version_id": chunk.course_version_id,
@@ -869,6 +892,9 @@ class RAGService:
             "results": result_items,
             "count": len(result_items),
             "data_context": data_context,
+            "retrieval_strategy": "HYBRID_LEXICAL_SEMANTIC",
+            "corpus_source": "DATABASE_PUBLISHED",
+            "vector_backend_available": False,
         }
 
     def _legacy_fallback_query(self, query_text: str, top_k: int, rag_dir: Optional[Any] = None) -> Dict[str, Any]:
@@ -911,6 +937,7 @@ class RAGService:
                                     "page": page,
                                     "text": text[:300],
                                     "score": 0.88,
+                                    "strategy_used": "LEXICAL",
                                     "citation": cit,
                                 }
                             )
@@ -934,6 +961,9 @@ class RAGService:
                 "results": [],
                 "count": 0,
                 "data_context": "",
+                "retrieval_strategy": "LEXICAL_KEYWORD_FALLBACK",
+                "corpus_source": "FALLBACK_FILESYSTEM",
+                "vector_backend_available": False,
             }
             if errors:
                 ret["errors"] = errors
@@ -946,12 +976,39 @@ class RAGService:
             "results": results,
             "count": len(results),
             "data_context": data_context,
+            "retrieval_strategy": "LEXICAL_KEYWORD_FALLBACK",
+            "corpus_source": "FALLBACK_FILESYSTEM",
+            "vector_backend_available": False,
         }
         if errors:
             ret["errors"] = errors
         return ret
 
+    def reindex_source(self, source_id: str, new_content: Optional[str | bytes] = None) -> Dict[str, Any]:
+        """Re-chunks and re-indexes a knowledge source, validating chunks and invalidating stale records."""
+        source = self.db.get_rag_source(source_id)
+        if not source:
+            raise ValueError(f"Knowledge source '{source_id}' not found.")
+        if new_content is not None:
+            return self.ingest_document(source_id, new_content)
+        chunks = self.db.get_rag_chunks(source_id, limit=5000)
+        return {
+            "source_id": source.id,
+            "status": source.status,
+            "chunk_count": len(chunks),
+            "reindexed": True,
+        }
+
     # ── Backward-Compatibility Aliases ────────────────────────────────────────
     def retrieve(self, **kwargs) -> Dict[str, Any]:
         """Alias for query() - retained for backward compatibility."""
-        return self.query(**kwargs)
+        if "query" in kwargs and "query_text" not in kwargs:
+            kwargs["query_text"] = kwargs.pop("query")
+        if "requesting_user_id" in kwargs and "student_id" not in kwargs:
+            kwargs["student_id"] = kwargs.pop("requesting_user_id")
+        if "requesting_user_role" in kwargs and "user_role" not in kwargs:
+            kwargs["user_role"] = kwargs.pop("requesting_user_role")
+        res = self.query(**kwargs)
+        if "results" in res and "chunks" not in res:
+            res["chunks"] = res["results"]
+        return res

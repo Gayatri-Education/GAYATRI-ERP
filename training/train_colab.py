@@ -182,6 +182,10 @@ def train_slm():
     tokenizer.save_pretrained(merged_output_dir)
     print(f"[OK] Merged model saved to: {merged_output_dir}")
 
+    # Pedagogical verification (fail-closed release gate - GQA-010)
+    from training.pedagogical_evaluator import PedagogicalEvaluator
+    PedagogicalEvaluator.run_pedagogical_verification(merged_model, tokenizer, fail_on_error=True)
+
     # Convert to GGUF using llama.cpp
     print("\n[STEP] Converting to GGUF Q4_K_M...")
     if not os.path.exists("llama.cpp"):

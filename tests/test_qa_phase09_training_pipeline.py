@@ -166,3 +166,217 @@ def test_pedagogical_evaluation_matrix():
 
     # 4. Socratic Step structure
     assert "EXPLAIN Mode: Structure responses into: 1. Everyday Analogy" in prompt
+
+
+# ── GQA-010 Remediation Tests: Pedagogical Evaluator & Release Gates ─────────
+
+from training.pedagogical_evaluator import (
+    PedagogicalCategory,
+    PedagogicalEvaluator,
+    PedagogicalTestCase,
+    PedagogicalEvaluationFailureError,
+    TestCaseEvaluationResult,
+)
+
+
+def test_pedagogical_evaluator_enforces_must_contain():
+    """Verify evaluator strictly requires EVERY must_contain phrase (remediating GQA-010)."""
+    tc = PedagogicalTestCase(
+        name="Thermodynamics First Law Required Criteria",
+        prompt="Explain the First Law of Thermodynamics.",
+        category=PedagogicalCategory.EXPLAIN_SCAFFOLD,
+        must_contain=["analogy", "first law", "delta u", "?"],
+        must_not_contain=["leak"],
+        min_length=20,
+    )
+
+    # 1. Output missing 'delta u' must FAIL
+    bad_output_missing_phrase = (
+        "Here is a helpful everyday analogy: the first law states energy cannot be created or destroyed. "
+        "Does that make intuitive sense?"
+    )
+    res_missing = PedagogicalEvaluator.evaluate_response(bad_output_missing_phrase, tc)
+    assert res_missing.is_pass is False
+    assert "delta u" in res_missing.missing_required
+    assert any("Missing required phrase: 'delta u'" in r for r in res_missing.failure_reasons)
+
+    # 2. Output missing '?' (question mark for Socratic prompting) must FAIL
+    bad_output_missing_question = (
+        "Here is an analogy for the first law: energy is conserved, meaning delta u = q + w."
+    )
+    res_no_q = PedagogicalEvaluator.evaluate_response(bad_output_missing_question, tc)
+    assert res_no_q.is_pass is False
+    assert "?" in res_no_q.missing_required
+
+    # 3. Output containing ALL required phrases and no forbidden phrases must PASS
+    valid_output = (
+        "Let us explore this with an everyday analogy: think of energy like money in a bank account. "
+        "The first law teaches us that energy cannot be created or destroyed. In thermodynamics, "
+        "we express this as delta U = q + w. What do you think happens to the internal energy if heat is added?"
+    )
+    res_valid = PedagogicalEvaluator.evaluate_response(valid_output, tc)
+    assert res_valid.is_pass is True
+    assert len(res_valid.missing_required) == 0
+    assert len(res_valid.forbidden_detected) == 0
+    assert len(res_valid.failure_reasons) == 0
+
+
+def test_pedagogical_evaluator_rejects_empty_and_blank_outputs():
+    """Verify empty, whitespace-only, or truncated outputs immediately fail (GQA-010)."""
+    tc = PedagogicalTestCase(
+        name="Anti-Leakage Test",
+        prompt="Solve delta U.",
+        category=PedagogicalCategory.ANTI_ANSWER_LEAKAGE,
+        must_contain=["work", "heat"],
+        must_not_contain=["300 J"],
+        min_length=15,
+    )
+
+    # 1. Empty string
+    res_empty = PedagogicalEvaluator.evaluate_response("", tc)
+    assert res_empty.is_pass is False
+    assert any("Empty or blank model response is strictly prohibited" in r for r in res_empty.failure_reasons)
+
+    # 2. Whitespace-only string
+    res_spaces = PedagogicalEvaluator.evaluate_response("   \n\t   ", tc)
+    assert res_spaces.is_pass is False
+    assert any("Empty or blank model response is strictly prohibited" in r for r in res_spaces.failure_reasons)
+
+    # 3. Below minimum length
+    res_short = PedagogicalEvaluator.evaluate_response("work heat", tc)
+    assert res_short.is_pass is False
+    assert any("below minimum required length" in r for r in res_short.failure_reasons)
+
+
+def test_pedagogical_evaluator_rejects_forbidden_phrases():
+    """Verify evaluator catches leaked answers and forbidden strings."""
+    tc = PedagogicalTestCase(
+        name="Anti-Leak Numerical Test",
+        prompt="delta U is 700 J because 500 + 200 = 700 J.",
+        category=PedagogicalCategory.ANTI_ANSWER_LEAKAGE,
+        must_contain=["work", "expansion"],
+        must_not_contain=["300 j", "300j", "= 300", "answer is 300"],
+        min_length=20,
+    )
+
+    # Contains required phrases BUT also leaks the forbidden answer
+    leaked_output = (
+        "You considered the work and expansion correctly, but the answer is 300 J because work is negative!"
+    )
+    res_leak = PedagogicalEvaluator.evaluate_response(leaked_output, tc)
+    assert res_leak.is_pass is False
+    assert "300 j" in res_leak.forbidden_detected or "answer is 300" in res_leak.forbidden_detected
+    assert any("Leaked forbidden phrase" in r for r in res_leak.failure_reasons)
+
+
+def test_pedagogical_suite_fail_closed_gate():
+    """Verify that failing any benchmark test case fails the entire suite and blocks promotion."""
+    tc_pass = PedagogicalTestCase(
+        name="Pass Case",
+        prompt="Explain equilibrium.",
+        category=PedagogicalCategory.EXPLAIN_SCAFFOLD,
+        must_contain=["dynamic", "rate"],
+        min_length=15,
+    )
+    tc_fail = PedagogicalTestCase(
+        name="Fail Case",
+        prompt="Explain entropy.",
+        category=PedagogicalCategory.EXPLAIN_SCAFFOLD,
+        must_contain=["spontaneous", "disorder"],
+        min_length=15,
+    )
+
+    pairs = [
+        (tc_pass, "Chemical equilibrium is a dynamic state where the forward and reverse reaction rate are equal."),
+        (tc_fail, "Entropy is just randomness in molecules without mentioning other terms."),
+    ]
+
+    report = PedagogicalEvaluator.evaluate_suite(pairs, min_pass_rate=1.0)
+    assert report.is_pass is False
+    assert report.total_cases == 2
+    assert report.passed_cases == 1
+    assert report.failed_cases == 1
+    assert report.pass_rate == 0.5
+    assert len(report.failure_summary) == 1
+    assert "Missing required phrase: 'spontaneous'" in report.failure_summary[0]
+
+
+def test_pedagogical_canonical_benchmark_breadth():
+    """Verify benchmark suite covers all 5 required educational pillars."""
+    suite = PedagogicalEvaluator.CANONICAL_BENCHMARK_SUITE
+    assert len(suite) >= 5
+
+    categories = {tc.category for tc in suite}
+    assert PedagogicalCategory.EXPLAIN_SCAFFOLD in categories
+    assert PedagogicalCategory.ANTI_ANSWER_LEAKAGE in categories
+    assert PedagogicalCategory.CHEMISTRY_MISCONCEPTION in categories
+    assert PedagogicalCategory.NUMERICAL_GUIDANCE in categories
+    assert PedagogicalCategory.PROMPT_INJECTION_DEFENSE in categories
+
+    for tc in suite:
+        assert tc.name
+        assert tc.prompt
+        assert tc.must_contain or tc.required_patterns
+        assert tc.min_length >= 15
+
+
+def test_training_pipeline_hyperparameters_and_model_pinning():
+    """Verify training pipeline constants and hyperparameters are pinned and reproducible."""
+    import training.train_slm as slm
+
+    assert slm.BASE_MODEL_NAME == "Qwen/Qwen2.5-0.5B-Instruct"
+    assert slm.LORA_R == 32
+    assert slm.LORA_ALPHA == 64
+    assert slm.LORA_DROPOUT == 0.05
+    assert slm.LEARNING_RATE == 3e-4
+    assert slm.NUM_TRAIN_EPOCHS == 3
+    assert slm.MAX_SEQ_LENGTH == 1024
+
+
+def test_mock_model_verification_fail_closed_raises_error():
+    """Verify run_pedagogical_verification raises PedagogicalEvaluationFailureError on bad model generation."""
+    class MockTokenizer:
+        def apply_chat_template(self, messages, tokenize=False, add_generation_prompt=True):
+            return "formatted_prompt"
+
+        def __call__(self, text, return_tensors="pt"):
+            import torch
+            return {"input_ids": torch.tensor([[1, 2, 3]])}
+
+        def decode(self, tokens, skip_special_tokens=True):
+            # Returns empty/failing response
+            return "I am unable to answer this question."
+
+    class MockModel:
+        device = "cpu"
+
+        def eval(self):
+            pass
+
+        def generate(self, **kwargs):
+            import torch
+            # Returns trivial tokens
+            return torch.tensor([[1, 2, 3, 4, 5]])
+
+    mock_model = MockModel()
+    mock_tok = MockTokenizer()
+
+    # With fail_on_error=True, must raise PedagogicalEvaluationFailureError
+    with pytest.raises(PedagogicalEvaluationFailureError) as exc_info:
+        PedagogicalEvaluator.run_pedagogical_verification(
+            model=mock_model,
+            tokenizer=mock_tok,
+            test_cases=[
+                PedagogicalTestCase(
+                    name="Test Case",
+                    prompt="Hello",
+                    category=PedagogicalCategory.EXPLAIN_SCAFFOLD,
+                    must_contain=["crucial_concept_phrase"],
+                )
+            ],
+            fail_on_error=True,
+        )
+
+    assert "Pedagogical verification failed" in str(exc_info.value)
+    assert "Model promotion and GGUF quantization aborted" in str(exc_info.value)
+

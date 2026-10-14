@@ -59,8 +59,14 @@ async def get_ai_status():
             active_model=data["active_model"],
             available_providers=data["available_providers"],
             token_usage_today=data["token_usage_today"],
+            tokens_measured_today=data.get("tokens_measured_today", 0),
+            tokens_estimated_today=data.get("tokens_estimated_today", 0),
+            token_provenance=data.get("token_provenance", "UNKNOWN"),
+            token_breakdown=data.get("token_breakdown", {}),
             budget_remaining_usd=data["budget_remaining_usd"],
             kill_switch_active=data["kill_switch_active"],
+            providers_status=data.get("providers_status", {}),
+            last_successful_inference_at=data.get("last_successful_inference_at"),
         ),
     )
 

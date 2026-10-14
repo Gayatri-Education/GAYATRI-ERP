@@ -63,6 +63,23 @@ class ExecutionProvenance(str, Enum):
     FAILED = "FAILED"
 
 
+class ProviderRuntimeStatus(str, Enum):
+    """Runtime operational status of an AI provider (GQA-004)."""
+    CONFIGURED = "CONFIGURED"
+    ENABLED = "ENABLED"
+    HEALTHY = "HEALTHY"
+    DEGRADED = "DEGRADED"
+    UNAVAILABLE = "UNAVAILABLE"
+
+
+class TokenMeasurementProvenance(str, Enum):
+    """Provenance and measurement certainty of token counts (GQA-015)."""
+    MEASURED = "MEASURED"    # Sourced directly from provider API usage payload
+    ESTIMATED = "ESTIMATED"  # Heuristic tokenizer approximation for local/offline execution
+    UNKNOWN = "UNKNOWN"      # No token count reported or measured
+    MIXED = "MIXED"          # Aggregation of measured and estimated tokens
+
+
 
 
 @dataclass
@@ -170,12 +187,18 @@ class AIExecutionResult:
     mock: bool = False
     cached: bool = False
     execution_provenance: ExecutionProvenance = ExecutionProvenance.MOCK
+    token_provenance: TokenMeasurementProvenance = TokenMeasurementProvenance.MEASURED
 
     def to_dict(self) -> Dict[str, Any]:
         prov_val = (
             self.execution_provenance.value
             if isinstance(self.execution_provenance, ExecutionProvenance)
             else str(self.execution_provenance)
+        )
+        token_prov_val = (
+            self.token_provenance.value
+            if isinstance(self.token_provenance, TokenMeasurementProvenance)
+            else str(self.token_provenance)
         )
         return {
             "request_id": self.request_id,
@@ -189,6 +212,7 @@ class AIExecutionResult:
             "prompt_tokens": self.prompt_tokens,
             "completion_tokens": self.completion_tokens,
             "total_tokens": self.total_tokens,
+            "token_provenance": token_prov_val,
             "latency_ms": self.latency_ms,
             "estimated_cost_usd": self.estimated_cost_usd,
             "success": self.success,
@@ -201,11 +225,16 @@ class AIExecutionResult:
 
     @property
     def provenance(self) -> Dict[str, Any]:
-        """Machine-readable provenance record (F-014 / QA-001)."""
+        """Machine-readable provenance record (F-014 / QA-001 / GQA-015)."""
         prov_val = (
             self.execution_provenance.value
             if isinstance(self.execution_provenance, ExecutionProvenance)
             else str(self.execution_provenance)
+        )
+        token_prov_val = (
+            self.token_provenance.value
+            if isinstance(self.token_provenance, TokenMeasurementProvenance)
+            else str(self.token_provenance)
         )
         return {
             "provider": self.provider,
@@ -214,6 +243,7 @@ class AIExecutionResult:
             "status": self.status.value if isinstance(self.status, ModelExecutionStatus) else str(self.status),
             "execution_provenance": prov_val,
             "real_model": prov_val == ExecutionProvenance.REAL_MODEL.value,
+            "token_provenance": token_prov_val,
         }
 
 

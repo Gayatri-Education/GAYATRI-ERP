@@ -68,7 +68,11 @@ class PolicyEngine:
         self.model_allowlist: Set[str] = set()  # Empty means all registered models allowed
         self.daily_budget_usd: float = 100.0
         self.daily_spend_usd: float = 0.0
+        self.daily_tokens_total: int = 0
+        self.daily_tokens_measured: int = 0
+        self.daily_tokens_estimated: int = 0
         self.daily_spend_reset_ts: float = time.time()
+        self.daily_reset_day_utc: str = time.strftime("%Y-%m-%d", time.gmtime())
 
         # Rate limiting state: student_id / tenant_id -> list of request timestamps
         self._request_history: Dict[str, List[float]] = {}
@@ -125,13 +129,48 @@ class PolicyEngine:
 
         return True, None
 
-    def record_spend(self, cost_usd: float) -> None:
+    def record_usage(
+        self,
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
+        cost_usd: float = 0.0,
+        provenance: str = "MEASURED",
+    ) -> None:
+        """Record real token counts and expenditure with provenance tracking (GQA-015)."""
         self._check_budget_reset()
-        self.daily_spend_usd += cost_usd
+        self.daily_spend_usd += max(0.0, float(cost_usd))
+        tokens = max(0, int(prompt_tokens)) + max(0, int(completion_tokens))
+        self.daily_tokens_total += tokens
+
+        prov_str = str(provenance.value if hasattr(provenance, "value") else provenance).upper()
+        if prov_str == "ESTIMATED":
+            self.daily_tokens_estimated += tokens
+        else:
+            self.daily_tokens_measured += tokens
+
+    def record_spend(self, cost_usd: float) -> None:
+        """Backward-compatible spend recorder."""
+        self.record_usage(prompt_tokens=0, completion_tokens=0, cost_usd=cost_usd)
+
+    @property
+    def token_provenance(self) -> str:
+        """Determine aggregate token measurement provenance."""
+        if self.daily_tokens_measured > 0 and self.daily_tokens_estimated > 0:
+            return "MIXED"
+        if self.daily_tokens_measured > 0:
+            return "MEASURED"
+        if self.daily_tokens_estimated > 0:
+            return "ESTIMATED"
+        return "UNKNOWN"
 
     def _check_budget_reset(self) -> None:
         now = time.time()
-        # Reset spend if more than 24 hours have passed
-        if now - self.daily_spend_reset_ts >= 86400.0:
+        current_day = time.strftime("%Y-%m-%d", time.gmtime(now))
+        # Reset spend and token tallies on UTC calendar day boundary or >= 86400s
+        if current_day != self.daily_reset_day_utc or (now - self.daily_spend_reset_ts >= 86400.0):
             self.daily_spend_usd = 0.0
+            self.daily_tokens_total = 0
+            self.daily_tokens_measured = 0
+            self.daily_tokens_estimated = 0
             self.daily_spend_reset_ts = now
+            self.daily_reset_day_utc = current_day

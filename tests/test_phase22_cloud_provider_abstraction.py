@@ -211,7 +211,11 @@ def test_openrouter_adapter_subclass(sample_provider_config, sample_request, sam
 def test_dynamic_pedagogical_content_variations():
     req1 = AIExecutionRequest(prompt="Grading problem", task_type=TaskType.ASSESSMENT_GRADING)
     c1 = generate_dynamic_pedagogical_content(req1)
-    assert '"score": 1.0' in c1
+    grade_data = json.loads(c1)
+    assert grade_data["status"] == "EVALUATION_UNAVAILABLE"
+    assert grade_data["score"] is None
+    assert grade_data["correct"] is None
+    assert grade_data["authoritative"] is False
 
     req2 = AIExecutionRequest(prompt="Show copilot overview", task_type=TaskType.COPILOT_SUMMARY)
     c2 = generate_dynamic_pedagogical_content(req2)

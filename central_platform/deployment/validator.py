@@ -15,6 +15,15 @@ import sqlite3
 import typing
 from typing import Dict, List, Optional, Any
 
+from central_platform.config import (
+    DEFAULT_INSECURE_SECRET,
+    MIN_SECRET_LENGTH,
+    WEAK_SECRETS,
+    get_authoritative_settings,
+    resolve_environment,
+    resolve_jwt_secret,
+)
+
 
 class ValidationStatus(str, Enum):
     PASS = "PASS"
@@ -32,14 +41,19 @@ class ValidationCategory(str, Enum):
     MODEL_PROVIDERS = "MODEL_PROVIDERS"
     STATIC_ASSETS = "STATIC_ASSETS"
     HTTPS_SECURITY = "HTTPS_SECURITY"
+    RAG_KNOWLEDGE = "RAG_KNOWLEDGE"
 
 
 class ModelReadinessState(str, Enum):
-    """Explicit model readiness states (QA-003)."""
+    """Explicit model readiness states (QA-003, GQA-001, GQA-002)."""
+    UNCONFIGURED = "UNCONFIGURED"
     CONFIGURED = "CONFIGURED"
+    ARTIFACT_VERIFIED = "ARTIFACT_VERIFIED"
     LOADABLE = "LOADABLE"
     EXECUTABLE = "EXECUTABLE"
+    INFERENCE_VERIFIED = "INFERENCE_VERIFIED"
     HEALTHY = "HEALTHY"
+    DEGRADED = "DEGRADED"
     MISSING = "MISSING"
     CORRUPT = "CORRUPT"
     FAILED = "FAILED"
@@ -116,16 +130,9 @@ class DeploymentValidator:
         "i18n.js",
     ]
 
-    WEAK_SECRETS = {
-        "secret",
-        "change_me",
-        "changeme",
-        "password",
-        "123456",
-        "admin",
-        "default_key",
-        "gayatri_secret_key_12345",
-    }
+    WEAK_SECRETS = WEAK_SECRETS
+    ReleaseTier = ReleaseTier
+    ModelReadinessState = ModelReadinessState
 
     def __init__(
         self,
@@ -138,66 +145,90 @@ class DeploymentValidator:
         self.db_path = db_path or str(self.root_dir / "gayatri_local.db")
 
     def validate_environment(self) -> ValidationResult:
-        """Validates environment variables and runtime configuration."""
-        app_env = self.env_vars.get("APP_ENV", "development").lower()
-        log_level = self.env_vars.get("LOG_LEVEL", "INFO").upper()
-
-        if app_env not in {"development", "staging", "production"}:
+        """Validates environment variables and runtime configuration using authoritative settings."""
+        try:
+            resolved_env = resolve_environment(self.env_vars)
+        except RuntimeError as e:
             return ValidationResult(
                 category=ValidationCategory.ENVIRONMENT,
                 check_name="environment_config",
                 status=ValidationStatus.FAIL,
-                message=f"Invalid APP_ENV configuration: '{app_env}'",
-                details={"app_env": app_env, "log_level": log_level},
+                message=str(e),
+                details={"env_vars": list(self.env_vars.keys())},
             )
 
-        if app_env == "development":
+        log_level = self.env_vars.get("LOG_LEVEL", "INFO").upper()
+
+        if resolved_env not in {"development", "staging", "production", "test"}:
+            return ValidationResult(
+                category=ValidationCategory.ENVIRONMENT,
+                check_name="environment_config",
+                status=ValidationStatus.FAIL,
+                message=f"Invalid environment configuration: '{resolved_env}'",
+                details={"app_env": resolved_env, "log_level": log_level},
+            )
+
+        if resolved_env == "development":
             return ValidationResult(
                 category=ValidationCategory.ENVIRONMENT,
                 check_name="environment_config",
                 status=ValidationStatus.WARN,
-                message="Running in 'development' mode. Ensure APP_ENV=production before production release.",
-                details={"app_env": app_env, "log_level": log_level},
+                message="Running in 'development' mode. Ensure GAYATRI_ENV=production before production release.",
+                details={"app_env": resolved_env, "log_level": log_level},
             )
 
         return ValidationResult(
             category=ValidationCategory.ENVIRONMENT,
             check_name="environment_config",
             status=ValidationStatus.PASS,
-            message=f"Environment verified in '{app_env}' mode.",
-            details={"app_env": app_env, "log_level": log_level},
+            message=f"Environment verified in '{resolved_env}' mode.",
+            details={"app_env": resolved_env, "log_level": log_level},
         )
 
     def validate_secrets(self) -> ValidationResult:
-        """Validates secret key security and absence of hardcoded weak secrets."""
-        secret_key = self.env_vars.get("SECRET_KEY") or self.env_vars.get("JWT_SECRET") or ""
-        app_env = self.env_vars.get("APP_ENV", "development").lower()
-        strict_mode = self.env_vars.get("STRICT_SECRETS", "false").lower() == "true" or app_env == "production"
+        """Validates secret key security and absence of hardcoded weak secrets via authoritative config."""
+        try:
+            resolved_env = resolve_environment(self.env_vars)
+            is_prod = resolved_env == "production"
+            strict_mode = self.env_vars.get("STRICT_SECRETS", "false").lower() == "true" or is_prod
+            secret_key = resolve_jwt_secret(self.env_vars, is_prod=strict_mode)
+        except RuntimeError as e:
+            msg = str(e)
+            if "Missing required" in msg:
+                msg = "Missing required SECRET_KEY or GAYATRI_JWT_SECRET in production/strict deployment environment."
+            return ValidationResult(
+                category=ValidationCategory.SECRETS,
+                check_name="secrets_security",
+                status=ValidationStatus.FAIL,
+                message=msg,
+                details={"strict_mode": True},
+            )
 
-        if not secret_key:
+        if not secret_key or secret_key == DEFAULT_INSECURE_SECRET:
             if strict_mode:
                 return ValidationResult(
                     category=ValidationCategory.SECRETS,
                     check_name="secrets_security",
                     status=ValidationStatus.FAIL,
-                    message="Missing required SECRET_KEY or JWT_SECRET in production/strict deployment environment.",
+                    message="Missing required SECRET_KEY or GAYATRI_JWT_SECRET in production/strict deployment environment.",
                     details={"secret_key_configured": False, "strict_mode": True},
                 )
             return ValidationResult(
                 category=ValidationCategory.SECRETS,
                 check_name="secrets_security",
                 status=ValidationStatus.WARN,
-                message="No SECRET_KEY or JWT_SECRET explicitly defined in environment. Fallback signing key active.",
+                message="No GAYATRI_JWT_SECRET explicitly defined in environment. Fallback signing key active.",
                 details={"secret_key_configured": False, "strict_mode": False},
             )
 
-        if secret_key.lower() in self.WEAK_SECRETS or len(secret_key) < 16:
+        min_len = MIN_SECRET_LENGTH if strict_mode else 16
+        if secret_key.lower() in self.WEAK_SECRETS or len(secret_key) < min_len:
             return ValidationResult(
                 category=ValidationCategory.SECRETS,
                 check_name="secrets_security",
                 status=ValidationStatus.FAIL,
-                message="Insecure secret key detected! Ensure key length >= 16 and not a default secret string.",
-                details={"secret_key_length": len(secret_key)},
+                message=f"Insecure secret key detected! Ensure key length >= {min_len} and not a default secret string.",
+                details={"secret_key_length": len(secret_key), "min_required_length": min_len},
             )
 
         return ValidationResult(
@@ -346,12 +377,13 @@ class DeploymentValidator:
                         "models_registered": len(models),
                         "physical_artifact_present": has_physical,
                         "readiness_state": (
-                            ModelReadinessState.HEALTHY.value if has_physical
+                            ModelReadinessState.LOADABLE.value if has_physical
                             else (ModelReadinessState.CONFIGURED.value if not is_prod else ModelReadinessState.MISSING.value)
                         ),
+                        "inference_verified": False,
                     }
             else:
-                ai_info = {"status": "DOWN", "error": "model_manifest.json missing"}
+                ai_info = {"status": "DOWN", "error": "model_manifest.json missing", "readiness_state": ModelReadinessState.UNCONFIGURED.value}
         except Exception as exc:
             ai_info = {"status": "DOWN", "error": str(exc)}
 
@@ -386,15 +418,21 @@ class DeploymentValidator:
                     rag_info = {
                         "status": "UP",
                         "service": "RAGService",
+                        "probe_type": "operational_smoke_test",
+                        "is_smoke_test": True,
                         "retrieval_verified": True,
                         "evidence_count": rag_res["count"],
                         "citation": rag_res["results"][0]["citation"],
+                        "retrieval_strategy": rag_res.get("retrieval_strategy", "HYBRID_LEXICAL_SEMANTIC"),
+                        "corpus_source": rag_res.get("corpus_source", "DATABASE_PUBLISHED"),
                     }
                 else:
                     rag_up = False
                     rag_info = {
                         "status": "DOWN",
                         "service": "RAGService",
+                        "probe_type": "operational_smoke_test",
+                        "is_smoke_test": True,
                         "retrieval_verified": False,
                         "error": "RAG probe returned empty or ungrounded results despite published sources.",
                     }
@@ -416,6 +454,8 @@ class DeploymentValidator:
                     "service": "RAGService",
                     "mode": "FALLBACK_VERIFIED" if fb_ok else "UNSEEDED_DEV",
                     "evidence_count": fb_res.get("count", 0) if fb_ok else 0,
+                    "retrieval_strategy": fb_res.get("retrieval_strategy", "LEXICAL_KEYWORD_FALLBACK"),
+                    "corpus_source": fb_res.get("corpus_source", "FALLBACK_FILESYSTEM"),
                 }
         except Exception as exc:
             rag_info = {"status": "DOWN", "error": str(exc)}
@@ -468,8 +508,203 @@ class DeploymentValidator:
             }},
         )
 
-    def validate_model_providers(self) -> ValidationResult:
-        """Validates model manifest configuration, artifact integrity, and AI provider availability (QA-003)."""
+    def validate_model_inference_probe(
+        self,
+        prompt: str = "Explain the principle of conservation of energy in one sentence.",
+        timeout_seconds: float = 10.0,
+    ) -> ValidationResult:
+        """Execute a controlled, bounded inference probe to verify genuine model execution (GQA-001, GQA-002).
+
+        Requires:
+        - Non-empty output text
+        - success == True
+        - mock == False
+        - fallback_used == False
+        - execution_provenance == ExecutionProvenance.REAL_MODEL
+        - ModelExecutionStatus.MODEL_SUCCESS
+        """
+        try:
+            import time
+            from central_platform.db import PlatformDatabase
+            from central_platform.ai.gateway import AIGatewayService
+            from central_platform.ai.schema import (
+                AIExecutionRequest,
+                ExecutionProvenance,
+                ModelExecutionStatus,
+                TaskType,
+            )
+
+            db = PlatformDatabase(db_path=self.db_path)
+            gateway = AIGatewayService(db=db)
+            req = AIExecutionRequest(
+                prompt=prompt,
+                task_type=TaskType.TUTORING,
+                max_tokens=64,
+                timeout_seconds=timeout_seconds,
+            )
+            t0 = time.perf_counter()
+            res = gateway.execute(req)
+            elapsed_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+
+            if not res.success:
+                return ValidationResult(
+                    category=ValidationCategory.MODEL_PROVIDERS,
+                    check_name="model_inference_probe",
+                    status=ValidationStatus.FAIL,
+                    message=f"Inference probe failed: {res.error_message or 'Unknown error'} (status={res.status.value if hasattr(res.status, 'value') else res.status})",
+                    details={
+                        "readiness_state": ModelReadinessState.FAILED.value,
+                        "execution_provenance": res.execution_provenance.value if hasattr(res.execution_provenance, "value") else str(res.execution_provenance),
+                        "status": res.status.value if hasattr(res.status, "value") else str(res.status),
+                        "latency_ms": elapsed_ms,
+                        "error_class": res.error_class,
+                    },
+                )
+
+            # Check that output is non-empty
+            if not res.content or not res.content.strip():
+                return ValidationResult(
+                    category=ValidationCategory.MODEL_PROVIDERS,
+                    check_name="model_inference_probe",
+                    status=ValidationStatus.FAIL,
+                    message="Inference probe failed: model returned an empty completion.",
+                    details={
+                        "readiness_state": ModelReadinessState.FAILED.value,
+                        "execution_provenance": res.execution_provenance.value if hasattr(res.execution_provenance, "value") else str(res.execution_provenance),
+                        "content_length": 0,
+                    },
+                )
+
+            # Verify genuine execution provenance (reject mock and fallback)
+            prov = res.execution_provenance
+            prov_val = prov.value if hasattr(prov, "value") else str(prov)
+            if prov_val != ExecutionProvenance.REAL_MODEL.value or res.mock or res.fallback_used:
+                return ValidationResult(
+                    category=ValidationCategory.MODEL_PROVIDERS,
+                    check_name="model_inference_probe",
+                    status=ValidationStatus.FAIL,
+                    message=f"Inference probe failed real-model verification: response was generated by {prov_val} (mock={res.mock}, fallback={res.fallback_used}).",
+                    details={
+                        "readiness_state": ModelReadinessState.FAILED.value,
+                        "execution_provenance": prov_val,
+                        "mock": res.mock,
+                        "fallback_used": res.fallback_used,
+                    },
+                )
+
+            return ValidationResult(
+                category=ValidationCategory.MODEL_PROVIDERS,
+                check_name="model_inference_probe",
+                status=ValidationStatus.PASS,
+                message=f"Inference probe verified genuine model execution via {res.provider}/{res.model} ({elapsed_ms}ms).",
+                details={
+                    "readiness_state": ModelReadinessState.INFERENCE_VERIFIED.value,
+                    "provider": res.provider,
+                    "model": res.model,
+                    "latency_ms": elapsed_ms,
+                    "tokens": res.total_tokens,
+                    "execution_provenance": prov_val,
+                    "real_model": True,
+                },
+            )
+        except Exception as exc:
+            return ValidationResult(
+                category=ValidationCategory.MODEL_PROVIDERS,
+                check_name="model_inference_probe",
+                status=ValidationStatus.FAIL,
+                message=f"Inference probe exception: {exc}",
+                details={"readiness_state": ModelReadinessState.FAILED.value, "error": str(exc)},
+            )
+
+    def validate_rag_subsystem(
+        self,
+        evaluate_golden_set: bool = False,
+        min_grounding_rate: float = 0.75,
+    ) -> ValidationResult:
+        """Validates RAG knowledge subsystem integrity, multi-format ingestion readiness, and independent golden query recall (GQA-012)."""
+        try:
+            from central_platform.db import PlatformDatabase
+            from central_platform.rag.service import RAGService
+            from central_platform.rag.golden import evaluate_rag_golden_set
+
+            test_db = PlatformDatabase(db_path=self.db_path)
+            rag = RAGService(db=test_db)
+            is_prod = self.env_vars.get("APP_ENV", "development").lower() == "production"
+
+            published_sources = test_db.list_rag_sources(status="published")
+            if not published_sources:
+                if is_prod:
+                    return ValidationResult(
+                        category=ValidationCategory.RAG_KNOWLEDGE,
+                        check_name="rag_knowledge_integrity",
+                        status=ValidationStatus.FAIL,
+                        message="Production blocker: zero published RAG sources in database. Empty knowledge index cannot pass production gate.",
+                        details={"published_sources": 0, "is_prod": True},
+                    )
+                # Development fallback
+                fb_res = rag._legacy_fallback_query("equilibrium", top_k=1)
+                fb_ok = isinstance(fb_res, dict) and fb_res.get("status") == "RAG_OK" and fb_res.get("count", 0) > 0
+                return ValidationResult(
+                    category=ValidationCategory.RAG_KNOWLEDGE,
+                    check_name="rag_knowledge_integrity",
+                    status=ValidationStatus.PASS if fb_ok else ValidationStatus.WARN,
+                    message="RAG fallback filesystem corpus verified for development mode." if fb_ok else "No published sources and fallback corpus empty.",
+                    details={"mode": "FALLBACK_FILESYSTEM", "count": fb_res.get("count", 0) if fb_ok else 0},
+                )
+
+            # Check primary published source
+            primary_src = published_sources[0]
+            chunks = test_db.get_rag_chunks(primary_src.id, limit=5)
+            if not chunks:
+                return ValidationResult(
+                    category=ValidationCategory.RAG_KNOWLEDGE,
+                    check_name="rag_knowledge_integrity",
+                    status=ValidationStatus.FAIL,
+                    message=f"Corrupt source '{primary_src.id}': marked published but contains 0 chunks.",
+                    details={"source_id": primary_src.id, "chunk_count": 0},
+                )
+
+            # Independent golden query benchmark
+            report_dict = {}
+            if evaluate_golden_set or is_prod:
+                report = evaluate_rag_golden_set(
+                    rag_service=rag,
+                    course_id=primary_src.course_id,
+                    min_grounding_rate=min_grounding_rate,
+                )
+                report_dict = report.to_dict()
+                if not report.is_healthy:
+                    return ValidationResult(
+                        category=ValidationCategory.RAG_KNOWLEDGE,
+                        check_name="rag_knowledge_integrity",
+                        status=ValidationStatus.FAIL,
+                        message=f"RAG golden set evaluation failed (grounding_rate={report.grounding_rate:.2f}, neg_rejection={report.negative_rejection_rate:.2f}).",
+                        details={"report": report_dict, "published_sources": len(published_sources)},
+                    )
+
+            return ValidationResult(
+                category=ValidationCategory.RAG_KNOWLEDGE,
+                check_name="rag_knowledge_integrity",
+                status=ValidationStatus.PASS,
+                message=f"RAG subsystem verified across {len(published_sources)} published source(s)." + (" Golden query benchmark PASSED." if evaluate_golden_set or is_prod else ""),
+                details={
+                    "published_sources": len(published_sources),
+                    "golden_evaluation": report_dict if (evaluate_golden_set or is_prod) else "skipped_smoke_only",
+                    "retrieval_strategy": "HYBRID_LEXICAL_SEMANTIC",
+                    "corpus_source": "DATABASE_PUBLISHED",
+                },
+            )
+        except Exception as exc:
+            return ValidationResult(
+                category=ValidationCategory.RAG_KNOWLEDGE,
+                check_name="rag_knowledge_integrity",
+                status=ValidationStatus.FAIL,
+                message=f"RAG validation exception: {exc}",
+                details={"error": str(exc)},
+            )
+
+    def validate_model_providers(self, probe_inference: bool = False) -> ValidationResult:
+        """Validates model manifest configuration, artifact integrity, and AI provider availability (QA-003, GQA-001)."""
         manifest_path = self.root_dir / "model_manifest.json"
         if not manifest_path.exists():
             return ValidationResult(
@@ -477,7 +712,7 @@ class DeploymentValidator:
                 check_name="model_providers",
                 status=ValidationStatus.FAIL,
                 message="model_manifest.json file not found.",
-                details={"manifest_path": str(manifest_path), "readiness_state": ModelReadinessState.MISSING.value},
+                details={"manifest_path": str(manifest_path), "readiness_state": ModelReadinessState.UNCONFIGURED.value},
             )
 
         try:
@@ -497,7 +732,7 @@ class DeploymentValidator:
                     check_name="model_providers",
                     status=ValidationStatus.FAIL,
                     message="No models defined in model_manifest.json.",
-                    details={"models_count": 0, "readiness_state": ModelReadinessState.FAILED.value},
+                    details={"models_count": 0, "readiness_state": ModelReadinessState.UNCONFIGURED.value},
                 )
 
             is_prod = self.env_vars.get("APP_ENV", "development").lower() == "production"
@@ -505,14 +740,64 @@ class DeploymentValidator:
             local_rel = primary.get("local_path") or primary.get("artifact_path")
             expected_checksum = primary.get("checksum")
 
+            # Path traversal containment check
+            artifact_path = None
+            if local_rel:
+                try:
+                    resolved_p = (self.root_dir / local_rel).resolve()
+                    resolved_p.relative_to(self.root_dir.resolve())
+                    artifact_path = resolved_p
+                except ValueError:
+                    return ValidationResult(
+                        category=ValidationCategory.MODEL_PROVIDERS,
+                        check_name="model_providers",
+                        status=ValidationStatus.FAIL,
+                        message=f"Path traversal detected: model path '{local_rel}' resolves outside root directory.",
+                        details={"models_count": len(models), "readiness_state": ModelReadinessState.CORRUPT.value},
+                    )
+
             has_physical = False
             checksum_matches = None
             readiness_state = ModelReadinessState.CONFIGURED
-            artifact_path = (self.root_dir / local_rel) if local_rel else None
 
             if artifact_path and artifact_path.is_file():
                 has_physical = True
                 readiness_state = ModelReadinessState.LOADABLE
+
+                # File size check
+                file_size = artifact_path.stat().st_size
+                if file_size < 1024:
+                    readiness_state = ModelReadinessState.CORRUPT
+                    return ValidationResult(
+                        category=ValidationCategory.MODEL_PROVIDERS,
+                        check_name="model_providers",
+                        status=ValidationStatus.FAIL,
+                        message=f"Model artifact at '{local_rel}' is truncated or too small ({file_size} bytes).",
+                        details={
+                            "models_count": len(models),
+                            "readiness_state": ModelReadinessState.CORRUPT.value,
+                            "file_size": file_size,
+                        },
+                    )
+
+                # GGUF magic header check
+                if artifact_path.name.lower().endswith(".gguf"):
+                    with open(artifact_path, "rb") as af:
+                        magic = af.read(4)
+                        if magic != b"GGUF":
+                            readiness_state = ModelReadinessState.CORRUPT
+                            return ValidationResult(
+                                category=ValidationCategory.MODEL_PROVIDERS,
+                                check_name="model_providers",
+                                status=ValidationStatus.FAIL,
+                                message=f"Model artifact '{local_rel}' is corrupt: invalid GGUF magic header {magic!r}.",
+                                details={
+                                    "models_count": len(models),
+                                    "readiness_state": ModelReadinessState.CORRUPT.value,
+                                    "magic_header": str(magic),
+                                },
+                            )
+
                 if expected_checksum:
                     import hashlib
                     hasher = hashlib.sha256()
@@ -523,27 +808,27 @@ class DeploymentValidator:
                     checksum_matches = (actual_checksum.lower() == expected_checksum.lower())
                     if not checksum_matches:
                         readiness_state = ModelReadinessState.CORRUPT
-                        if is_prod:
-                            return ValidationResult(
-                                category=ValidationCategory.MODEL_PROVIDERS,
-                                check_name="model_providers",
-                                status=ValidationStatus.FAIL,
-                                message=f"Model artifact checksum mismatch for '{local_rel}'. Expected {expected_checksum[:12]}..., got {actual_checksum[:12]}...",
-                                details={
-                                    "models_count": len(models),
-                                    "readiness_state": ModelReadinessState.CORRUPT.value,
-                                    "expected_checksum": expected_checksum,
-                                    "actual_checksum": actual_checksum,
-                                },
-                            )
+                        return ValidationResult(
+                            category=ValidationCategory.MODEL_PROVIDERS,
+                            check_name="model_providers",
+                            status=ValidationStatus.FAIL,
+                            message=f"Model artifact checksum mismatch for '{local_rel}'. Expected {expected_checksum[:12]}..., got {actual_checksum[:12]}...",
+                            details={
+                                "models_count": len(models),
+                                "readiness_state": ModelReadinessState.CORRUPT.value,
+                                "expected_checksum": expected_checksum,
+                                "actual_checksum": actual_checksum,
+                            },
+                        )
+
+                # Loader verification: runtime library inspection
                 try:
-                    from core.providers.local import LocalProvider
-                    if LocalProvider.is_available():
-                        readiness_state = ModelReadinessState.HEALTHY
-                    else:
-                        readiness_state = ModelReadinessState.EXECUTABLE
-                except Exception:
+                    import llama_cpp
                     readiness_state = ModelReadinessState.LOADABLE
+                except ImportError:
+                    readiness_state = ModelReadinessState.ARTIFACT_VERIFIED
+                except Exception:
+                    readiness_state = ModelReadinessState.ARTIFACT_VERIFIED
 
             if is_prod and not has_physical:
                 return ValidationResult(
@@ -559,10 +844,24 @@ class DeploymentValidator:
                     },
                 )
 
+            # Bounded inference readiness probe
+            inference_verified = False
+            if probe_inference:
+                probe_res = self.validate_model_inference_probe(timeout_seconds=10.0)
+                if probe_res.status != ValidationStatus.PASS:
+                    if is_prod:
+                        return probe_res
+                    readiness_state = ModelReadinessState.FAILED
+                else:
+                    inference_verified = True
+                    readiness_state = ModelReadinessState.HEALTHY
+
             status = ValidationStatus.PASS
             msg = f"Model manifest verified with {len(models)} model definition(s). Readiness state: {readiness_state.value}."
             if not has_physical:
                 msg += " (Warning: Physical model file not found on disk; development mode active)."
+            elif not inference_verified:
+                msg += " (Artifact present and loadable; bounded inference probe required for full release certification)."
 
             return ValidationResult(
                 category=ValidationCategory.MODEL_PROVIDERS,
@@ -574,6 +873,7 @@ class DeploymentValidator:
                     "readiness_state": readiness_state.value,
                     "physical_artifact_present": has_physical,
                     "checksum_verified": checksum_matches,
+                    "inference_verified": inference_verified,
                 },
             )
         except Exception as e:

@@ -450,7 +450,7 @@ class TutorStateManager:
         validate_student_id(event.student_id)
         validate_concept_id(event.concept_id)
 
-        valid_correctness = {'correct', 'incorrect', 'partially_correct', 'uncertain'}
+        valid_correctness = {'correct', 'incorrect', 'partially_correct', 'uncertain', 'evaluation_unavailable'}
         if event.correctness not in valid_correctness:
             raise ValueError(f"event.correctness '{event.correctness}' must be one of {valid_correctness}")
         if event.difficulty < 0.0 or event.difficulty > 5.0:
@@ -476,8 +476,8 @@ class TutorStateManager:
                 event.hint_used, event.response_time, event.misconception_code, event.source
             ))
 
-            # Audit #43: 'uncertain' evaluation must NOT mutate student mastery state
-            if event.correctness == 'uncertain':
+            # Audit #43 & GQA-003: 'uncertain' or 'evaluation_unavailable' evaluation must NOT mutate student mastery state
+            if event.correctness in ('uncertain', 'evaluation_unavailable'):
                 return True
 
             # Calculate evidence-driven student mastery update

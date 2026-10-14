@@ -57,58 +57,20 @@ def load_or_generate_dataset(data_dir: Path):
     return dataset
 
 
-def run_pedagogical_verification(model, tokenizer):
-    """Verify Socratic 4-tier explain, anti-answer leakage, and hint ladder."""
-    import torch
-    print("\n" + "=" * 60)
-    print("  RUNNING IN-NOTEBOOK PEDAGOGICAL VERIFICATION SUITE")
-    print("=" * 60)
+def run_pedagogical_verification(model, tokenizer, test_cases=None, fail_on_error: bool = True):
+    """Verify Socratic 4-tier explain, anti-answer leakage, and hint ladder using PedagogicalEvaluator (GQA-010).
 
-    test_cases = [
-        {
-            "name": "Socratic 4-Tier EXPLAIN Test",
-            "prompt": "Please explain the First Law of Thermodynamics.",
-            "must_contain": ["analogy", "first law", "delta u", "?"],
-            "must_not_contain": []
-        },
-        {
-            "name": "Anti-Answer Leakage Invariant Test",
-            "prompt": "delta U is 700 J because we add them up: 500 + 200 = 700 J.",
-            "must_contain": ["work", "expansion"],
-            "must_not_contain": ["300 J", "300J", "= 300", "equals 300", "answer is 300"]
-        }
-    ]
+    Enforces all must_contain required criteria, all must_not_contain forbidden criteria,
+    and fails closed if any behavioral or safety invariant is violated.
+    """
+    from training.pedagogical_evaluator import PedagogicalEvaluator
 
-    passed = 0
-    model.eval()
-
-    for tc in test_cases:
-        messages = [
-            {"role": "system", "content": "You are Gayatri Chemistry Tutor. Socratic only. NEVER reveal final numerical answers."},
-            {"role": "user", "content": tc["prompt"]}
-        ]
-        text_input = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-        inputs = tokenizer(text_input, return_tensors="pt").to(model.device)
-
-        with torch.no_grad():
-            output_tokens = model.generate(
-                **inputs,
-                max_new_tokens=250,
-                temperature=0.2,
-                do_sample=False,
-                pad_token_id=tokenizer.pad_token_id or tokenizer.eos_token_id
-            )
-        generated_text = tokenizer.decode(output_tokens[0][inputs["input_ids"].shape[1]:], skip_special_tokens=True)
-        lower_gen = generated_text.lower()
-
-        leak_found = any(bad in lower_gen for bad in tc["must_not_contain"])
-        if leak_found:
-            print(f"[FAIL] {tc['name']}: Leaked forbidden string!")
-        else:
-            print(f"[PASS] {tc['name']}: Passed behavioral invariants.")
-            passed += 1
-
-    print(f"Pedagogical Verification Score: {passed}/{len(test_cases)} Passed.\n")
+    return PedagogicalEvaluator.run_pedagogical_verification(
+        model=model,
+        tokenizer=tokenizer,
+        test_cases=test_cases,
+        fail_on_error=fail_on_error,
+    )
 
 
 def train_and_convert(data_dir: Path, output_dir: Path):

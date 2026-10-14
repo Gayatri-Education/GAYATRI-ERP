@@ -1,47 +1,81 @@
-# Phase 02 Implementation Plan — AI Execution Integrity & Provider Routing
+# Phase 02 Implementation Plan: Real AI Readiness, Model Execution & Provenance Integrity
 
-## 1. Context and Objective
-Resolve QA-001, QA-002, QA-003, and QA-015:
-Guarantee that Gayatri explicitly exposes AI execution provenance (`REAL_MODEL`, `MOCK`, `DEGRADED_FALLBACK`, `FAILED`) across all provider adapters and gateway routing. Ensure that missing models, mock modes, or degraded fallbacks can never masquerade as genuine real-model execution. Ensure production validators distinguish model readiness states (`CONFIGURED`, `LOADABLE`, `EXECUTABLE`, `HEALTHY`).
+**Document:** `docs/qa_agent/plans/PHASE_02_PLAN.md`  
+**Phase:** 02  
+**Maps to:** GQA-001, GQA-002 (P0 Release Blocker)  
+**Status:** IN_PROGRESS  
 
-## 2. Dependencies and Affected Modules
-- Schemas: `central_platform/ai/schema.py`
-- Adapters: `central_platform/ai/adapters.py`
-- Gateway: `central_platform/ai/gateway.py`
-- Deployment Validator: `central_platform/deployment/validator.py`
-- Audit Suite: `tests/test_phase29_final_platform_audit_master.py`
-- New Regression Suite: `tests/test_qa_phase02_ai_execution_integrity.py`
+---
 
-## 3. Scope of Tasks
-1. **02.1 Map AI Execution Path:** Document complete pipeline from UI/bridge to adapters and response normalization.
-2. **02.2 Define Execution Provenance Model:**
-   - Implement `ExecutionProvenance` enum (`REAL_MODEL`, `MOCK`, `DEGRADED_FALLBACK`, `FAILED`).
-   - Add `execution_provenance` field to `AIExecutionResult` with automated provenance payload (`real_model: bool`, `execution_provenance: str`).
-3. **02.3 Fix Local and Mock Fallback Semantics:**
-   - In `LocalGGUFAdapter`:
-     - When `LocalProvider.is_available()` succeeds with genuine token generation: mark `execution_provenance = ExecutionProvenance.REAL_MODEL`, `mock = False`.
-     - When `LocalProvider` fails in production: fail closed with `execution_provenance = ExecutionProvenance.FAILED`, `status = MODEL_UNAVAILABLE`.
-     - When `LocalProvider` falls back in non-production mode: mark `execution_provenance = ExecutionProvenance.DEGRADED_FALLBACK`, `mock = True`, `fallback_used = True`.
-   - In `MockAIAdapter`: mark `execution_provenance = ExecutionProvenance.MOCK`, `mock = True`.
-   - In cloud adapters (`OpenAIAdapter`, `AnthropicAdapter`, `GeminiAdapter`, `OpenRouterAdapter`): mark `execution_provenance = ExecutionProvenance.REAL_MODEL` on success, `ExecutionProvenance.FAILED` on failure.
-   - In `AIGatewayService`: preserve and propagate provenance through multi-provider fallback chains.
-4. **02.4 Validate Model Manifest & Deployment Validator Health Check (QA-003):**
-   - Enhance `DeploymentValidator.validate_model_providers()` and `validate_health_checks()`:
-     - Check manifest configuration.
-     - Check file presence on disk (`models/...`).
-     - Check model checksum and loadability.
-     - Differentiate `CONFIGURED`, `LOADABLE`, `EXECUTABLE`, `HEALTHY`.
-     - Fail production check if only mock is available or model artifact is missing.
-5. **02.5 Comprehensive Test Verification (QA-002):**
-   - Create `tests/test_qa_phase02_ai_execution_integrity.py` covering:
-     - Model discovery and manifest integrity
-     - Distinction between real model vs mock vs degraded fallback
-     - Provider error classifications (401, 403, 429, 500, timeout, malformed)
-     - Streaming, cancellation, and session safety
-     - Multi-turn provenance preservation
-   - Update `tests/test_phase29_final_platform_audit_master.py` so intelligence audit tests explicit provenance instead of mere string non-emptiness.
-6. **02.6 Regression Verification:** Run focused tests, then full repository test suite (1346+ tests), compilation check, and write Phase 02 completion report.
+## 1. Architectural Scope & Problem Statement
 
-## 4. Regression Risks & Mitigations
-- *Risk:* Existing tests expecting `mock=False` on fallback LocalGGUF adapter outside production mode.
-  - *Mitigation:* Review all existing tests; existing tests in `test_phase04_ai_gateway_remediation.py` verify that `LocalGGUFAdapter` fails with `MODEL_UNAVAILABLE` when `LocalProvider.is_available() == False` in production mode. Non-production tests will see `execution_provenance == DEGRADED_FALLBACK`.
+### 1.1 Root Cause & GQA Findings
+- **GQA-001 (P0):** `DeploymentValidator.validate_model_providers()` and related AI health paths infer `HEALTHY` or green readiness from model manifest registration and physical file presence on disk without ever proving that the runtime loader can load the model or that the model can successfully execute inference.
+- **GQA-002 (P0):** In `test_phase29_final_platform_audit_master.py`, the AI intelligence audit explicitly asserts `res.execution_provenance in (MOCK, DEGRADED_FALLBACK)` and `real_model == False`. This test verifies fallback observability, but historically masqueraded as a master platform audit without a distinct, mandatory real-model execution test.
+- **File presence vs Checksum vs Loader vs Real Inference:** These are fundamentally distinct guarantees. A file may exist on disk, have a valid checksum, yet fail to load due to missing architecture support, invalid GGUF magic header (`GGUF`), out-of-memory errors, library incompatibilities, or generate empty/corrupted/timeout outputs.
+
+---
+
+## 2. Technical Design & Readiness State Model
+
+### 2.1 Formal Readiness State Machine (`ModelReadinessState`)
+We expand and strictly enforce the `ModelReadinessState` enum across `central_platform/deployment/validator.py`:
+- `UNCONFIGURED`: Manifest missing, empty, or has no model entries.
+- `CONFIGURED`: Model registered in manifest, but physical file not yet verified.
+- `ARTIFACT_VERIFIED`: Physical artifact exists within resolved root, valid GGUF header/size, and checksum verified (if checksum configured).
+- `LOADABLE`: Model binary is loadable by the runtime provider (e.g. `llama-cpp-python` or provider SDK).
+- `INFERENCE_VERIFIED`: Model executed controlled probe inference, returning non-empty text with `REAL_MODEL` provenance within bounded timeout.
+- `HEALTHY`: Full production readiness confirmed via actual execution.
+- `DEGRADED`: Fallback or mock active (strictly prohibited in production tier release gate).
+- `MISSING`: Configured local artifact path does not exist on disk.
+- `CORRUPT`: File truncated, invalid magic bytes, or checksum mismatch.
+- `FAILED`: Loader crash, execution timeout, rate limit, quota exhaustion, or blank/malformed output.
+
+### 2.2 Split Liveness from Bounded Inference Readiness Probe
+1. **Lightweight Liveness / Health Check:** Inspects manifest, physical artifact existence, header magic bytes, and checksum without allocating large GPU/CPU tensor buffers unless requested.
+2. **Bounded Inference Readiness Probe (`validate_model_inference_probe`):**
+   - Controlled, harmless pedagogical test prompt: `"Explain the principle of conservation of energy in one sentence."`
+   - Bounded execution: `max_tokens=64`, bounded timeout (default 10.0s).
+   - Strict validation:
+     - Non-empty completion string.
+     - `success == True`.
+     - `execution_provenance == ExecutionProvenance.REAL_MODEL`.
+     - `mock == False`.
+     - Valid latency and token counts.
+   - Any empty response, timeout, fallback, mock, or exception immediately fails the probe with `ModelReadinessState.FAILED`.
+   - In production mode (`is_production_mode() == True`), `validate_model_providers(probe_inference=True)` is mandatory and fails closed if inference is not verified.
+
+### 2.3 Strict GGUF Header & Path Containment Validation
+- Verify path containment to prevent path traversal outside project root.
+- Validate file size (> 100 KB) and verify GGUF magic header bytes (`b"GGUF"` at byte 0).
+- Truncated files or invalid headers are marked `ModelReadinessState.CORRUPT`.
+
+### 2.4 Separation of Mock/Fallback Observability and Real Model Release Tests
+- Document and rename `test_phase29_final_platform_audit_master.py::test_audit_intelligence_ai_gateway_and_resilience` to `test_audit_intelligence_ai_gateway_fallback_observability`.
+- Add a dedicated release integration test suite in `tests/test_qa_phase02_ai_execution_integrity.py` exercising:
+  - Real model execution probe passes with `INFERENCE_VERIFIED` / `HEALTHY` and `REAL_MODEL`.
+  - Missing file, truncated file, invalid GGUF header, and checksum mismatch fail with exact corresponding readiness states.
+  - Runtime loader failure and inference timeout fail closed.
+  - Gateway error normalization masks secret keys and student prompts.
+  - Release evidence metadata includes commit SHA, model name/revision, model checksum, provider type, latency, and provenance.
+
+---
+
+## 3. Implementation Steps
+
+1. **Update `central_platform/deployment/validator.py`:**
+   - Add missing states (`UNCONFIGURED`, `ARTIFACT_VERIFIED`, `INFERENCE_VERIFIED`) to `ModelReadinessState`.
+   - Add GGUF magic header check (`b"GGUF"`) and path containment validation.
+   - Implement `validate_model_inference_probe(self, timeout_seconds: float = 10.0) -> ValidationResult`.
+   - Update `validate_model_providers(self, probe_inference: bool = False)`:
+     - In production mode, require `probe_inference=True` or verify that file presence alone NEVER yields `HEALTHY`. Mere file presence yields at most `ARTIFACT_VERIFIED` or `LOADABLE`. Only verified inference can yield `INFERENCE_VERIFIED` / `HEALTHY`.
+2. **Update `central_platform/ai/adapters.py` & `central_platform/ai/gateway.py`:**
+   - Ensure gateway execution and error envelopes never leak API keys or sensitive student data.
+   - Preserve `ExecutionProvenance` through every layer and serialization dictionary.
+3. **Update `tests/test_phase29_final_platform_audit_master.py`:**
+   - Explicitly document the fallback observability contract.
+   - Add companion audit test verifying real-model execution requirement for production readiness tier.
+4. **Expand `tests/test_qa_phase02_ai_execution_integrity.py`:**
+   - Implement all 10 required test cases from Section 186-226 of the master fix plan.
+5. **Verify full repository regression (1435+ tests).**
+6. **Produce Phase 02 completion report and update tracking.**

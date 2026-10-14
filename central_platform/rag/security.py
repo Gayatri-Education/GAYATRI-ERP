@@ -18,13 +18,12 @@ from typing import Any, Dict, List, Tuple
 class RAGSecuritySanitizer:
     """Enforces prompt-injection detection, payload neutralizing, and semantic data framing."""
 
-    # Known prompt injection markers to neutralize/flag
     INJECTION_PATTERNS = [
         r"(?i)\bignore\s+(?:all\s+)?(?:previous|prior)\s+instructions\b",
         r"(?i)\bdisregard\s+(?:all\s+)?(?:previous|prior)\s+(?:rules|commands|instructions)\b",
         r"(?i)\byou\s+are\s+now\s+(?:DAN|an\s+unrestricted\s+AI|a\s+hacker|in\s+developer\s+mode)\b",
         r"(?i)<\s*(?:system|instruction|prompt|im_start|im_end)\b[^>]*>",
-        r"(?i)\[\s*system\s*(?:prompt)?\s*\]",
+        r"(?i)\[\s*system\s*(?:prompt|directive|message)?\s*\]",
         r"(?i)system\s*:\s*you\s+must",
         r"(?i)assistant\s*:\s*understood",
         r"(?i)###\s*(?:system|instruction|admin)\b",
@@ -34,6 +33,8 @@ class RAGSecuritySanitizer:
         r"(?i)\bimport\s+(?:os|sys|subprocess)\b",
         r"(?i)\bforget\s+all\s+(?:prior|previous)\s+instructions\b",
         r"(?i)\bnew\s+system\s+directive\b",
+        r"(?i)!\[.*?\]\(https?://[^\s\)]+\?[^\s\)]*(?:token|secret|key|cookie|auth)=.*?\)",
+        r"(?i)\bcall\s+tool\s*:\s*\w+|\btool_call\b|\baction\s*:\s*(?:run_command|execute_command|eval)\b",
     ]
 
     @classmethod

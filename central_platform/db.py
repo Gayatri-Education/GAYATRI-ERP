@@ -231,7 +231,124 @@ class PlatformDatabase:
                 ON device_bindings (student_id);
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS revoked_tokens (
+                    jti TEXT PRIMARY KEY,
+                    user_id TEXT,
+                    revoked_at TEXT NOT NULL,
+                    expires_at INTEGER,
+                    reason TEXT
+                );
+                """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_revoked_tokens_expires
+                ON revoked_tokens (expires_at);
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS rate_limit_events (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    key TEXT NOT NULL,
+                    timestamp REAL NOT NULL
+                );
+                """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_rate_limit_events_key_ts
+                ON rate_limit_events (key, timestamp);
+                """
+            )
         self.checkpoint("TRUNCATE")
+
+    # ── Token Revocation & Sliding Rate Limiting ────────────────────────────
+
+    def revoke_token(
+        self,
+        jti: str,
+        user_id: Optional[str] = None,
+        expires_at: Optional[int] = None,
+        reason: Optional[str] = None,
+    ) -> bool:
+        """Persist token revocation into authoritative database store."""
+        now_iso = datetime.now(timezone.utc).isoformat()
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT OR REPLACE INTO revoked_tokens (jti, user_id, revoked_at, expires_at, reason)
+                VALUES (?, ?, ?, ?, ?);
+                """,
+                (jti, user_id, now_iso, expires_at, reason),
+            )
+        return True
+
+    def is_token_revoked(self, jti: str) -> bool:
+        """Check whether token jti is recorded in durable revocation registry."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1 FROM revoked_tokens WHERE jti = ? LIMIT 1;", (jti,))
+            return cursor.fetchone() is not None
+
+    def cleanup_expired_revocations(self, current_ts: Optional[int] = None) -> int:
+        """Remove revocations whose expiration timestamp is past."""
+        import time
+        now_sec = current_ts or int(time.time())
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "DELETE FROM revoked_tokens WHERE expires_at IS NOT NULL AND expires_at < ?;",
+                (now_sec,),
+            )
+            return cursor.rowcount
+
+    def check_rate_limit_atomic(
+        self,
+        key: str,
+        limit: int,
+        window_seconds: float = 60.0,
+        record: bool = True,
+    ) -> Dict[str, Any]:
+        """Atomic sliding window rate limit evaluation across multi-worker processes."""
+        import time
+        now = time.time()
+        cutoff = now - window_seconds
+
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM rate_limit_events WHERE timestamp < ?;", (cutoff,))
+            cursor.execute(
+                "SELECT COUNT(*), MIN(timestamp) FROM rate_limit_events WHERE key = ? AND timestamp >= ?;",
+                (key, cutoff),
+            )
+            row = cursor.fetchone()
+            current_count = row[0] if row else 0
+            oldest_ts = row[1] if (row and row[1] is not None) else now
+
+            allowed = current_count < limit
+            if allowed and record:
+                cursor.execute(
+                    "INSERT INTO rate_limit_events (key, timestamp) VALUES (?, ?);",
+                    (key, now),
+                )
+                current_count += 1
+
+            remaining = max(0, limit - current_count)
+            reset_seconds = max(0.0, oldest_ts + window_seconds - now) if current_count > 0 else 0.0
+
+            return {
+                "allowed": allowed,
+                "current_count": current_count,
+                "limit": limit,
+                "remaining": remaining,
+                "reset_seconds": round(reset_seconds, 2),
+                "backend": "sqlite_shared_distributed",
+                "guarantee": "cluster_wide",
+            }
+
 
 
     # ── 1. Organizations & Identity ──────────────────────────────────────────
@@ -542,11 +659,11 @@ class PlatformDatabase:
                 )
             return None
 
-    def get_assigned_student_ids_for_teacher(self, teacher_id: str) -> Set[str]:
+    def get_assigned_student_ids_for_teacher(self, teacher_id: str, organization_id: Optional[str] = None) -> Set[str]:
         """Resolve all student IDs assigned to courses or class groups taught by the teacher's organization."""
         with self._get_connection() as conn:
             teacher_row = conn.execute("SELECT organization_id FROM users WHERE id = ?;", (teacher_id,)).fetchone()
-            org_id = teacher_row["organization_id"] if teacher_row else None
+            org_id = organization_id or (teacher_row["organization_id"] if teacher_row else None)
 
             if org_id:
                 rows = conn.execute(
@@ -559,7 +676,8 @@ class PlatformDatabase:
                     """,
                     (org_id, org_id),
                 ).fetchall()
-            else:
+            elif teacher_row is not None:
+                # Legacy single-tenant installation where organization_id is NULL
                 rows = conn.execute(
                     """
                     SELECT DISTINCT e.student_id 
@@ -568,6 +686,9 @@ class PlatformDatabase:
                     WHERE e.is_active = 1;
                     """
                 ).fetchall()
+            else:
+                # Non-existent or unpersisted teacher has no class group cohort assignments
+                rows = []
             student_ids = {r["student_id"] for r in rows}
             t_rows = conn.execute(
                 "SELECT DISTINCT student_id FROM teacher_instructions WHERE teacher_id = ?;",
@@ -3123,6 +3244,7 @@ class PlatformDatabase:
 
     def delete_rag_source(self, source_id: str) -> bool:
         with self._get_connection() as conn:
+            conn.execute("DELETE FROM rag_chunks WHERE source_id = ?;", (source_id,))
             cur = conn.execute("DELETE FROM rag_sources WHERE id = ?;", (source_id,))
             return cur.rowcount > 0
 

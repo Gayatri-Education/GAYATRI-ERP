@@ -44,8 +44,21 @@ def is_production_mode() -> bool:
 
 
 def extract_bearer_token(authorization: Optional[str] = Header(None, alias="Authorization")) -> Optional[str]:
-    """Extract raw JWT bearer token from Authorization header."""
+    """Extract raw JWT bearer token from Authorization header.
+
+    Rejects:
+    - Headers exceeding 8192 characters with HTTP 400 Bad Request
+    - Malformed headers containing multiple tokens or ambiguous formats
+    """
     if not authorization:
+        return None
+    if len(authorization) > 8192:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Authorization header exceeds maximum allowed length of 8192 bytes",
+        )
+    # Check for duplicated or comma-separated authorization headers
+    if "," in authorization:
         return None
     parts = authorization.strip().split()
     if len(parts) == 2 and parts[0].lower() == "bearer":
@@ -53,6 +66,7 @@ def extract_bearer_token(authorization: Optional[str] = Header(None, alias="Auth
     if len(parts) == 1 and not authorization.lower().startswith("bearer"):
         return parts[0]
     return None
+
 
 
 async def get_current_user(

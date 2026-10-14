@@ -1,55 +1,59 @@
-# QA Phase 12 Plan: Final Release Gate & Evidence Pack
+# Phase 12 Plan — Full Integration, Adversarial, Concurrency and Load Testing
 
-**Phase:** Phase 12 — Final Release Gate & Evidence Pack  
-**Objective:** Remediate defect QA-005, audit release claims, execute comprehensive verification checks across compilation, linting, architecture, security, and full regression, and produce the authoritative Final Release Readiness Report.  
-**Severity:** P0  
-**Target Date:** 2026-10-14  
-
----
-
-## 1. Scope & Objectives
-
-1. **Remediate QA-005 (Production / Certification Terminology & Evidence Verification):**
-   - Audit repository documentation and claims to ensure no unverified production or certification claims are made.
-   - Establish formal release status tiering (`PRE_PRODUCTION`, `RELEASE_CANDIDATE`, `PRODUCTION_READY`, `RELEASED`).
-   - Validate that release gate definitions require 100% test pass, zero P0 defects, and real execution provenance.
-2. **Execute Full Final Verification Pack:**
-   - Bytecode compilation verification: `python -m compileall app core central_platform tests scripts`
-   - Static analysis / linting inspection: `ruff check app core central_platform tests scripts`
-   - Architecture integrity tests: `pytest tests/architecture/ -v`
-   - Security hardening suite: `pytest tests/test_phase22_security_hardening_master.py tests/test_phase37_security_audit.py tests/test_qa_phase05_security_hardening.py -v`
-   - Full repository regression suite: `pytest -q` (all 1400+ tests)
-3. **Evidence Artifacts & Decision Logging:**
-   - Log `DEC-012` in `docs/qa_agent/decisions/DECISION_LOG.md`.
-   - Author `docs/qa_agent/reports/PHASE_12_REPORT.md`.
-   - Author `docs/qa_agent/reports/FINAL_RELEASE_READINESS_REPORT.md`.
-   - Update `docs/qa_agent/MASTER_PROGRESS.md` with final release gate decision.
+**Phase:** Phase 12  
+**Audit Findings Addressed:** Cross-cutting integration across all audited findings (`GQA-001` through `GQA-016`)  
+**Depends On:** Phases 01–11  
+**Date:** 2026-10-14  
 
 ---
 
-## 2. Release Gate Criteria
+## 1. Problem Statement & Scope
 
-| Criterion | Standard | Evidence Required |
-|:---|:---|:---|
-| **P0 Open Defects** | Exactly 0 | All defects QA-001 through QA-018 remediated and verified |
-| **P1 Open Defects** | Exactly 0 | All high-severity defects remediated |
-| **Test Suite Pass Rate** | 100% | Full suite pass with 0 failures, 0 errors |
-| **Execution Provenance** | Strict | Zero mock masquerading as real inference |
-| **Grounding / Anti-Fabrication** | Strict | Citations strictly derived from validated NCERT / approved textbooks |
-| **Tenant & Data Isolation** | Strict | Verified IDOR and multi-tenant isolation boundaries |
-| **Clean Install / Disaster Recovery** | Verified | Zero developer-only environment assumptions; DB snapshot restore verified |
-| **Bytecode & Lint Compilation** | Clean | `compileall` passes with zero errors |
+Phase 12 validates the complete, integrated operational behavior of the Gayatri AI platform under realistic end-to-end user journeys, error conditions, concurrent traffic, and adversarial attacks.
+
+Specific cross-cutting areas requiring verification:
+1. **End-to-End Student Journey:** Authentication -> course selection -> grounded RAG retrieval -> pedagogical turn -> assessment answer evaluation -> SLR mastery update -> session close & reload -> state persistence.
+2. **End-to-End Teacher/Admin Journey:** Provisioning -> material upload -> chunk publication -> course assignment -> teacher pedagogical instruction -> analytics review -> audit logging.
+3. **Error Journeys:** Provider timeout / rate limiting, missing model artifacts, empty RAG knowledge, revoked tokens, and async write failures.
+4. **Adversarial Security & Tenant Isolation:** Multi-tenant boundary attacks, IDOR attempts, SQL injection, prompt injection, and malicious file upload attacks.
+5. **Multi-Worker Concurrency & Database Locking:** High-concurrency operations across multiple threads with isolated connection handling and transaction integrity.
+6. **Zero Fallback Mastery Mutation:** Proving that in degraded fallback mode, student grades or mastery cannot be mutated falsely.
 
 ---
 
-## 3. Execution Steps
+## 2. Implementation Strategy
 
-1. Review and verify QA-005 across documentation and release gate definitions.
-2. Create focused tests for QA-005 in `tests/test_qa_phase12_release_gate.py` verifying release status definitions, certification claim auditing, and readiness gate invariants.
-3. Run `python -m compileall app core central_platform tests scripts`.
-4. Run static lint checks (`ruff`).
-5. Run focused Phase 12 suite: `pytest tests/test_qa_phase12_release_gate.py -v`.
-6. Run full repository regression suite: `pytest -q`.
-7. Author `docs/qa_agent/decisions/DECISION_LOG.md` (DEC-012).
-8. Author `docs/qa_agent/reports/PHASE_12_REPORT.md` and `docs/qa_agent/reports/FINAL_RELEASE_READINESS_REPORT.md`.
-9. Update `docs/qa_agent/MASTER_PROGRESS.md`.
+### Step 1: Author Dedicated Test Suite `tests/test_qa_phase12_integrated_journeys.py`
+Build a master integration test suite executing all required journeys and stress scenarios:
+1. `test_e2e_student_lifecycle_journey`:
+   - Login -> enroll in course -> start active session -> ask concept question -> retrieve grounded source -> answer question -> evaluate answer -> verify mastery calculation -> close session -> reopen from fresh DB connection -> assert 100% data persistence.
+2. `test_e2e_teacher_admin_course_management_journey`:
+   - Admin creates organization -> provisions teacher and course -> uploads knowledge source -> parses and publishes RAG chunks -> teacher assigns student -> creates teacher instruction -> queries class progress -> verifies audit event log.
+3. `test_error_journey_degraded_ai_zero_grade_mutation`:
+   - Simulates complete AI provider outage.
+   - Verifies system transitions to `EVALUATION_UNAVAILABLE`.
+   - Strictly asserts that mastery score and letter grade are NOT updated with fake full credit (GQA-003).
+4. `test_error_journey_revoked_token_rejection`:
+   - Authenticated student receives JWT token.
+   - Token is revoked in `DatabaseRevocationStore`.
+   - Subsequent requests with revoked token are rejected with 401 Unauthorized across all workers.
+5. `test_cross_tenant_adversarial_isolation_attacks`:
+   - Teacher in Org Alpha attempts to read student records or course content in Org Beta.
+   - Student 1 attempts to query or mutate Student 2's session state.
+   - Strictly asserts access is rejected.
+6. `test_high_concurrency_multi_threaded_student_turns`:
+   - Spawns 10 concurrent threads executing student sessions, evaluations, and database writes.
+   - Asserts zero SQLite database lock errors (`database is locked`) and zero data cross-talk.
+7. `test_graceful_shutdown_session_persistence`:
+   - Tests `session.flush(raise_on_failure=True)` and clean shutdown.
+
+---
+
+## 3. Exit Gate Criteria
+- [ ] Complete student journey verified with real persistence.
+- [ ] Complete teacher/admin journey verified with RAG publishing and audit events.
+- [ ] Error journeys fail visibly and safely without fake green or full credit.
+- [ ] Tenant and user isolation attacks verified.
+- [ ] Concurrency and database stress pass cleanly.
+- [ ] Full regression suite passes without regressions.
+- [ ] Phase 12 Report, Decision Log (DEC-024), and Master Progress updated.
