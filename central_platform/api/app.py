@@ -55,6 +55,7 @@ from central_platform.api.routes.curricula import router as curricula_router
 from central_platform.api.routes.communications import router as communications_router
 from central_platform.api.routes.enrollments import router as enrollments_router
 from central_platform.api.routes.examinations import router as examinations_router
+from central_platform.api.routes.finance import router as finance_router
 from central_platform.api.routes.grading import router as grading_router
 from central_platform.api.routes.identity import router as identity_router
 from central_platform.api.routes.instructions import router as instructions_router
@@ -158,6 +159,7 @@ def create_app() -> FastAPI:
     app.include_router(examinations_router, prefix="/api/v1")
     app.include_router(grading_router, prefix="/api/v1")
     app.include_router(reports_router, prefix="/api/v1")
+    app.include_router(finance_router, prefix="/api/v1")
     app.include_router(students_router, prefix="/api/v1")
     app.include_router(teachers_router, prefix="/api/v1")
     app.include_router(admin_router, prefix="/api/v1")
