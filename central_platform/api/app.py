@@ -71,6 +71,8 @@ from central_platform.api.routes.sync import router as sync_router
 from central_platform.api.routes.teachers import router as teachers_router
 from central_platform.api.routes.timetable import router as timetable_router
 from central_platform.api.routes.tools import router as tools_router
+from central_platform.api.routes.transport import router as transport_router
+from central_platform.api.routes.cms import router as cms_router
 from central_platform.api.routes.tutor import router as tutor_router
 from central_platform.api.routes.users import router as users_router
 from central_platform.health.service import PlatformHealthService
@@ -180,6 +182,8 @@ def create_app() -> FastAPI:
     app.include_router(tools_router, prefix="/api/v1")
     app.include_router(tutor_router, prefix="/api/v1")
     app.include_router(agents_router, prefix="/api/v1")
+    app.include_router(transport_router, prefix="/api/v1")
+    app.include_router(cms_router, prefix="/api/v1")
 
     # 5. Live Operational Probes & Health Subsystem
     health_svc = PlatformHealthService()
