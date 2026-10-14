@@ -1,10 +1,10 @@
 {
   "release_candidate": "1.0.0-rc1",
-  "generated_at": "2026-10-14T19:45:23.924694+00:00",
+  "generated_at": "2026-10-14T19:56:50.462972+00:00",
   "platform": "Gayatri School OS",
   "governing_contract": "DEVELOPMENT.md",
   "git": {
-    "commit_sha": "b4cc04494a33bbb21dcb130511e0fd7ce4ff1eb4",
+    "commit_sha": "081a1c9a0eb8ee67babdcfe34d7b214a82b3db9c",
     "branch": "main",
     "clean_working_tree": false
   },
@@ -172,5 +172,5 @@
       "sha256": "c49750abecaac0d3b3120e6c6cd28a51af9262004c854cdce1210965db6fd84b"
     }
   },
-  "manifest_sha256": "f16398415fe7f2095ef64bc177f9026ba6021465d86fb61c4ac30b994f92c13f"
+  "manifest_sha256": "187e794fe38ace7926a3c2376502854e4d10c0f799c7d1ade1df2dc205e351ec"
 }
