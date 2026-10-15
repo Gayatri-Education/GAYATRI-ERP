@@ -31,6 +31,7 @@ from central_platform.auth.dependencies import (
     get_db,
     is_production_mode,
 )
+from central_platform.db import PlatformDatabase
 from central_platform.models.schema import User
 from central_platform.sync.manager import SyncEvent, SyncManager
 from central_platform.sync.service import SyncService
@@ -38,9 +39,8 @@ from central_platform.sync.service import SyncService
 router = APIRouter(prefix="/sync", tags=["Sync"])
 
 
-def get_sync_service() -> SyncService:
+def get_sync_service(db: PlatformDatabase = Depends(get_db)) -> SyncService:
     """Resolve SyncService backed by active platform database."""
-    db = get_db()
     return SyncService(db=db)
 
 
@@ -62,11 +62,11 @@ def _enforce_sync_access(current_user: Optional[User], target_student_id: Option
 async def sync_events(
     batch: BatchSyncEventsRequest,
     current_user: Optional[User] = Depends(get_current_user_optional),
+    svc: SyncService = Depends(get_sync_service),
 ):
     """Batch synchronize offline/local student events with central platform."""
     _enforce_sync_access(current_user, target_student_id=batch.student_id)
 
-    svc = get_sync_service()
     # Process through authoritative central sync service
     try:
         result = svc.process_sync_batch(
@@ -123,11 +123,11 @@ async def get_sync_status(
     student_id: str,
     course_id: Optional[str] = None,
     current_user: Optional[User] = Depends(get_current_user_optional),
+    svc: SyncService = Depends(get_sync_service),
 ):
     """Retrieve telemetry synchronization status and device audit summary for a student."""
     _enforce_sync_access(current_user, target_student_id=student_id)
 
-    svc = get_sync_service()
     status_data = svc.get_sync_status(student_id=student_id, course_id=course_id)
     return ApiResponse(
         ok=True,
@@ -139,11 +139,11 @@ async def get_sync_status(
 async def bind_device(
     req: DeviceBindRequest,
     current_user: Optional[User] = Depends(get_current_user_optional),
+    svc: SyncService = Depends(get_sync_service),
 ):
     """Explicitly bind hardware device to authenticated student account."""
     _enforce_sync_access(current_user, target_student_id=req.student_id)
 
-    svc = get_sync_service()
     try:
         svc.bind_device(
             device_id=req.device_id,
@@ -171,11 +171,11 @@ async def bind_device(
 async def list_devices(
     student_id: str,
     current_user: Optional[User] = Depends(get_current_user_optional),
+    svc: SyncService = Depends(get_sync_service),
 ):
     """Retrieve all devices bound to a student account."""
     _enforce_sync_access(current_user, target_student_id=student_id)
 
-    svc = get_sync_service()
     devices = svc.db.get_devices_for_student(student_id)
     return ApiResponse(
         ok=True,

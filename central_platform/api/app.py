@@ -31,10 +31,12 @@ from fastapi.responses import HTMLResponse, JSONResponse
 
 from central_platform.auth.dependencies import (
     get_current_user_optional,
+    get_db,
     is_production_mode,
 )
 from central_platform.models.schema import User, UserRole
 from central_platform.rbac.engine import normalize_role
+from central_platform.sync.service import SyncService
 
 from central_platform.api.middleware import (
     RequestIDMiddleware,
@@ -287,13 +289,30 @@ def create_app() -> FastAPI:
         student_id: Optional[str] = Query(default=None),
         course_id: Optional[str] = Query(default="crs-chem-101"),
     ):
+        db = get_db()
+        inst_engine = TeacherInstructionEngine(db=db)
         if student_id:
-            insts = _instruction_engine.get_instructions_for_student(student_id, course_id or "")
+            insts = inst_engine.get_instructions_for_student(student_id, course_id or "")
         else:
+            db_insts = db.get_teacher_instructions(course_id=course_id if course_id and course_id not in ("all", "*") else None)
             insts = [
-                i for i in _instruction_engine._instructions.values()
-                if not course_id or i.course_id == course_id or i.course_id in ("all", "*")
+                inst_engine.get_instruction(rec.id) or TeacherInstruction(
+                    instruction_id=rec.id,
+                    teacher_id=rec.teacher_id,
+                    student_id=rec.student_id,
+                    course_id=rec.course_id,
+                    instruction_text=rec.instruction_text,
+                    priority=rec.priority,
+                    concept_scope=rec.concept_scope,
+                    is_active=rec.is_active,
+                )
+                for rec in db_insts
             ]
+            seen_ids = {i.instruction_id for i in insts}
+            for i in _instruction_engine._instructions.values():
+                if i.instruction_id not in seen_ids:
+                    if not course_id or i.course_id == course_id or i.course_id in ("all", "*"):
+                        insts.append(i)
         return {
             "ok": True,
             "instructions": [i.to_dict() for i in insts],
@@ -312,19 +331,55 @@ def create_app() -> FastAPI:
         instruction_text = payload.get("instruction", "").strip()
         if not instruction_text:
             raise HTTPException(status_code=400, detail="Missing instruction text")
-        inst_id = f"inst-{uuid.uuid4().hex[:6]}"
+
+        org_id = payload.get("organization_id")
+        if current_user and current_user.organization_id and org_id and current_user.organization_id != org_id:
+            user_role = normalize_role(current_user.role)
+            if user_role not in (UserRole.SUPER_ADMIN,):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Forbidden: cross-organization instruction creation is prohibited ('{org_id}' != '{current_user.organization_id}')",
+                )
+
+        inst_id = payload.get("instruction_id") or f"inst-{uuid.uuid4().hex[:6]}"
+        teacher_id = current_user.id if current_user else "tchr-101"
+        inst_org = org_id or (current_user.organization_id if current_user else "org-default")
         inst = TeacherInstruction(
             instruction_id=inst_id,
-            teacher_id=current_user.id if current_user else "tchr-101",
+            teacher_id=teacher_id,
             student_id=payload.get("student_id", "all"),
             course_id=payload.get("course_id", "crs-chem-101"),
             instruction_text=instruction_text,
             priority=payload.get("priority", 2),
             concept_scope=payload.get("concept_scope", "ALL"),
+            organization_id=inst_org,
             is_active=True,
         )
-        _instruction_engine.add_instruction(inst)
-        return {"ok": True, "instruction_id": inst_id, "instruction": inst.to_dict()}
+
+        db = get_db()
+        if hasattr(db, "get_organization") and not db.get_organization(inst_org):
+            from central_platform.models.schema import Organization
+            db.create_organization(Organization(id=inst_org, name=inst_org, slug=inst_org))
+        if hasattr(db, "get_user") and not db.get_user(teacher_id):
+            teacher_user = User(
+                id=teacher_id,
+                email=f"{teacher_id}@platform.local",
+                full_name=f"Teacher {teacher_id}",
+                role=UserRole.TEACHER,
+                organization_id=inst_org,
+            )
+            db.create_user(teacher_user)
+
+        inst_engine = TeacherInstructionEngine(db=db)
+        try:
+            saved_inst = inst_engine.add_instruction(inst, actor=current_user)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except PermissionError as exc:
+            raise HTTPException(status_code=403, detail=str(exc))
+
+        _instruction_engine._instructions[inst.instruction_id] = saved_inst
+        return {"ok": True, "instruction_id": inst_id, "instruction": saved_inst.to_dict()}
 
     @app.post("/instruction/toggle", tags=["Legacy Compatibility"])
     async def legacy_toggle_instruction(
@@ -405,6 +460,26 @@ def create_app() -> FastAPI:
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Students can only sync events for their own account",
             )
+
+        db = get_db()
+        sync_svc = SyncService(db=db)
+        device_id = payload.get("device_id") or (events[0].get("device_id") if events else None)
+        course_id = payload.get("course_id") or (events[0].get("course_id") if events else None)
+        operation_id = payload.get("operation_id")
+
+        try:
+            res = sync_svc.process_sync_batch(
+                student_id=student_id,
+                events=events,
+                course_id=course_id,
+                device_id=device_id,
+                operation_id=operation_id,
+            )
+        except PermissionError as exc:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
         for ev in events:
             sync_ev = SyncEvent(
                 event_id=ev.get("event_id", f"sync-{uuid.uuid4().hex[:6]}"),
@@ -414,8 +489,18 @@ def create_app() -> FastAPI:
                 payload=ev,
                 timestamp=ev.get("timestamp", ""),
             )
-            _sync_manager.record_event(sync_ev)
-        return {"ok": True, "synced_count": len(events), "student_id": student_id}
+            try:
+                _sync_manager.record_event(sync_ev)
+            except Exception as exc:
+                logger.warning("Failed to record event %s in legacy sync manager: %s", sync_ev.event_id, exc)
+
+        return {
+            "ok": res.get("ok", True),
+            "synced_count": res.get("synced_count", len(events)),
+            "student_id": student_id,
+            "duplicate_count": res.get("duplicate_count", 0),
+            "operation_id": res.get("operation_id", operation_id),
+        }
 
     # 7. Web Dashboard at GET /
     @app.get("/", response_class=HTMLResponse, tags=["Dashboard UI"])

@@ -2,12 +2,12 @@ project: GAYATRI-ERP
 repository: https://github.com/Gayatri-Education/GAYATRI-ERP
 default_branch: main
 overall_status: IN_PROGRESS
-current_phase: PHASE-09
+current_phase: PHASE-10
 baseline:
   commit: becd081b295cbad6c0920a352f493d57671bb0e8
   inspected_at_utc: "2026-10-15T07:15:00Z"
   working_tree_clean: false
-last_updated_utc: "2026-10-15T11:00:00Z"
+last_updated_utc: "2026-10-15T12:28:00Z"
 notes:
   - "Statuses and test results must be based on actual evidence; do not invent counts, timestamps, commits, or URLs."
   - "Each phase must plan, reproduce, implement, test, debug, verify, document, and publish before the next phase."
@@ -202,14 +202,25 @@ phases:
     blockers: []
   - id: PHASE-09
     title: Attendance, academic workflows, notifications, and sync
-    status: NOT_STARTED
-    branch: null
+    status: DONE
+    branch: dev/phase-00-baseline
     issue_url: null
     pull_request_url: null
     commit_shas: []
     findings: [ERP-015]
-    files_changed: []
-    test_evidence: []
+    files_changed:
+      - "central_platform/api/app.py"
+      - "central_platform/api/routes/attendance.py"
+      - "central_platform/attendance/service.py"
+      - "central_platform/api/routes/sync.py"
+      - "central_platform/api/routes/notifications.py"
+      - "tests/test_qa_phase09_workflows_sync_integrity.py"
+      - "docs/qa/phase-logs/PHASE_09_PLAN.md"
+      - "docs/qa/phase-logs/PHASE_09_LOG.md"
+    test_evidence:
+      - "10/10 passed in tests/test_qa_phase09_workflows_sync_integrity.py in 5.48s"
+      - "77/77 passed across related workflow and sync suites in 14.41s"
+      - "1725/1725 passed in full automated regression suite in 165.88s (0 failures, 0 skipped)"
     blockers: []
   - id: PHASE-10
     title: Health, readiness, observability, and failure reporting

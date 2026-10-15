@@ -51,6 +51,10 @@ def create_session(
     current_user: Any = Depends(get_current_user),
     service: AttendanceService = Depends(get_attendance_service),
 ):
+    roles = _get_roles(current_user)
+    if not any(r in ("admin", "org_admin", "super_admin", "teacher") for r in roles):
+        raise HTTPException(status_code=403, detail="Permission required to create attendance session")
+
     org_id = _get_org_id(current_user)
     user_id = getattr(current_user, "id", None) or getattr(current_user, "user_id", "system")
     sess = service.create_session(
@@ -83,6 +87,10 @@ def submit_roll_call(
     current_user: Any = Depends(get_current_user),
     service: AttendanceService = Depends(get_attendance_service),
 ):
+    roles = _get_roles(current_user)
+    if not any(r in ("admin", "org_admin", "super_admin", "teacher") for r in roles):
+        raise HTTPException(status_code=403, detail="Permission required to submit roll call")
+
     org_id = _get_org_id(current_user)
     records = service.record_roll_call(org_id, session_id, req.records)
     return [r.__dict__ for r in records]
@@ -131,6 +139,12 @@ def submit_excuse(
     current_user: Any = Depends(get_current_user),
     service: AttendanceService = Depends(get_attendance_service),
 ):
+    roles = _get_roles(current_user)
+    caller_id = getattr(current_user, "id", None) or getattr(current_user, "user_id", None)
+    if "student" in roles and not any(r in ("admin", "org_admin", "super_admin", "teacher") for r in roles):
+        if req.student_id != caller_id:
+            raise HTTPException(status_code=403, detail="Students can only submit excuses for themselves")
+
     org_id = _get_org_id(current_user)
     excuse = service.submit_excuse_request(
         organization_id=org_id,

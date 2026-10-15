@@ -19,21 +19,18 @@ from central_platform.api.schemas import (
 )
 from central_platform.auth.dependencies import (
     get_current_user_optional,
+    get_db,
     is_production_mode,
 )
+from central_platform.db import PlatformDatabase
 from central_platform.models.schema import User, UserRole
 from central_platform.notifications.service import NotificationService
 
 router = APIRouter(prefix="/notifications", tags=["Notifications"])
 
-_notification_service: Optional[NotificationService] = None
 
-
-def get_notification_service() -> NotificationService:
-    global _notification_service
-    if _notification_service is None:
-        _notification_service = NotificationService()
-    return _notification_service
+def get_notification_service(db: PlatformDatabase = Depends(get_db)) -> NotificationService:
+    return NotificationService(db=db)
 
 
 # ── 1. Query Notifications ───────────────────────────────────────────────────

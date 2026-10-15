@@ -151,7 +151,7 @@ class AttendanceService:
             for item in records:
                 student_id = item["student_id"]
                 stat = item.get("status", AttendanceStatus.PRESENT)
-                stat_val = stat.value if hasattr(stat, "value") else stat
+                stat_val = stat.value if hasattr(stat, "value") else str(stat).upper()
                 arr_time = item.get("arrival_time")
                 remarks = item.get("remarks")
                 rec_id = f"atr-{uuid.uuid4().hex[:12]}"
