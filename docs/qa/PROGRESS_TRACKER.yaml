@@ -2,7 +2,7 @@ project: GAYATRI-ERP
 repository: https://github.com/Gayatri-Education/GAYATRI-ERP
 default_branch: main
 overall_status: IN_PROGRESS
-current_phase: PHASE-06
+current_phase: PHASE-07
 baseline:
   commit: becd081b295cbad6c0920a352f493d57671bb0e8
   inspected_at_utc: "2026-10-15T07:15:00Z"
@@ -142,14 +142,23 @@ phases:
     blockers: []
   - id: PHASE-06
     title: Student learning, review lifecycle, and persistence
-    status: NOT_STARTED
-    branch: null
+    status: DONE
+    branch: dev/phase-00-baseline
     issue_url: null
     pull_request_url: null
-    commit_shas: []
+    commit_shas: ["a91baae"]
     findings: [ERP-010]
-    files_changed: []
-    test_evidence: []
+    files_changed:
+      - "central_platform/portals/student.py"
+      - "central_platform/api/routes/students.py"
+      - "app/ui/design_system/student.js"
+      - "tests/test_qa_phase06_learning_review_persistence.py"
+      - "docs/qa/phase-logs/PHASE_06_PLAN.md"
+      - "docs/qa/phase-logs/PHASE_06_LOG.md"
+    test_evidence:
+      - "7/7 passed in tests/test_qa_phase06_learning_review_persistence.py in 5.19s"
+      - "38/38 passed across related student learning suites in 2.22s"
+      - "1698/1698 passed in full automated regression suite in 238.31s (0 failures, 0 skipped)"
     blockers: []
   - id: PHASE-07
     title: Assessment, question bank, grading, and anti-fallback behavior
