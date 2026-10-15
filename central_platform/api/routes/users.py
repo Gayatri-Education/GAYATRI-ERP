@@ -55,6 +55,8 @@ _USERS_STORE = [
 async def list_users(
     role: Optional[str] = Query(default=None),
     organization_id: Optional[str] = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=500, description="Max users to return"),
+    offset: int = Query(default=0, ge=0, description="Offset for pagination"),
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """List platform users with optional role or org filtering."""
@@ -82,7 +84,8 @@ async def list_users(
         results = [u for u in results if u.role.upper() == role.upper()]
     if organization_id:
         results = [u for u in results if u.organization_id == organization_id]
-    return ApiResponse(ok=True, data=results)
+    paginated_results = results[offset : offset + limit]
+    return ApiResponse(ok=True, data=paginated_results)
 
 
 @router.post("", response_model=ApiResponse[UserResponse], status_code=status.HTTP_201_CREATED)

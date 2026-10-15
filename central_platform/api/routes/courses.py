@@ -136,6 +136,8 @@ def _to_version_response(v: CourseVersion) -> CourseVersionApiResponse:
 async def list_courses(
     organization_id: Optional[str] = Query(None, description="Filter courses for a specific organization"),
     visibility: Optional[str] = Query(None, description="Filter by visibility: PUBLIC or PRIVATE"),
+    limit: int = Query(default=50, ge=1, le=500, description="Max courses to return"),
+    offset: int = Query(default=0, ge=0, description="Offset for pagination"),
     service: CourseService = Depends(get_course_service),
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
@@ -168,7 +170,8 @@ async def list_courses(
             logger.debug("Actor %s not authorized to list courses for org %s: %s", actor.id, org_id, exc)
 
     result = [_to_course_response(c) for c in courses_map.values()]
-    return ApiResponse(ok=True, data=result)
+    paginated_result = result[offset : offset + limit]
+    return ApiResponse(ok=True, data=paginated_result)
 
 
 @router.get("/review-queue", response_model=ApiResponse[List[CourseReviewQueueItemResponse]])

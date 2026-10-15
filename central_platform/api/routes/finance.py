@@ -30,7 +30,7 @@ def get_finance_service(db: PlatformDatabase = Depends(get_db)) -> FinanceServic
 class OrderCreateRequest(BaseModel):
     invoice_id: str
     student_id: str
-    amount: float
+    amount: float = Field(..., gt=0.0, description="Order amount must be positive")
     currency: str = "INR"
     provider: str = "razorpay"
     idempotency_key: Optional[str] = None

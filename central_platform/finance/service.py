@@ -151,6 +151,38 @@ class FinanceService:
         idempotency_key: Optional[str] = None,
         expires_at: Optional[str] = None,
     ) -> PaymentOrder:
+        if amount <= 0:
+            raise ValueError("Payment order amount must be positive")
+
+        if idempotency_key:
+            with self.db._get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    SELECT id, organization_id, invoice_id, student_id, amount, currency, provider,
+                           provider_order_id, status, idempotency_key, created_at, expires_at
+                    FROM payment_orders
+                    WHERE organization_id = ? AND idempotency_key = ?;
+                    """,
+                    (organization_id, idempotency_key),
+                )
+                row = cursor.fetchone()
+                if row:
+                    return PaymentOrder(
+                        id=row[0],
+                        organization_id=row[1],
+                        invoice_id=row[2],
+                        student_id=row[3],
+                        amount=float(row[4]),
+                        currency=row[5],
+                        provider=row[6],
+                        provider_order_id=row[7],
+                        status=OrderStatus(row[8]) if row[8] in OrderStatus._value2member_map_ else OrderStatus.CREATED,
+                        idempotency_key=row[9],
+                        created_at=row[10],
+                        expires_at=row[11],
+                    )
+
         now = self._now()
         order_id = f"pord-{uuid.uuid4().hex[:12]}"
         provider_order_id = f"order_{provider}_{uuid.uuid4().hex[:10]}"

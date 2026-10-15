@@ -1985,7 +1985,7 @@ class PlatformDatabase:
     def get_learning_events_for_session(self, session_id: str) -> List[LearningEvent]:
         with self._get_connection() as conn:
             rows = conn.execute(
-                "SELECT * FROM learning_events WHERE session_id = ? ORDER BY created_at ASC, id ASC;",
+                "SELECT * FROM learning_events WHERE session_id = ? ORDER BY created_at ASC, rowid ASC;",
                 (session_id,),
             ).fetchall()
             return [self._row_to_learning_event(r) for r in rows]
@@ -2024,7 +2024,7 @@ class PlatformDatabase:
         if until:
             query += " AND created_at <= ?"
             params.append(until)
-        query += " ORDER BY created_at ASC, id ASC LIMIT ?;"
+        query += " ORDER BY created_at ASC, rowid ASC LIMIT ?;"
         params.append(limit)
 
         with self._get_connection() as conn:

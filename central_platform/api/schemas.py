@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Any, Dict, Generic, List, Optional, TypeVar
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 T = TypeVar("T")
 
@@ -91,6 +91,17 @@ class UserCreateRequest(BaseModel):
     password: str = Field(..., min_length=4)
     role: str = Field(default="STUDENT")
     organization_id: str = Field(default="org-default")
+
+    @field_validator("role")
+    @classmethod
+    def validate_role(cls, v: str) -> str:
+        if not isinstance(v, str):
+            raise ValueError("Role must be a string")
+        norm = v.strip().upper()
+        allowed = {"SUPER_ADMIN", "ORG_ADMIN", "COURSE_ADMIN", "TEACHER", "STUDENT", "PARENT"}
+        if norm not in allowed:
+            raise ValueError(f"Invalid role '{v}'. Allowed roles: {sorted(list(allowed))}")
+        return norm
 
 
 # ── Student & Telemetry ──────────────────────────────────────────────────
@@ -1280,8 +1291,8 @@ class NotificationQueueStatsResponse(BaseModel):
 # ── Sync ─────────────────────────────────────────────────────────────────
 
 class BatchSyncEventsRequest(BaseModel):
-    student_id: str
-    events: List[Dict[str, Any]]
+    student_id: str = Field(..., min_length=1, max_length=128)
+    events: List[Dict[str, Any]] = Field(default_factory=list, max_length=1000)
     operation_id: Optional[str] = None
     course_id: Optional[str] = None
     device_id: Optional[str] = None

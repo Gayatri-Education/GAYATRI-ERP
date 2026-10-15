@@ -34,10 +34,10 @@ def get_diagnostics_service(db: PlatformDatabase = Depends(get_db)) -> PlatformD
 # ── Schemas ───────────────────────────────────────────────────────────────────
 
 class ExportCreateRequest(BaseModel):
-    export_type: str = "STUDENTS"
-    format: str = "CSV"
+    export_type: str = Field(default="STUDENTS", max_length=64)
+    format: str = Field(default="CSV", max_length=16)
     filters: Optional[Dict[str, Any]] = None
-    limit: int = 1000
+    limit: int = Field(default=1000, ge=1, le=10000)
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────

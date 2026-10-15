@@ -2,12 +2,12 @@ project: GAYATRI-ERP
 repository: https://github.com/Gayatri-Education/GAYATRI-ERP
 default_branch: main
 overall_status: IN_PROGRESS
-current_phase: PHASE-11
+current_phase: PHASE-12
 baseline:
   commit: becd081b295cbad6c0920a352f493d57671bb0e8
   inspected_at_utc: "2026-10-15T07:15:00Z"
   working_tree_clean: false
-last_updated_utc: "2026-10-15T12:37:00Z"
+last_updated_utc: "2026-10-15T13:10:00Z"
 notes:
   - "Statuses and test results must be based on actual evidence; do not invent counts, timestamps, commits, or URLs."
   - "Each phase must plan, reproduce, implement, test, debug, verify, document, and publish before the next phase."
@@ -244,14 +244,28 @@ phases:
     blockers: []
   - id: PHASE-11
     title: API contracts, validation, rate limits, and idempotency
-    status: NOT_STARTED
-    branch: null
+    status: DONE
+    branch: dev/phase-00-baseline
     issue_url: null
     pull_request_url: null
     commit_shas: []
     findings: [ERP-013, ERP-020]
-    files_changed: []
-    test_evidence: []
+    files_changed:
+      - "central_platform/api/schemas.py"
+      - "central_platform/api/routes/users.py"
+      - "central_platform/api/routes/courses.py"
+      - "central_platform/api/routes/institutional_analytics.py"
+      - "central_platform/api/routes/finance.py"
+      - "central_platform/finance/service.py"
+      - "central_platform/api/middleware.py"
+      - "central_platform/db.py"
+      - "tests/test_qa_phase11_contracts_validation_idempotency.py"
+      - "docs/qa/phase-logs/PHASE_11_PLAN.md"
+      - "docs/qa/phase-logs/PHASE_11_LOG.md"
+    test_evidence:
+      - "11/11 passed in tests/test_qa_phase11_contracts_validation_idempotency.py in 4.47s"
+      - "21/21 passed across Phase 11 contracts and RBAC tenant isolation in 8.65s"
+      - "1747/1747 passed in full automated regression suite in 231.13s (0 failures, 0 skipped)"
     blockers: []
   - id: PHASE-12
     title: Privacy, secrets, XSS, supply chain, and security regression

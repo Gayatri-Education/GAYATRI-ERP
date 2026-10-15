@@ -58,8 +58,17 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError):
         req_id = getattr(request.state, "request_id", "req-unknown")
-        errors = exc.errors()
-        logger.warning(f"[{req_id}] Validation error on {request.url.path}: {errors}")
+        raw_errors = exc.errors()
+        cleaned_errors = []
+        for err in raw_errors:
+            c = dict(err)
+            if "ctx" in c and isinstance(c["ctx"], dict):
+                ctx_copy = dict(c["ctx"])
+                if "error" in ctx_copy and isinstance(ctx_copy["error"], Exception):
+                    ctx_copy["error"] = str(ctx_copy["error"])
+                c["ctx"] = ctx_copy
+            cleaned_errors.append(c)
+        logger.warning(f"[{req_id}] Validation error on {request.url.path}: {cleaned_errors}")
         return JSONResponse(
             status_code=422,
             content={
@@ -67,7 +76,7 @@ def register_exception_handlers(app: FastAPI) -> None:
                 "error": {
                     "code": "VALIDATION_ERROR",
                     "message": "Request validation failed",
-                    "details": {"validation_errors": errors},
+                    "details": {"validation_errors": cleaned_errors},
                 },
                 "meta": {
                     "request_id": req_id,
@@ -81,6 +90,9 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(StarletteHTTPException)
     async def http_exception_handler(request: Request, exc: StarletteHTTPException):
         req_id = getattr(request.state, "request_id", "req-unknown")
+        headers = {"X-Request-ID": req_id}
+        if getattr(exc, "headers", None):
+            headers.update(exc.headers)
         return JSONResponse(
             status_code=exc.status_code,
             content={
@@ -97,7 +109,7 @@ def register_exception_handlers(app: FastAPI) -> None:
                     "api_version": "v1",
                 },
             },
-            headers={"X-Request-ID": req_id},
+            headers=headers,
         )
 
     @app.exception_handler(Exception)
