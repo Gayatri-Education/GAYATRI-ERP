@@ -40,6 +40,7 @@ from central_platform.sync.service import SyncService
 
 from central_platform.api.middleware import (
     RequestIDMiddleware,
+    SecurityHeadersMiddleware,
     StructuredLoggingMiddleware,
     register_exception_handlers,
 )
@@ -175,6 +176,7 @@ def create_app() -> FastAPI:
         )
 
     # 2. Register Custom Tracing & Logging Middleware
+    app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(StructuredLoggingMiddleware)
     app.add_middleware(RequestIDMiddleware)
 

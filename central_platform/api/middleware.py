@@ -52,6 +52,22 @@ class StructuredLoggingMiddleware(BaseHTTPMiddleware):
         return response
 
 
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Enforces defense-in-depth HTTP security headers (OWASP best practices)."""
+
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("X-XSS-Protection", "1; mode=block")
+        response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; object-src 'none'; frame-ancestors 'none';",
+        )
+        return response
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     """Register uniform structured error handlers on the FastAPI application."""
 
@@ -62,6 +78,10 @@ def register_exception_handlers(app: FastAPI) -> None:
         cleaned_errors = []
         for err in raw_errors:
             c = dict(err)
+            loc = c.get("loc", ())
+            if any(k in str(part).lower() for part in loc for k in ("password", "secret", "token", "key")):
+                if "input" in c:
+                    c["input"] = "***REDACTED***"
             if "ctx" in c and isinstance(c["ctx"], dict):
                 ctx_copy = dict(c["ctx"])
                 if "error" in ctx_copy and isinstance(ctx_copy["error"], Exception):
