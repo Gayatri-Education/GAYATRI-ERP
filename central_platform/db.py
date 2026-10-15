@@ -287,6 +287,28 @@ class PlatformDatabase:
                 ON billing_batches (organization_id, month_year);
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS organization_payment_providers (
+                    id TEXT PRIMARY KEY,
+                    organization_id TEXT NOT NULL,
+                    provider TEXT NOT NULL,
+                    merchant_id TEXT NOT NULL,
+                    webhook_secret TEXT NOT NULL,
+                    api_key TEXT,
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(organization_id, provider)
+                );
+                """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_org_pay_providers
+                ON organization_payment_providers (organization_id, provider);
+                """
+            )
         self.checkpoint("TRUNCATE")
 
     # ── Token Revocation & Sliding Rate Limiting ────────────────────────────
@@ -4314,6 +4336,72 @@ class PlatformDatabase:
                     "status": inv_status,
                 })
             return results
+
+    # ── Organization Payment Provider Configurations (Phase 04) ──────
+
+    def save_payment_provider_config(
+        self,
+        organization_id: str,
+        provider: str,
+        merchant_id: str,
+        webhook_secret: str,
+        api_key: Optional[str] = None,
+        is_active: bool = True,
+        config_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        now_ts = datetime.now(timezone.utc).isoformat()
+        cid = config_id or f"opp_{uuid.uuid4().hex[:12]}"
+        provider_clean = (provider or "").strip().lower()
+
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO organization_payment_providers (
+                    id, organization_id, provider, merchant_id, webhook_secret, api_key, is_active, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(organization_id, provider) DO UPDATE SET
+                    merchant_id = excluded.merchant_id,
+                    webhook_secret = excluded.webhook_secret,
+                    api_key = excluded.api_key,
+                    is_active = excluded.is_active,
+                    updated_at = excluded.updated_at;
+                """,
+                (cid, organization_id, provider_clean, merchant_id, webhook_secret, api_key, 1 if is_active else 0, now_ts, now_ts),
+            )
+        return {
+            "id": cid,
+            "organization_id": organization_id,
+            "provider": provider_clean,
+            "merchant_id": merchant_id,
+            "webhook_secret": webhook_secret,
+            "api_key": api_key,
+            "is_active": is_active,
+            "created_at": now_ts,
+            "updated_at": now_ts,
+        }
+
+    def get_payment_provider_config(self, organization_id: str, provider: str) -> Optional[Dict[str, Any]]:
+        provider_clean = (provider or "").strip().lower()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM organization_payment_providers WHERE organization_id = ? AND provider = ?;",
+                (organization_id, provider_clean),
+            )
+            row = cursor.fetchone()
+            if not row:
+                return None
+            return {
+                "id": row["id"],
+                "organization_id": row["organization_id"],
+                "provider": row["provider"],
+                "merchant_id": row["merchant_id"],
+                "webhook_secret": row["webhook_secret"],
+                "api_key": row["api_key"],
+                "is_active": bool(row["is_active"]),
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+            }
 
     # ── Phase 14 Sync Operations & Idempotency ───────────────────────
 

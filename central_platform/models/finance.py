@@ -95,3 +95,16 @@ class FeeConcession:
     approved_at: Optional[str] = None
     created_at: str = ""
     updated_at: str = ""
+
+
+@dataclass
+class OrganizationPaymentProvider:
+    id: str
+    organization_id: str
+    provider: str
+    merchant_id: str
+    webhook_secret: str
+    api_key: Optional[str] = None
+    is_active: bool = True
+    created_at: str = ""
+    updated_at: str = ""

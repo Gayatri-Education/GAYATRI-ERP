@@ -258,8 +258,43 @@ class FinanceService:
 
     # ── Webhook Signature & Ingestion ─────────────────────────────────────────
 
+    def get_provider_config(self, organization_id: str, provider: str) -> Optional[Dict[str, Any]]:
+        if hasattr(self.db, "get_payment_provider_config"):
+            return self.db.get_payment_provider_config(organization_id, provider)
+        return None
+
+    def set_provider_config(
+        self,
+        organization_id: str,
+        provider: str,
+        merchant_id: str,
+        webhook_secret: str,
+        api_key: Optional[str] = None,
+        is_active: bool = True,
+    ) -> Dict[str, Any]:
+        if hasattr(self.db, "save_payment_provider_config"):
+            return self.db.save_payment_provider_config(
+                organization_id=organization_id,
+                provider=provider,
+                merchant_id=merchant_id,
+                webhook_secret=webhook_secret,
+                api_key=api_key,
+                is_active=is_active,
+            )
+        return {}
+
     def get_webhook_secret(self, provider: str, organization_id: Optional[str] = None) -> str:
         provider_clean = (provider or "").strip().lower()
+        if organization_id and hasattr(self.db, "get_payment_provider_config"):
+            cfg = self.db.get_payment_provider_config(organization_id, provider_clean)
+            if cfg and cfg.get("webhook_secret") and cfg.get("is_active"):
+                return cfg["webhook_secret"]
+
+        if organization_id:
+            tenant_env = os.environ.get(f"{provider_clean.upper()}_WEBHOOK_SECRET_{organization_id.replace('-', '_').upper()}")
+            if tenant_env:
+                return tenant_env
+
         env_secret = (
             os.environ.get(f"{provider_clean.upper()}_WEBHOOK_SECRET")
             or os.environ.get("PAYMENT_WEBHOOK_SECRET")
@@ -311,13 +346,69 @@ class FinanceService:
         elif signature_verified is False:
             raise ValueError("Unverified webhook event cannot mutate financial state: signature_verified is False")
 
-        # Atomic Transaction Boundary (Encompasses Deduplication Check + Mutations)
+        # 1. Resolve and validate PaymentOrder and Invoice before any mutations
+        direct_invoice_id = payload.get("invoice_id")
+        if direct_invoice_id:
+            with self.db._get_connection() as conn:
+                r = conn.execute(
+                    "SELECT fee_account_id, student_id, amount_due, amount_paid, status, org_id FROM invoices WHERE id = ?;",
+                    (direct_invoice_id,),
+                ).fetchone()
+                if r:
+                    if r[5] != organization_id:
+                        raise ValueError(
+                            f"Cross-tenant mismatch: invoice '{direct_invoice_id}' belongs to org '{r[5]}', but order belongs to org '{organization_id}'"
+                        )
+                    if str(r[4]).lower() == "cancelled":
+                        raise ValueError(f"Cannot apply payment to cancelled invoice {direct_invoice_id}")
+
+        order_ref = (
+            payload.get("order_id")
+            or payload.get("provider_order_id")
+            or payload.get("payload", {}).get("payment", {}).get("entity", {}).get("order_id")
+            or payload.get("payload", {}).get("order", {}).get("entity", {}).get("id")
+            or payload.get("data", {}).get("object", {}).get("metadata", {}).get("order_id")
+        )
+        if not order_ref and direct_invoice_id:
+            with self.db._get_connection() as conn:
+                ord_r = conn.execute(
+                    "SELECT id FROM payment_orders WHERE invoice_id = ? AND organization_id = ? ORDER BY created_at DESC LIMIT 1;",
+                    (direct_invoice_id, organization_id),
+                ).fetchone()
+                if ord_r:
+                    order_ref = ord_r[0]
+
+        if not order_ref:
+            raise ValueError("Missing payment order reference in webhook payload")
+
+        order = self.get_payment_order(organization_id, order_ref)
+        if not order:
+            raise ValueError(f"Payment order '{order_ref}' not found in organization '{organization_id}'")
+
+        if order.provider.strip().lower() != provider.strip().lower():
+            raise ValueError(
+                f"Provider mismatch: order '{order.id}' was created for '{order.provider}', but received webhook for '{provider}'"
+            )
+
+        amount = float(payload.get("amount", 0.0))
+        if abs(order.amount - amount) > 0.01:
+            raise ValueError(f"Webhook amount {amount} does not match order amount {order.amount}")
+
+        payload_currency = payload.get("currency")
+        if payload_currency and order.currency and payload_currency.upper() != order.currency.upper():
+            raise ValueError(f"Webhook currency {payload_currency} does not match order currency {order.currency}")
+
+        raw_payload_json = json.dumps(payload)
+        payload_hash = hashlib.sha256(raw_payload_json.encode("utf-8")).hexdigest()
+        webhook_id = f"pwe-{uuid.uuid4().hex[:12]}"
+
+        # Atomic Transaction Boundary (Encompasses Deduplication Check + State Mutations)
         try:
             with self.db.transaction():
                 with self.db._get_connection() as conn:
                     cursor = conn.cursor()
 
-                    # 1. Deduplication check inside transaction
+                    # Deduplication check inside transaction
                     cursor.execute(
                         """
                         SELECT id, status, payment_id FROM payment_webhook_events
@@ -351,44 +442,76 @@ class FinanceService:
                                 "payment_id": existing_key[2],
                             }
 
-                    # 2. Extract and validate order and invoice details
-                    order_ref = payload.get("order_id") or payload.get("payload", {}).get("payment", {}).get("entity", {}).get("order_id")
-                    order = None
-                    if order_ref:
-                        order = self.get_payment_order(organization_id, order_ref)
-
-                    amount = float(payload.get("amount", 0.0))
-                    if order:
-                        if abs(order.amount - amount) > 0.01:
-                            raise ValueError(f"Webhook amount {amount} does not match order amount {order.amount}")
-                        payload_currency = payload.get("currency")
-                        if payload_currency and order.currency and payload_currency.upper() != order.currency.upper():
-                            raise ValueError(f"Webhook currency {payload_currency} does not match order currency {order.currency}")
-
-                    invoice_id = order.invoice_id if order else payload.get("invoice_id")
-                    account_id = None
-                    student_id = order.student_id if order else payload.get("student_id")
-
-                    if invoice_id:
-                        cursor.execute(
-                            "SELECT fee_account_id, student_id, amount_due, amount_paid, status FROM invoices WHERE id = ?;",
-                            (invoice_id,),
+                    # Validate invoice tenant integrity and status
+                    invoice_id = order.invoice_id
+                    cursor.execute(
+                        "SELECT fee_account_id, student_id, amount_due, amount_paid, status, org_id FROM invoices WHERE id = ?;",
+                        (invoice_id,),
+                    )
+                    inv_row = cursor.fetchone()
+                    if not inv_row:
+                        raise ValueError(f"Invoice '{invoice_id}' referenced by payment order '{order.id}' does not exist")
+                    if inv_row[5] != organization_id:
+                        raise ValueError(
+                            f"Cross-tenant mismatch: invoice '{invoice_id}' belongs to org '{inv_row[5]}', but order belongs to org '{organization_id}'"
                         )
-                        inv_row = cursor.fetchone()
-                        if inv_row:
-                            account_id = inv_row[0]
-                            student_id = inv_row[1]
-                            inv_status = str(inv_row[4]).lower()
-                            if inv_status == "cancelled":
-                                raise ValueError(f"Cannot apply payment to cancelled invoice {invoice_id}")
 
-                    # 3. Create canonical payment record, receipt, ledger entry, and webhook event
+                    inv_status = str(inv_row[4]).lower()
+                    if inv_status == "cancelled":
+                        raise ValueError(f"Cannot apply payment to cancelled invoice {invoice_id}")
+
+                    account_id = inv_row[0]
+                    student_id = inv_row[1] or order.student_id
+
+                    # Handle Payment Failure State Transition
+                    if event_type in {"payment.failed", "charge.failed"}:
+                        conn.execute("UPDATE payment_orders SET status = 'FAILED' WHERE id = ?;", (order.id,))
+                        conn.execute(
+                            """
+                            INSERT INTO payment_webhook_events (
+                                id, organization_id, provider, event_id, event_type, idempotency_key,
+                                payload_json, payload_hash, signature_verified, status, payment_id, processed_at, created_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PROCESSED', NULL, ?, ?);
+                            """,
+                            (
+                                webhook_id,
+                                organization_id,
+                                provider,
+                                event_id,
+                                event_type,
+                                idempotency_key,
+                                raw_payload_json,
+                                payload_hash,
+                                1 if is_verified else 0,
+                                now,
+                                now,
+                            ),
+                        )
+                        return {
+                            "status": "FAILED",
+                            "is_duplicate": False,
+                            "event_id": event_id,
+                            "order_status": "FAILED",
+                        }
+
+                    # Idempotency check: if order is already CAPTURED, return duplicate without double-crediting
+                    if order.status == OrderStatus.CAPTURED:
+                        cursor.execute(
+                            "SELECT id FROM payments WHERE invoice_id = ? AND org_id = ? AND status = 'completed';",
+                            (invoice_id, organization_id),
+                        )
+                        ex_pmt = cursor.fetchone()
+                        return {
+                            "status": "PROCESSED",
+                            "is_duplicate": True,
+                            "event_id": event_id,
+                            "payment_id": ex_pmt[0] if ex_pmt else None,
+                        }
+
+                    # Create canonical payment record, receipt, and invoice update
                     payment_id = f"pmt-{uuid.uuid4().hex[:12]}"
                     receipt_number = f"RCT-{uuid.uuid4().hex[:8].upper()}"
                     receipt_id = f"rct-{uuid.uuid4().hex[:12]}"
-                    webhook_id = f"pwe-{uuid.uuid4().hex[:12]}"
-                    raw_payload_json = json.dumps(payload)
-                    payload_hash = hashlib.sha256(raw_payload_json.encode("utf-8")).hexdigest()
 
                     # Insert payment
                     conn.execute(
@@ -400,9 +523,9 @@ class FinanceService:
                         """,
                         (
                             payment_id,
-                            invoice_id or "",
-                            account_id or "",
-                            student_id or "",
+                            invoice_id,
+                            account_id,
+                            student_id,
                             organization_id,
                             amount,
                             payload.get("payment_id", event_id),
@@ -424,7 +547,7 @@ class FinanceService:
                             payment_id,
                             receipt_number,
                             amount,
-                            student_id or "student",
+                            student_id,
                             now,
                             now,
                             now,
@@ -432,26 +555,24 @@ class FinanceService:
                     )
 
                     # Update invoice amounts
-                    if invoice_id:
-                        conn.execute(
-                            """
-                            UPDATE invoices
-                            SET amount_paid = amount_paid + ?,
-                                status = CASE WHEN (amount_paid + ?) >= amount_due THEN 'paid' ELSE 'partially_paid' END,
-                                updated_at = ?
-                            WHERE id = ?;
-                            """,
-                            (amount, amount, now, invoice_id),
-                        )
+                    conn.execute(
+                        """
+                        UPDATE invoices
+                        SET amount_paid = amount_paid + ?,
+                            status = CASE WHEN (amount_paid + ?) >= amount_due THEN 'paid' ELSE 'partially_paid' END,
+                            updated_at = ?
+                        WHERE id = ?;
+                        """,
+                        (amount, amount, now, invoice_id),
+                    )
 
                     # Update order status
-                    if order:
-                        conn.execute(
-                            "UPDATE payment_orders SET status = 'CAPTURED' WHERE id = ?;",
-                            (order.id,),
-                        )
+                    conn.execute(
+                        "UPDATE payment_orders SET status = 'CAPTURED' WHERE id = ?;",
+                        (order.id,),
+                    )
 
-                # 4. Append to financial ledger
+                # Append to financial ledger
                 if account_id:
                     self.post_ledger_entry(
                         organization_id=organization_id,
@@ -463,7 +584,7 @@ class FinanceService:
                         payment_id=payment_id,
                     )
 
-                # 5. Record webhook event for deduplication with truthful signature_verified
+                # Record webhook event for deduplication with truthful signature_verified
                 with self.db._get_connection() as conn:
                     conn.execute(
                         """
