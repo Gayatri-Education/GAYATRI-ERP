@@ -123,10 +123,11 @@ class PlatformDatabase:
     def __init__(self, db_path: Optional[str] = None):
         self.db_path = str(db_path or os.environ.get("GAYATRI_DB_PATH", ":memory:"))
         self._conn: Optional[sqlite3.Connection] = sqlite3.connect(
-            self.db_path, check_same_thread=False
+            self.db_path, check_same_thread=False, timeout=30.0
         )
         self._conn.row_factory = sqlite3.Row
         self._conn.execute("PRAGMA foreign_keys = ON;")
+        self._conn.execute("PRAGMA busy_timeout = 30000;")
         if self.db_path != ":memory:":
             try:
                 self._conn.execute("PRAGMA journal_mode = WAL;")
@@ -174,9 +175,10 @@ class PlatformDatabase:
 
     def _get_raw_connection(self) -> sqlite3.Connection:
         if self._conn is None:
-            self._conn = sqlite3.connect(self.db_path, check_same_thread=False)
+            self._conn = sqlite3.connect(self.db_path, check_same_thread=False, timeout=30.0)
             self._conn.row_factory = sqlite3.Row
             self._conn.execute("PRAGMA foreign_keys = ON;")
+            self._conn.execute("PRAGMA busy_timeout = 30000;")
             if self.db_path != ":memory:":
                 try:
                     self._conn.execute("PRAGMA journal_mode = WAL;")
