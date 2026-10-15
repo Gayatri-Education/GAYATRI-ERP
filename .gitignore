@@ -93,4 +93,5 @@ PRIVATE_WORK/
 !training/data/processed/*.jsonl
 *.csv
 local_auth_tokens.json
+demo_recordings/
 
