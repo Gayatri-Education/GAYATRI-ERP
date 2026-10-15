@@ -1,0 +1,49 @@
+# GAYATRI-ERP — QA Remediation Master Progress Tracker
+
+**Contract:** [`../../GAYATRI_ERP_QA_REMEDIATION_GOAL.md`](../../GAYATRI_ERP_QA_REMEDIATION_GOAL.md)  
+**Repository:** https://github.com/Gayatri-Education/GAYATRI-ERP  
+**Branch:** `qa/production-readiness-remediation`  
+**Current HEAD:** `4130f59b880c7ac62650be153ba069cac750206b`  
+**Current Overall Status:** IN_PROGRESS  
+
+---
+
+## Remediation Rules
+
+1. For every phase, follow the mandatory 10-step loop: Inspect → Plan → Reproduce → Implement → Test → Debug → Review → Record → Commit → Advance.
+2. Maintain `plans/PHASE_NN_PLAN.md` before altering source code.
+3. Use real execution output only; never weaken assertions, add broad xfails, or skip tests to fake green results.
+4. If blocked by physical hardware or third-party cloud accounts, truthfully mark as `BLOCKED` or `SIMULATED`.
+
+---
+
+## Phase Status Summary
+
+| Phase | Title / Scope | Priority | Status | Evidence / Log | Next Action |
+|:---:|---|:---:|:---:|---|---|
+| **00** | Baseline and repository setup | P0 | **PASSED** | [`phase-logs/REMEDIATION_PHASE_00_LOG.md`](phase-logs/REMEDIATION_PHASE_00_LOG.md) | Proceed to Phase 01 |
+| **01** | Restore trustworthy CI & production config tests | P0 | **NOT_STARTED** | `phase-logs/REMEDIATION_PHASE_01_LOG.md` | Execute Phase 01 Plan |
+| **02** | Eliminate synthetic parent data & fake dashboard | P1 | **NOT_STARTED** | `phase-logs/REMEDIATION_PHASE_02_LOG.md` | Depends on Phase 01 |
+| **03** | Financially trustworthy fee admin & receipts | P1 | **NOT_STARTED** | `phase-logs/REMEDIATION_PHASE_03_LOG.md` | Depends on Phase 02 |
+| **04** | Payment webhook verification & tenant binding | P1 | **NOT_STARTED** | `phase-logs/REMEDIATION_PHASE_04_LOG.md` | Depends on Phase 03 |
+| **05** | Edge devices, attendance punches & invalid enums | P1 | **NOT_STARTED** | `phase-logs/REMEDIATION_PHASE_05_LOG.md` | Depends on Phase 04 |
+| **06** | Central authorization & tenant-isolation audit | P1 | **NOT_STARTED** | `phase-logs/REMEDIATION_PHASE_06_LOG.md` | Depends on Phase 05 |
+| **07** | AI task validation, tutor context & RAG trust | P1/P2 | **NOT_STARTED** | `phase-logs/REMEDIATION_PHASE_07_LOG.md` | Depends on Phase 06 |
+| **08** | Database lifecycle, transactions & service isolation | P1 | **NOT_STARTED** | `phase-logs/REMEDIATION_PHASE_08_LOG.md` | Depends on Phase 07 |
+| **09** | Genuine UI-to-API-to-database E2E workflows | P1/P2 | **NOT_STARTED** | `phase-logs/REMEDIATION_PHASE_09_LOG.md` | Depends on Phase 08 |
+| **10** | Install, dependency lock & model-readiness | P2 | **NOT_STARTED** | `phase-logs/REMEDIATION_PHASE_10_LOG.md` | Depends on Phase 09 |
+| **11** | Offline mode, sync recovery & hardware disclosures | P2 | **NOT_STARTED** | `phase-logs/REMEDIATION_PHASE_11_LOG.md` | Depends on Phase 10 |
+| **12** | Consolidate documentation, trackers & claims | P1 | **NOT_STARTED** | `phase-logs/REMEDIATION_PHASE_12_LOG.md` | Depends on Phase 11 |
+| **13** | Final forensic review, regression & release gate | P0/P1 | **NOT_STARTED** | `phase-logs/REMEDIATION_PHASE_13_LOG.md` | Depends on all prior phases |
+
+---
+
+## Baseline Evidence (Phase 00)
+
+- **Commit:** `4130f59b880c7ac62650be153ba069cac750206b`
+- **Environment:** Windows 11 Enterprise (win32), Python 3.12.10, PyTest 7.4.4, PySide6 6.11.1
+- **Lockfile Check:** `scripts/verify_dependency_lock.py` passed (`[OK]`).
+- **Compilation Check:** `python -m compileall` passed with 0 errors.
+- **Architecture Invariants:** `pytest -v tests/architecture` passed (13/13).
+- **Test Discovery:** 1,775 non-GUI tests collected.
+- **Headless Test Suite:** 1,775 passed in 230.31s (0 failed, 0 skipped, 2 deprecation warnings).
