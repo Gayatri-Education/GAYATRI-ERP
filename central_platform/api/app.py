@@ -258,16 +258,28 @@ def create_app() -> FastAPI:
     @app.get("/api/health", tags=["Legacy Compatibility"])
     async def legacy_api_health():
         h = health_svc.check_health()
-        students_count = 5
+        students_count = 0
         try:
-            students_count = _portal_service.get_dashboard_overview("crs-chem-101").total_students
+            overview = _portal_service.get_dashboard_overview("crs-chem-101")
+            students_count = overview.total_students if overview else 0
         except Exception as exc:
-            logger.debug("Failed resolving total_students for legacy health overview: %s", exc)
-        return {
-            "status": "HEALTHY" if h["status"] != "UNHEALTHY" else "UNHEALTHY",
-            "service": "TeacherPortalServer",
-            "students_monitored": students_count,
-        }
+            logger.warning("Failed resolving total_students for legacy health overview: %s", exc)
+            students_count = 0
+
+        health_lvl = h.get("health_level", "HEALTHY")
+        is_unhealthy = health_lvl == "UNHEALTHY" or h.get("status") == "UNHEALTHY"
+        status_val = "UNHEALTHY" if is_unhealthy else ("DEGRADED" if health_lvl == "DEGRADED" else "HEALTHY")
+        status_code = 503 if is_unhealthy else 200
+
+        return JSONResponse(
+            status_code=status_code,
+            content={
+                "status": status_val,
+                "health_level": health_lvl,
+                "service": "TeacherPortalServer",
+                "students_monitored": students_count,
+            },
+        )
 
     @app.get("/api/teacher/dashboard", tags=["Legacy Compatibility"])
     async def legacy_teacher_dashboard(course_id: str = "crs-chem-101"):

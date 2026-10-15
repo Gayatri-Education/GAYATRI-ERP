@@ -11,7 +11,7 @@
 | ERP-003 | Token revocation persistence may fail open or report false success | P1 | FIXED_VERIFIED | DB failure tests for validation, revoke, logout | 01 |
 | ERP-004 | Demo token / synthetic identity production exposure | P1 | FIXED_VERIFIED | Production configuration and unauthorized identity tests | 01 |
 | ERP-005 | Independent DB factories / stale module-global services | P1 | FIXED_VERIFIED | Dependency graph and separate DB path integration tests | 02 |
-| ERP-006 | Health endpoint may report fabricated count or healthy state | P1/P2 | NEEDS_REVALIDATION | DB/dependency failure tests and truthful metrics | 10 |
+| ERP-006 | Health endpoint may report fabricated count or healthy state | P1/P2 | FIXED_VERIFIED | DB/dependency failure tests and truthful metrics | 10 |
 | ERP-007 | Billing generation UI may be toast-only | P1/P2 | FIXED_VERIFIED | Click-to-persisted-billing E2E test | 05 |
 | ERP-008 | Outstanding report export may be toast-only | P2 | FIXED_VERIFIED | Export content/authorization/error E2E test | 05 |
 | ERP-009 | Receipt printing may not fetch/verify persisted receipt | P1/P2 | FIXED_VERIFIED | Authorized persisted receipt retrieval test | 03, 05 |
@@ -25,7 +25,7 @@
 | ERP-017 | Blocked tutor turn may look like a successful completed turn | P2 | FIXED_VERIFIED | Status contract and progress non-mutation test | 08 |
 | ERP-018 | Dynamic `innerHTML` / inline handler interpolation may enable injection | P2 | FIXED_VERIFIED | Contextual escaping and XSS regression tests | 05, 12 |
 | ERP-019 | Optional/missing bearer token edge cases | P1 | FIXED_VERIFIED | Route-by-route anonymous/malformed-header tests | 01 |
-| ERP-020 | Broad exceptions/defaults may mask failure | P1/P2 | NEEDS_REVALIDATION | Failure injection and log/response assertions | 10–12 |
+| ERP-020 | Broad exceptions/defaults may mask failure | P1/P2 | FIXED_VERIFIED | Failure injection and log/response assertions | 10–12 |
 | ERP-021 | Tests may mutate a developer/shared database | P1/P2 | FIXED_VERIFIED | Test DB isolation and safe fixture tests | 00, 02 |
 | ERP-022 | Critical features lack sufficient restart, negative-path, or E2E evidence | P1 | NEEDS_REVALIDATION | Feature matrix linked to real E2E evidence | 00, 14 |
 

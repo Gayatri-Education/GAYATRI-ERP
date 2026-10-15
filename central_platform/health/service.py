@@ -55,7 +55,14 @@ class PlatformHealthService:
 
         t0 = time.time()
         try:
-            database = self.db or PlatformDatabase()
+            if self.db is not None:
+                database = self.db
+            else:
+                try:
+                    from central_platform.auth.dependencies import get_db
+                    database = get_db()
+                except Exception:
+                    database = PlatformDatabase()
             with database._get_connection() as conn:
                 cur = conn.cursor()
                 cur.execute("SELECT 1")
@@ -137,6 +144,21 @@ class PlatformHealthService:
         t0 = time.time()
         try:
             db_path = os.environ.get("GAYATRI_DB_PATH", "gayatri_local.db")
+            dir_path = os.path.dirname(os.path.abspath(db_path)) or "."
+            if not os.path.exists(dir_path):
+                return {
+                    "name": "storage",
+                    "status": "UNHEALTHY",
+                    "latency_ms": round((time.time() - t0) * 1000, 2),
+                    "error": f"Storage directory does not exist: {dir_path}",
+                }
+            if not os.access(dir_path, os.W_OK):
+                return {
+                    "name": "storage",
+                    "status": "UNHEALTHY",
+                    "latency_ms": round((time.time() - t0) * 1000, 2),
+                    "error": f"Storage directory is not writable: {dir_path}",
+                }
             return {
                 "name": "storage",
                 "status": "HEALTHY",
@@ -217,7 +239,14 @@ class PlatformHealthService:
         db_healthy = False
         db_details: Dict[str, Any] = {}
         try:
-            database = self.db or PlatformDatabase()
+            if self.db is not None:
+                database = self.db
+            else:
+                try:
+                    from central_platform.auth.dependencies import get_db
+                    database = get_db()
+                except Exception:
+                    database = PlatformDatabase()
             with database._get_connection() as conn:
                 cur = conn.cursor()
                 cur.execute("PRAGMA integrity_check")

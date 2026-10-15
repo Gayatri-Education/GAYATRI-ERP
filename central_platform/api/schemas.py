@@ -43,7 +43,7 @@ class HealthStatusResponse(BaseModel):
     service: str = "GayatriPlatformAPI"
     version: str = "v2.0-reconciliation"
     database: str = "CONNECTED"
-    students_monitored: int = 5
+    students_monitored: int = 0
     timestamp: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
 
