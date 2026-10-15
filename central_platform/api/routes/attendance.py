@@ -7,7 +7,7 @@ from typing import Any, List, Optional, Dict
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from central_platform.auth.dependencies import get_current_user
+from central_platform.auth.dependencies import get_current_user, get_db
 from central_platform.db import PlatformDatabase
 from central_platform.attendance.service import AttendanceService
 from central_platform.models.attendance import AttendanceStatus, SessionType
@@ -16,10 +16,6 @@ from central_platform.api.routes.identity import _get_org_id, _get_roles
 logger = logging.getLogger("gayatri.api.routes.attendance")
 
 router = APIRouter(prefix="/attendance", tags=["Attendance Tracking"])
-
-
-def get_db() -> PlatformDatabase:
-    return PlatformDatabase()
 
 
 def get_attendance_service(db: PlatformDatabase = Depends(get_db)) -> AttendanceService:

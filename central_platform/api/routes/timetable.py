@@ -7,7 +7,7 @@ from typing import Any, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from central_platform.auth.dependencies import get_current_user
+from central_platform.auth.dependencies import get_current_user, get_db
 from central_platform.db import PlatformDatabase
 from central_platform.timetable.service import TimetableService
 from central_platform.models.timetable import DayOfWeek
@@ -16,10 +16,6 @@ from central_platform.api.routes.identity import _get_org_id, _get_roles
 logger = logging.getLogger("gayatri.api.routes.timetable")
 
 router = APIRouter(prefix="/timetable", tags=["Timetable & Scheduling"])
-
-
-def get_db() -> PlatformDatabase:
-    return PlatformDatabase()
 
 
 def get_timetable_service(db: PlatformDatabase = Depends(get_db)) -> TimetableService:

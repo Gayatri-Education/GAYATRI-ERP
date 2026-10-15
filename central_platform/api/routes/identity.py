@@ -13,17 +13,13 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from central_platform.auth.dependencies import get_current_user
+from central_platform.auth.dependencies import get_current_user, get_db
 from central_platform.db import PlatformDatabase
 from central_platform.entitlements.manager import EntitlementManager
 
 logger = logging.getLogger("gayatri.api.routes.identity")
 
 router = APIRouter(prefix="/identity", tags=["Identity & Entitlements"])
-
-
-def get_db() -> PlatformDatabase:
-    return PlatformDatabase()
 
 
 def get_entitlements_manager(db: PlatformDatabase = Depends(get_db)) -> EntitlementManager:

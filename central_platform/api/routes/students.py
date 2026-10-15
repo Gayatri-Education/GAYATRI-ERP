@@ -28,6 +28,7 @@ from central_platform.api.schemas import (
 from central_platform.auth.dependencies import (
     enforce_resource_boundaries,
     get_current_user_optional,
+    get_db,
     is_production_mode,
 )
 from central_platform.curriculum.service import CurriculumService
@@ -41,7 +42,8 @@ from central_platform.teacher.portal import TeacherPortalService, get_shared_por
 
 router = APIRouter(prefix="/students", tags=["Students"])
 
-_db = PlatformDatabase()
+
+_db = get_db()
 _curriculum_service = CurriculumService(_db)
 _slr_service = SLRService()
 _engine_bridge = LearningEngineBridge()

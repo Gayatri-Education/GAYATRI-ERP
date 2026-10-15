@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from central_platform.auth.dependencies import get_current_user
+from central_platform.auth.dependencies import get_current_user, get_db
 from central_platform.db import PlatformDatabase
 from central_platform.analytics.institutional import UnifiedInstitutionalAnalyticsService
 from central_platform.analytics.exports import DataExportService
@@ -17,10 +17,6 @@ from central_platform.api.routes.identity import _get_org_id
 logger = logging.getLogger("gayatri.api.routes.institutional_analytics")
 
 router = APIRouter(prefix="/analytics/institutional", tags=["Institutional Analytics & Ops"])
-
-
-def get_db() -> PlatformDatabase:
-    return PlatformDatabase()
 
 
 def get_analytics_service(db: PlatformDatabase = Depends(get_db)) -> UnifiedInstitutionalAnalyticsService:

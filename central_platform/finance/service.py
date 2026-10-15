@@ -302,112 +302,112 @@ class FinanceService:
                     account_id = inv_row[0]
                     student_id = inv_row[1]
 
-        # 3. Create canonical payment record and receipt
+        # 3. Create canonical payment record, receipt, ledger entry, and webhook event inside an atomic transaction
         payment_id = f"pmt-{uuid.uuid4().hex[:12]}"
         receipt_number = f"RCT-{uuid.uuid4().hex[:8].upper()}"
         receipt_id = f"rct-{uuid.uuid4().hex[:12]}"
-
-        with self.db._get_connection() as conn:
-            # Insert payment
-            conn.execute(
-                """
-                INSERT INTO payments (
-                    id, invoice_id, fee_account_id, student_id, org_id, amount, payment_method,
-                    transaction_reference, status, payment_date, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, 'upi', ?, 'completed', ?, ?, ?);
-                """,
-                (
-                    payment_id,
-                    invoice_id or "",
-                    account_id or "",
-                    student_id or "",
-                    organization_id,
-                    amount,
-                    payload.get("payment_id", event_id),
-                    now,
-                    now,
-                    now,
-                ),
-            )
-
-            # Insert receipt
-            conn.execute(
-                """
-                INSERT INTO receipts (
-                    id, payment_id, receipt_number, amount, issued_to, issued_at, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
-                """,
-                (
-                    receipt_id,
-                    payment_id,
-                    receipt_number,
-                    amount,
-                    student_id or "student",
-                    now,
-                    now,
-                    now,
-                ),
-            )
-
-            # Update invoice amounts
-            if invoice_id:
-                conn.execute(
-                    """
-                    UPDATE invoices
-                    SET amount_paid = amount_paid + ?,
-                        status = CASE WHEN (amount_paid + ?) >= amount_due THEN 'paid' ELSE 'partially_paid' END,
-                        updated_at = ?
-                    WHERE id = ?;
-                    """,
-                    (amount, amount, now, invoice_id),
-                )
-
-            # Update order status
-            if order:
-                conn.execute(
-                    "UPDATE payment_orders SET status = 'CAPTURED' WHERE id = ?;",
-                    (order.id,),
-                )
-
-        # 4. Append to financial ledger
-        if account_id:
-            self.post_ledger_entry(
-                organization_id=organization_id,
-                account_id=account_id,
-                entry_type=LedgerEntryType.CREDIT,
-                amount=amount,
-                description=f"{provider.capitalize()} Online Payment Capture",
-                invoice_id=invoice_id,
-                payment_id=payment_id,
-            )
-
-        # 5. Record webhook event for deduplication
         webhook_id = f"pwe-{uuid.uuid4().hex[:12]}"
         raw_payload_json = json.dumps(payload)
         payload_hash = hashlib.sha256(raw_payload_json.encode("utf-8")).hexdigest()
 
-        with self.db._get_connection() as conn:
-            conn.execute(
-                """
-                INSERT INTO payment_webhook_events (
-                    id, organization_id, provider, event_id, event_type, idempotency_key,
-                    payload_json, payload_hash, signature_verified, status, payment_id, processed_at, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 'PROCESSED', ?, ?, ?);
-                """,
-                (
-                    webhook_id,
-                    organization_id,
-                    provider,
-                    event_id,
-                    event_type,
-                    idempotency_key,
-                    raw_payload_json,
-                    payload_hash,
-                    payment_id,
-                    now,
-                    now,
-                ),
-            )
+        with self.db.transaction():
+            with self.db._get_connection() as conn:
+                # Insert payment
+                conn.execute(
+                    """
+                    INSERT INTO payments (
+                        id, invoice_id, fee_account_id, student_id, org_id, amount, payment_method,
+                        transaction_reference, status, payment_date, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, 'upi', ?, 'completed', ?, ?, ?);
+                    """,
+                    (
+                        payment_id,
+                        invoice_id or "",
+                        account_id or "",
+                        student_id or "",
+                        organization_id,
+                        amount,
+                        payload.get("payment_id", event_id),
+                        now,
+                        now,
+                        now,
+                    ),
+                )
+
+                # Insert receipt
+                conn.execute(
+                    """
+                    INSERT INTO receipts (
+                        id, payment_id, receipt_number, amount, issued_to, issued_at, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                    """,
+                    (
+                        receipt_id,
+                        payment_id,
+                        receipt_number,
+                        amount,
+                        student_id or "student",
+                        now,
+                        now,
+                        now,
+                    ),
+                )
+
+                # Update invoice amounts
+                if invoice_id:
+                    conn.execute(
+                        """
+                        UPDATE invoices
+                        SET amount_paid = amount_paid + ?,
+                            status = CASE WHEN (amount_paid + ?) >= amount_due THEN 'paid' ELSE 'partially_paid' END,
+                            updated_at = ?
+                        WHERE id = ?;
+                        """,
+                        (amount, amount, now, invoice_id),
+                    )
+
+                # Update order status
+                if order:
+                    conn.execute(
+                        "UPDATE payment_orders SET status = 'CAPTURED' WHERE id = ?;",
+                        (order.id,),
+                    )
+
+            # 4. Append to financial ledger
+            if account_id:
+                self.post_ledger_entry(
+                    organization_id=organization_id,
+                    account_id=account_id,
+                    entry_type=LedgerEntryType.CREDIT,
+                    amount=amount,
+                    description=f"{provider.capitalize()} Online Payment Capture",
+                    invoice_id=invoice_id,
+                    payment_id=payment_id,
+                )
+
+            # 5. Record webhook event for deduplication
+            with self.db._get_connection() as conn:
+                conn.execute(
+                    """
+                    INSERT INTO payment_webhook_events (
+                        id, organization_id, provider, event_id, event_type, idempotency_key,
+                        payload_json, payload_hash, signature_verified, status, payment_id, processed_at, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 'PROCESSED', ?, ?, ?);
+                    """,
+                    (
+                        webhook_id,
+                        organization_id,
+                        provider,
+                        event_id,
+                        event_type,
+                        idempotency_key,
+                        raw_payload_json,
+                        payload_hash,
+                        payment_id,
+                        now,
+                        now,
+                    ),
+                )
 
         return {
             "status": "PROCESSED",

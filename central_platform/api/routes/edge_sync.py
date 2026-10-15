@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from central_platform.auth.dependencies import get_current_user, get_current_user_optional
+from central_platform.auth.dependencies import get_current_user, get_current_user_optional, get_db
 from central_platform.db import PlatformDatabase
 from central_platform.sync.edge_service import EdgeSyncService
 from central_platform.models.sync import (
@@ -19,10 +19,6 @@ from central_platform.api.routes.identity import _get_org_id
 logger = logging.getLogger("gayatri.api.routes.edge_sync")
 
 router = APIRouter(prefix="/edge", tags=["Edge & Hardware Sync"])
-
-
-def get_db() -> PlatformDatabase:
-    return PlatformDatabase()
 
 
 def get_edge_service(db: PlatformDatabase = Depends(get_db)) -> EdgeSyncService:

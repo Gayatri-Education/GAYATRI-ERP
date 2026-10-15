@@ -7,7 +7,7 @@ from typing import Any, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from central_platform.auth.dependencies import get_current_user
+from central_platform.auth.dependencies import get_current_user, get_db
 from central_platform.db import PlatformDatabase
 from central_platform.examinations.service import ExaminationService
 from central_platform.models.examinations import ExamSeriesType, MarksStatus
@@ -16,10 +16,6 @@ from central_platform.api.routes.identity import _get_org_id, _get_roles
 logger = logging.getLogger("gayatri.api.routes.examinations")
 
 router = APIRouter(prefix="/examinations", tags=["Examinations"])
-
-
-def get_db() -> PlatformDatabase:
-    return PlatformDatabase()
 
 
 def get_examination_service(db: PlatformDatabase = Depends(get_db)) -> ExaminationService:

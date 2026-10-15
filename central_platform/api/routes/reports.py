@@ -7,7 +7,7 @@ from typing import Any, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from central_platform.auth.dependencies import get_current_user
+from central_platform.auth.dependencies import get_current_user, get_db
 from central_platform.db import PlatformDatabase
 from central_platform.grading.service import GradingService
 from central_platform.api.routes.identity import _get_org_id
@@ -15,10 +15,6 @@ from central_platform.api.routes.identity import _get_org_id
 logger = logging.getLogger("gayatri.api.routes.reports")
 
 router = APIRouter(prefix="/reports", tags=["Report Cards & Transcripts"])
-
-
-def get_db() -> PlatformDatabase:
-    return PlatformDatabase()
 
 
 def get_grading_service(db: PlatformDatabase = Depends(get_db)) -> GradingService:

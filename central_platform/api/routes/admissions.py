@@ -7,7 +7,7 @@ from typing import Any, List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from central_platform.auth.dependencies import get_current_user
+from central_platform.auth.dependencies import get_current_user, get_db
 from central_platform.db import PlatformDatabase
 from central_platform.admissions.service import AdmissionsService
 from central_platform.models.admissions import ApplicationStatus
@@ -16,10 +16,6 @@ from central_platform.api.routes.identity import _get_org_id, _get_roles
 logger = logging.getLogger("gayatri.api.routes.admissions")
 
 router = APIRouter(prefix="/admissions", tags=["Admissions CRM"])
-
-
-def get_db() -> PlatformDatabase:
-    return PlatformDatabase()
 
 
 def get_admissions_service(db: PlatformDatabase = Depends(get_db)) -> AdmissionsService:
