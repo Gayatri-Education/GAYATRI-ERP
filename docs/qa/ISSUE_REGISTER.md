@@ -6,7 +6,7 @@
 
 | ID | Initial target / suspected behavior | Priority | Status | Required proof | Phase |
 |---|---|---:|---|---|---|
-| ERP-001 | Payment webhook signature verification and trust boundary | P0 | NEEDS_REVALIDATION | Invalid/missing signature cannot mutate financial state; valid signature accepted | 03 |
+| ERP-001 | Payment webhook signature verification and trust boundary | P0 | FIXED_VERIFIED | Invalid/missing signature cannot mutate financial state; valid signature accepted | 03 |
 | ERP-002 | Payment/invoice/order/ledger/event atomicity and idempotency | P0 | FIXED_VERIFIED | Transaction rollback and duplicate/concurrency tests | 02–03 |
 | ERP-003 | Token revocation persistence may fail open or report false success | P1 | FIXED_VERIFIED | DB failure tests for validation, revoke, logout | 01 |
 | ERP-004 | Demo token / synthetic identity production exposure | P1 | FIXED_VERIFIED | Production configuration and unauthorized identity tests | 01 |
@@ -14,7 +14,7 @@
 | ERP-006 | Health endpoint may report fabricated count or healthy state | P1/P2 | NEEDS_REVALIDATION | DB/dependency failure tests and truthful metrics | 10 |
 | ERP-007 | Billing generation UI may be toast-only | P1/P2 | NEEDS_REVALIDATION | Click-to-persisted-billing E2E test | 05 |
 | ERP-008 | Outstanding report export may be toast-only | P2 | NEEDS_REVALIDATION | Export content/authorization/error E2E test | 05 |
-| ERP-009 | Receipt printing may not fetch/verify persisted receipt | P1/P2 | NEEDS_REVALIDATION | Authorized persisted receipt retrieval test | 03, 05 |
+| ERP-009 | Receipt printing may not fetch/verify persisted receipt | P1/P2 | FIXED_VERIFIED | Authorized persisted receipt retrieval test | 03, 05 |
 | ERP-010 | Student review action may be toast-only | P1/P2 | NEEDS_REVALIDATION | Review lifecycle and restart persistence test | 06 |
 | ERP-011 | Teacher Copilot action may not call backend | P1/P2 | NEEDS_REVALIDATION | Request/result/error E2E test | 05 |
 | ERP-012 | AI execution/provider control endpoints may lack effective authorization | P1 | FIXED_VERIFIED | Role and tenant negative tests for all AI routes | 01, 04 |

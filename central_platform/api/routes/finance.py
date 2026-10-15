@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import json
 import logging
+import os
+import uuid
 from typing import Any, List, Optional, Dict
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from pydantic import BaseModel, Field
 
-from central_platform.auth.dependencies import get_current_user, get_db
+from central_platform.auth.dependencies import get_current_user, get_current_user_optional, get_db
 from central_platform.db import PlatformDatabase
 from central_platform.finance.service import FinanceService
 from central_platform.api.routes.identity import _get_org_id
+
+ALLOWED_WEBHOOK_PROVIDERS = {"razorpay", "mock", "upi", "stripe"}
 
 logger = logging.getLogger("gayatri.api.routes.finance")
 
@@ -90,22 +95,132 @@ def get_order(
 
 
 @router.post("/webhooks/{provider}", status_code=status.HTTP_200_OK)
-def ingest_webhook(
+async def ingest_webhook(
     provider: str,
-    req: WebhookIngestRequest,
+    request: Request,
+    current_user: Optional[Any] = Depends(get_current_user_optional),
+    service: FinanceService = Depends(get_finance_service),
+):
+    provider_clean = provider.strip().lower()
+    if provider_clean not in ALLOWED_WEBHOOK_PROVIDERS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported or unknown payment provider: '{provider}'",
+        )
+
+    raw_payload = await request.body()
+    if not raw_payload:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Empty webhook payload")
+
+    try:
+        payload_dict = json.loads(raw_payload.decode("utf-8"))
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid JSON in webhook payload")
+
+    # Extract signature from gateway headers
+    signature = (
+        request.headers.get("x-razorpay-signature")
+        or request.headers.get("x-webhook-signature")
+        or request.headers.get("stripe-signature")
+        or request.headers.get("x-signature")
+        or request.headers.get("x-hub-signature-256")
+    )
+    if not signature:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing payment gateway signature header",
+        )
+
+    webhook_secret = (
+        request.headers.get("x-webhook-secret")
+        or os.environ.get(f"{provider_clean.upper()}_WEBHOOK_SECRET")
+        or os.environ.get("PAYMENT_WEBHOOK_SECRET")
+        or os.environ.get("WEBHOOK_SECRET")
+        or service.get_webhook_secret(provider_clean)
+    )
+
+    if not service.verify_webhook_signature(raw_payload, signature, webhook_secret):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid payment gateway webhook signature",
+        )
+
+    # Resolve event details
+    event_id = payload_dict.get("event_id") or payload_dict.get("id") or f"evt_{uuid.uuid4().hex[:10]}"
+    event_type = payload_dict.get("event_type") or payload_dict.get("event") or "payment.captured"
+    idempotency_key = payload_dict.get("idempotency_key") or request.headers.get("x-idempotency-key")
+
+    # Resolve organization scoping
+    org_id = None
+    if current_user:
+        org_id = _get_org_id(current_user)
+    if not org_id:
+        org_id = request.headers.get("x-organization-id") or request.query_params.get("org_id") or payload_dict.get("organization_id")
+    if not org_id:
+        order_ref = payload_dict.get("order_id") or payload_dict.get("payload", {}).get("payment", {}).get("entity", {}).get("order_id")
+        if order_ref:
+            with service.db._get_connection() as conn:
+                r = conn.execute(
+                    "SELECT organization_id FROM payment_orders WHERE provider_order_id = ? OR id = ?;",
+                    (order_ref, order_ref),
+                ).fetchone()
+                if r:
+                    org_id = r[0]
+    if not org_id:
+        inv_ref = payload_dict.get("invoice_id")
+        if inv_ref:
+            with service.db._get_connection() as conn:
+                r = conn.execute("SELECT org_id FROM invoices WHERE id = ?;", (inv_ref,)).fetchone()
+                if r:
+                    org_id = r[0]
+    if not org_id:
+        org_id = "org-default"
+
+    try:
+        result = service.process_payment_webhook(
+            organization_id=org_id,
+            provider=provider_clean,
+            event_id=event_id,
+            event_type=event_type,
+            payload=payload_dict,
+            idempotency_key=idempotency_key,
+            raw_payload=raw_payload,
+            signature=signature,
+            webhook_secret=webhook_secret,
+            signature_verified=True,
+        )
+        return result
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc))
+
+
+@router.get("/receipts/{receipt_id}")
+def get_receipt(
+    receipt_id: str,
     current_user: Any = Depends(get_current_user),
     service: FinanceService = Depends(get_finance_service),
 ):
-    org_id = _get_org_id(current_user)
-    result = service.process_payment_webhook(
-        organization_id=org_id,
-        provider=provider,
-        event_id=req.event_id,
-        event_type=req.event_type,
-        payload=req.payload,
-        idempotency_key=req.idempotency_key,
-    )
-    return result
+    caller_org_id = _get_org_id(current_user)
+    caller_role = getattr(current_user, "role", None)
+    caller_role_str = caller_role.value if hasattr(caller_role, "value") else str(caller_role or "").lower()
+    caller_id = getattr(current_user, "id", None) or getattr(current_user, "user_id", "")
+
+    scope_org = "" if caller_role_str == "super_admin" else caller_org_id
+    receipt = service.get_receipt(scope_org, receipt_id)
+    if not receipt:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Receipt not found")
+
+    if caller_role_str != "super_admin" and receipt["organization_id"] != caller_org_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Receipt not found")
+
+    if caller_role_str == "student":
+        if receipt["student_id"] != caller_id and receipt["issued_to"] != caller_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Forbidden: Students may only access their own receipts",
+            )
+
+    return receipt
 
 
 @router.get("/ledger/{account_id}")

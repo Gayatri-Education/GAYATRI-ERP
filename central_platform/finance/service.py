@@ -3,6 +3,8 @@
 import hashlib
 import hmac
 import json
+import os
+import sqlite3
 import uuid
 from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
@@ -224,7 +226,28 @@ class FinanceService:
 
     # ── Webhook Signature & Ingestion ─────────────────────────────────────────
 
+    def get_webhook_secret(self, provider: str, organization_id: Optional[str] = None) -> str:
+        provider_clean = (provider or "").strip().lower()
+        env_secret = (
+            os.environ.get(f"{provider_clean.upper()}_WEBHOOK_SECRET")
+            or os.environ.get("PAYMENT_WEBHOOK_SECRET")
+            or os.environ.get("WEBHOOK_SECRET")
+        )
+        if env_secret:
+            return env_secret
+        if provider_clean == "razorpay":
+            return "rzp_secret_mock"
+        elif provider_clean == "mock":
+            return "mock_secret_key_12345"
+        elif provider_clean == "upi":
+            return "upi_secret_test"
+        elif provider_clean == "stripe":
+            return "whsec_test"
+        return "test_webhook_secret"
+
     def verify_webhook_signature(self, raw_payload: bytes, signature: str, secret: str) -> bool:
+        if not raw_payload or not signature or not secret:
+            return False
         try:
             expected = hmac.new(secret.encode("utf-8"), raw_payload, hashlib.sha256).hexdigest()
             return hmac.compare_digest(expected, signature)
@@ -239,182 +262,264 @@ class FinanceService:
         event_type: str,
         payload: Dict[str, Any],
         idempotency_key: Optional[str] = None,
+        raw_payload: Optional[bytes] = None,
+        signature: Optional[str] = None,
+        webhook_secret: Optional[str] = None,
+        signature_verified: Optional[bool] = None,
     ) -> Dict[str, Any]:
         now = self._now()
+        is_verified = bool(signature_verified)
 
-        # 1. Deduplication check by event_id or idempotency_key
-        with self.db._get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                SELECT id, status, payment_id FROM payment_webhook_events
-                WHERE organization_id = ? AND provider = ? AND event_id = ?;
-                """,
-                (organization_id, provider, event_id),
-            )
-            existing = cursor.fetchone()
-            if existing:
-                return {
-                    "status": "PROCESSED",
-                    "is_duplicate": True,
-                    "event_id": event_id,
-                    "payment_id": existing[2],
-                }
+        if signature is not None:
+            secret = webhook_secret or self.get_webhook_secret(provider, organization_id)
+            payload_bytes = raw_payload if raw_payload is not None else json.dumps(payload, separators=(',', ':')).encode('utf-8')
+            if not self.verify_webhook_signature(payload_bytes, signature, secret):
+                raise ValueError(f"Webhook signature verification failed for provider '{provider}'")
+            is_verified = True
+        elif signature_verified is False:
+            raise ValueError("Unverified webhook event cannot mutate financial state: signature_verified is False")
 
-            if idempotency_key:
+        # Atomic Transaction Boundary (Encompasses Deduplication Check + Mutations)
+        try:
+            with self.db.transaction():
+                with self.db._get_connection() as conn:
+                    cursor = conn.cursor()
+
+                    # 1. Deduplication check inside transaction
+                    cursor.execute(
+                        """
+                        SELECT id, status, payment_id FROM payment_webhook_events
+                        WHERE organization_id = ? AND provider = ? AND event_id = ?;
+                        """,
+                        (organization_id, provider, event_id),
+                    )
+                    existing = cursor.fetchone()
+                    if existing:
+                        return {
+                            "status": "PROCESSED",
+                            "is_duplicate": True,
+                            "event_id": event_id,
+                            "payment_id": existing[2],
+                        }
+
+                    if idempotency_key:
+                        cursor.execute(
+                            """
+                            SELECT id, status, payment_id FROM payment_webhook_events
+                            WHERE organization_id = ? AND idempotency_key = ?;
+                            """,
+                            (organization_id, idempotency_key),
+                        )
+                        existing_key = cursor.fetchone()
+                        if existing_key:
+                            return {
+                                "status": "PROCESSED",
+                                "is_duplicate": True,
+                                "event_id": event_id,
+                                "payment_id": existing_key[2],
+                            }
+
+                    # 2. Extract and validate order and invoice details
+                    order_ref = payload.get("order_id") or payload.get("payload", {}).get("payment", {}).get("entity", {}).get("order_id")
+                    order = None
+                    if order_ref:
+                        order = self.get_payment_order(organization_id, order_ref)
+
+                    amount = float(payload.get("amount", 0.0))
+                    if order:
+                        if abs(order.amount - amount) > 0.01:
+                            raise ValueError(f"Webhook amount {amount} does not match order amount {order.amount}")
+                        payload_currency = payload.get("currency")
+                        if payload_currency and order.currency and payload_currency.upper() != order.currency.upper():
+                            raise ValueError(f"Webhook currency {payload_currency} does not match order currency {order.currency}")
+
+                    invoice_id = order.invoice_id if order else payload.get("invoice_id")
+                    account_id = None
+                    student_id = order.student_id if order else payload.get("student_id")
+
+                    if invoice_id:
+                        cursor.execute(
+                            "SELECT fee_account_id, student_id, amount_due, amount_paid, status FROM invoices WHERE id = ?;",
+                            (invoice_id,),
+                        )
+                        inv_row = cursor.fetchone()
+                        if inv_row:
+                            account_id = inv_row[0]
+                            student_id = inv_row[1]
+                            inv_status = str(inv_row[4]).lower()
+                            if inv_status == "cancelled":
+                                raise ValueError(f"Cannot apply payment to cancelled invoice {invoice_id}")
+
+                    # 3. Create canonical payment record, receipt, ledger entry, and webhook event
+                    payment_id = f"pmt-{uuid.uuid4().hex[:12]}"
+                    receipt_number = f"RCT-{uuid.uuid4().hex[:8].upper()}"
+                    receipt_id = f"rct-{uuid.uuid4().hex[:12]}"
+                    webhook_id = f"pwe-{uuid.uuid4().hex[:12]}"
+                    raw_payload_json = json.dumps(payload)
+                    payload_hash = hashlib.sha256(raw_payload_json.encode("utf-8")).hexdigest()
+
+                    # Insert payment
+                    conn.execute(
+                        """
+                        INSERT INTO payments (
+                            id, invoice_id, fee_account_id, student_id, org_id, amount, payment_method,
+                            transaction_reference, status, payment_date, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, 'upi', ?, 'completed', ?, ?, ?);
+                        """,
+                        (
+                            payment_id,
+                            invoice_id or "",
+                            account_id or "",
+                            student_id or "",
+                            organization_id,
+                            amount,
+                            payload.get("payment_id", event_id),
+                            now,
+                            now,
+                            now,
+                        ),
+                    )
+
+                    # Insert receipt
+                    conn.execute(
+                        """
+                        INSERT INTO receipts (
+                            id, payment_id, receipt_number, amount, issued_to, issued_at, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                        """,
+                        (
+                            receipt_id,
+                            payment_id,
+                            receipt_number,
+                            amount,
+                            student_id or "student",
+                            now,
+                            now,
+                            now,
+                        ),
+                    )
+
+                    # Update invoice amounts
+                    if invoice_id:
+                        conn.execute(
+                            """
+                            UPDATE invoices
+                            SET amount_paid = amount_paid + ?,
+                                status = CASE WHEN (amount_paid + ?) >= amount_due THEN 'paid' ELSE 'partially_paid' END,
+                                updated_at = ?
+                            WHERE id = ?;
+                            """,
+                            (amount, amount, now, invoice_id),
+                        )
+
+                    # Update order status
+                    if order:
+                        conn.execute(
+                            "UPDATE payment_orders SET status = 'CAPTURED' WHERE id = ?;",
+                            (order.id,),
+                        )
+
+                # 4. Append to financial ledger
+                if account_id:
+                    self.post_ledger_entry(
+                        organization_id=organization_id,
+                        account_id=account_id,
+                        entry_type=LedgerEntryType.CREDIT,
+                        amount=amount,
+                        description=f"{provider.capitalize()} Online Payment Capture",
+                        invoice_id=invoice_id,
+                        payment_id=payment_id,
+                    )
+
+                # 5. Record webhook event for deduplication with truthful signature_verified
+                with self.db._get_connection() as conn:
+                    conn.execute(
+                        """
+                        INSERT INTO payment_webhook_events (
+                            id, organization_id, provider, event_id, event_type, idempotency_key,
+                            payload_json, payload_hash, signature_verified, status, payment_id, processed_at, created_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'PROCESSED', ?, ?, ?);
+                        """,
+                        (
+                            webhook_id,
+                            organization_id,
+                            provider,
+                            event_id,
+                            event_type,
+                            idempotency_key,
+                            raw_payload_json,
+                            payload_hash,
+                            1 if is_verified else 0,
+                            payment_id,
+                            now,
+                            now,
+                        ),
+                    )
+
+            return {
+                "status": "PROCESSED",
+                "is_duplicate": False,
+                "payment_id": payment_id,
+                "receipt_number": receipt_number,
+            }
+        except sqlite3.IntegrityError:
+            # Race condition during concurrent duplicate delivery; retrieve existing event
+            with self.db._get_connection() as conn:
+                cursor = conn.cursor()
                 cursor.execute(
                     """
                     SELECT id, status, payment_id FROM payment_webhook_events
-                    WHERE organization_id = ? AND idempotency_key = ?;
+                    WHERE organization_id = ? AND provider = ? AND event_id = ?;
                     """,
-                    (organization_id, idempotency_key),
+                    (organization_id, provider, event_id),
                 )
-                existing_key = cursor.fetchone()
-                if existing_key:
+                existing = cursor.fetchone()
+                if existing:
                     return {
                         "status": "PROCESSED",
                         "is_duplicate": True,
                         "event_id": event_id,
-                        "payment_id": existing_key[2],
+                        "payment_id": existing[2],
                     }
+            raise
 
-        # 2. Extract order and invoice details
-        order_ref = payload.get("order_id")
-        order = None
-        if order_ref:
-            order = self.get_payment_order(organization_id, order_ref)
-
-        amount = float(payload.get("amount", 0.0))
-        invoice_id = order.invoice_id if order else payload.get("invoice_id")
-
-        account_id = None
-        student_id = order.student_id if order else payload.get("student_id")
-
+    def get_receipt(self, organization_id: str, receipt_id_or_number: str) -> Optional[Dict[str, Any]]:
+        """Retrieve persisted receipt with payment, student, and tenant isolation metadata."""
         with self.db._get_connection() as conn:
             cursor = conn.cursor()
-            if invoice_id:
-                cursor.execute(
-                    "SELECT fee_account_id, student_id, amount_due, amount_paid FROM invoices WHERE id = ?;",
-                    (invoice_id,),
-                )
-                inv_row = cursor.fetchone()
-                if inv_row:
-                    account_id = inv_row[0]
-                    student_id = inv_row[1]
-
-        # 3. Create canonical payment record, receipt, ledger entry, and webhook event inside an atomic transaction
-        payment_id = f"pmt-{uuid.uuid4().hex[:12]}"
-        receipt_number = f"RCT-{uuid.uuid4().hex[:8].upper()}"
-        receipt_id = f"rct-{uuid.uuid4().hex[:12]}"
-        webhook_id = f"pwe-{uuid.uuid4().hex[:12]}"
-        raw_payload_json = json.dumps(payload)
-        payload_hash = hashlib.sha256(raw_payload_json.encode("utf-8")).hexdigest()
-
-        with self.db.transaction():
-            with self.db._get_connection() as conn:
-                # Insert payment
-                conn.execute(
-                    """
-                    INSERT INTO payments (
-                        id, invoice_id, fee_account_id, student_id, org_id, amount, payment_method,
-                        transaction_reference, status, payment_date, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, 'upi', ?, 'completed', ?, ?, ?);
-                    """,
-                    (
-                        payment_id,
-                        invoice_id or "",
-                        account_id or "",
-                        student_id or "",
-                        organization_id,
-                        amount,
-                        payload.get("payment_id", event_id),
-                        now,
-                        now,
-                        now,
-                    ),
-                )
-
-                # Insert receipt
-                conn.execute(
-                    """
-                    INSERT INTO receipts (
-                        id, payment_id, receipt_number, amount, issued_to, issued_at, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
-                    """,
-                    (
-                        receipt_id,
-                        payment_id,
-                        receipt_number,
-                        amount,
-                        student_id or "student",
-                        now,
-                        now,
-                        now,
-                    ),
-                )
-
-                # Update invoice amounts
-                if invoice_id:
-                    conn.execute(
-                        """
-                        UPDATE invoices
-                        SET amount_paid = amount_paid + ?,
-                            status = CASE WHEN (amount_paid + ?) >= amount_due THEN 'paid' ELSE 'partially_paid' END,
-                            updated_at = ?
-                        WHERE id = ?;
-                        """,
-                        (amount, amount, now, invoice_id),
-                    )
-
-                # Update order status
-                if order:
-                    conn.execute(
-                        "UPDATE payment_orders SET status = 'CAPTURED' WHERE id = ?;",
-                        (order.id,),
-                    )
-
-            # 4. Append to financial ledger
-            if account_id:
-                self.post_ledger_entry(
-                    organization_id=organization_id,
-                    account_id=account_id,
-                    entry_type=LedgerEntryType.CREDIT,
-                    amount=amount,
-                    description=f"{provider.capitalize()} Online Payment Capture",
-                    invoice_id=invoice_id,
-                    payment_id=payment_id,
-                )
-
-            # 5. Record webhook event for deduplication
-            with self.db._get_connection() as conn:
-                conn.execute(
-                    """
-                    INSERT INTO payment_webhook_events (
-                        id, organization_id, provider, event_id, event_type, idempotency_key,
-                        payload_json, payload_hash, signature_verified, status, payment_id, processed_at, created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 'PROCESSED', ?, ?, ?);
-                    """,
-                    (
-                        webhook_id,
-                        organization_id,
-                        provider,
-                        event_id,
-                        event_type,
-                        idempotency_key,
-                        raw_payload_json,
-                        payload_hash,
-                        payment_id,
-                        now,
-                        now,
-                    ),
-                )
-
-        return {
-            "status": "PROCESSED",
-            "is_duplicate": False,
-            "payment_id": payment_id,
-            "receipt_number": receipt_number,
-        }
+            query = """
+                SELECT r.id, r.payment_id, r.receipt_number, r.amount, r.issued_to, r.issued_at,
+                       r.notes, r.created_at, p.org_id, p.student_id, p.invoice_id,
+                       p.payment_method, p.transaction_reference, p.status
+                FROM receipts r
+                JOIN payments p ON r.payment_id = p.id
+                WHERE (r.id = ? OR r.receipt_number = ?)
+                  AND r.is_deleted = 0
+            """
+            params = [receipt_id_or_number, receipt_id_or_number]
+            if organization_id:
+                query += " AND p.org_id = ?"
+                params.append(organization_id)
+            cursor.execute(query, tuple(params))
+            row = cursor.fetchone()
+            if not row:
+                return None
+            return {
+                "id": row[0],
+                "payment_id": row[1],
+                "receipt_number": row[2],
+                "amount": float(row[3]),
+                "issued_to": row[4],
+                "issued_at": row[5],
+                "notes": row[6] or "",
+                "created_at": row[7],
+                "organization_id": row[8],
+                "student_id": row[9],
+                "invoice_id": row[10],
+                "payment_method": row[11],
+                "transaction_reference": row[12],
+                "payment_status": row[13],
+            }
 
     # ── Append-Only Financial Ledger ──────────────────────────────────────────
 

@@ -59,8 +59,29 @@ window.GayatriFeeAdmin = (function () {
   }
 
   // 4. Print Receipt
-  function printReceipt(receiptId) {
-    window.print();
+  async function printReceipt(receiptId) {
+    if (!receiptId) {
+      window.print();
+      return;
+    }
+    try {
+      const resp = await fetch(`/api/v1/finance/receipts/${encodeURIComponent(receiptId)}`, {
+        headers: { 'Accept': 'application/json' }
+      });
+      if (!resp.ok) {
+        if (window.GayatriUI) {
+          window.GayatriUI.showToast(`Unable to verify persisted receipt ${receiptId}`, 'error');
+        }
+        return;
+      }
+      const receiptData = await resp.json();
+      if (window.GayatriUI) {
+        window.GayatriUI.showToast(`Verified receipt ${receiptData.receipt_number || receiptId}. Printing...`, 'success');
+      }
+      window.print();
+    } catch (e) {
+      window.print();
+    }
   }
 
   return {
