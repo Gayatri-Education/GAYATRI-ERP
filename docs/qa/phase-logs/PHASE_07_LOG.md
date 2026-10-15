@@ -4,7 +4,7 @@
 **Status:** PASSED  
 **Date:** 2026-10-15  
 **Branch:** `dev/phase-00-baseline`  
-**Commit / Checkpoint:** Pending regression  
+**Commit / Checkpoint:** `9fc62f3`  
 
 ---
 
@@ -121,7 +121,7 @@ Prior to remediation, all 8 targeted tests failed:
 ---
 
 ## 11. GitHub Issue / Commit Links
-- Checkpoint commit pending staging.
+- Commit `9fc62f3` ("feat(phase-07): resolve ERP-016 assessment anti-fallback and enforce test lifecycle immutability")
 
 ---
 

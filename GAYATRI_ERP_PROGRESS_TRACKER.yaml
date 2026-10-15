@@ -166,7 +166,7 @@ phases:
     branch: dev/phase-00-baseline
     issue_url: null
     pull_request_url: null
-    commit_shas: []
+    commit_shas: ["9fc62f3"]
     findings: [ERP-016]
     files_changed:
       - "central_platform/api/routes/assessments.py"
