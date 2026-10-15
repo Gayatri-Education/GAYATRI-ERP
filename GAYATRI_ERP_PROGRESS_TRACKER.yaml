@@ -51,7 +51,7 @@ phases:
     branch: dev/phase-00-baseline
     issue_url: null
     pull_request_url: null
-    commit_shas: []
+    commit_shas: ["47e49fd"]
     findings: [ERP-002, ERP-005, ERP-021]
     files_changed:
       - "central_platform/finance/service.py"
