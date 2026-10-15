@@ -1,0 +1,83 @@
+1
+00:00:02,490 --> 00:00:12,230
+[Executive · Command Center] Gayatri ERP: Multi-Tiered Institution Administration & Executive Portal: Authoritative command center for Trustees, Principals, Accountants, and System Administrators
+
+2
+00:00:12,230 --> 00:00:15,740
+[Admin · Attendance] Campus-Wide Daily Attendance & Smart Biometric Roll Call: Class 11A synchronized attendance roster, RFID hardware taps, and arrival timestamps
+
+3
+00:00:15,740 --> 00:00:18,350
+[Admin · Attendance Toggle] Action: Toggle Student Attendance Status (Biometric Override): Audited status toggle for Rohan Gupta (11A-05) from LATE to PRESENT with timestamp
+
+4
+00:00:18,350 --> 00:00:25,800
+[Admin · Batch Attendance] Action: Batch Roll Call Synchronization — Mark All Present: Instantly records 100% verified attendance across the entire Class 11A cohort
+
+5
+00:00:25,800 --> 00:00:29,309
+[Admin · Timetable] Academic Timetable Scheduling & Teacher Relief Engine: CBSE Class 11A Weekly Period Schedule with active teacher substitution alerts
+
+6
+00:00:29,309 --> 00:00:39,929
+[Admin · Timetable Action] Action: Edit Timetable Period Slot & Assign Teacher Relief: Assigning Dr. S. Rao to Period 3 Physics Lab in Room 204 with substitution endorsement
+
+7
+00:00:39,929 --> 00:00:43,429
+[Trustee · Finance] Double-Entry Fee Accounting & Institutional General Ledger: Real-time fee collection KPIs, student fee invoices, outstanding balances, and audited ledgers
+
+8
+00:00:43,429 --> 00:00:50,170
+[Admin · Fee Collection Action] Action: Collect Student Fee Balance via UPI Gateway: Collecting ₹20,000 balance for Arjun Patel (INV-2026-001) with cryptographic reference
+
+9
+00:00:50,170 --> 00:00:54,770
+[Trustee · Audited Ledger] Payment Settled: Invoice Marked PAID & Appended to Audited Ledger: General ledger automatically appends credit transaction with immutable SHA-256 integrity
+
+10
+00:00:54,770 --> 00:00:58,280
+[Admin · Logistics] Campus Transport Fleet, Hostel Facilities & Inventory Logistics: Real-time GPS tracking, 40-seat AC bus routes, hostel room occupancy, and stock alerts
+
+11
+00:00:58,280 --> 00:01:04,959
+[Admin · Transport Action] Action: Allocate Student to Bus Route & Update Live Manifest: Assigning Ananya Verma to Route RTE-NORTH-01 at Sector 14 Rohini boarding point
+
+12
+00:01:04,959 --> 00:01:09,090
+[Admin · Passenger Manifest] Passenger Manifest Updated: 34 / 40 Seats Utilized (85.0%): Live student manifest and emergency parent contacts updated across mobile bus conductor units
+
+13
+00:01:09,090 --> 00:01:12,599
+[Admin · Library Subsystem] Curriculum Library Catalog & Automated RFID Circulation Desk: 1,450 accredited NCERT & CBSE volumes, active lending ledger, and return due tracking
+
+14
+00:01:12,599 --> 00:01:19,280
+[Admin · Book Issuance Action] Action: Issue Physics Textbook to Student Borrower: Lending 'Concepts of Physics Vol 1' to Arjun Patel (11A-01) with automated 30-day return due date
+
+15
+00:01:19,280 --> 00:01:23,150
+[Admin · Circulation Desk] Book Issued & Circulation Record Sealed: Active borrowing ledger immediately updated with barcode RFID timestamp and due alert
+
+16
+00:01:23,150 --> 00:01:26,650
+[Trustee · Digital Credentials] Student Smart Identity Badges & Cryptographic Certificates: Contactless RFID/NFC student ID cards, verifiable QR barcodes, and official Bonafide certificates
+
+17
+00:01:26,650 --> 00:01:34,310
+[Admin · Certificate Issuance] Action: Issue Cryptographically Sealed Bonafide Certificate: Generating verified Bonafide Student Certificate for Arjun Patel with SHA-256 seal
+
+18
+00:01:34,310 --> 00:01:42,790
+[Trustee · Executive Analytics] Executive Institutional Intelligence & Reconciled KPIs: Authoritative SQL aggregate metrics: 100% Attendance, 70.3% Fee Ratio, 85% Fleet, 100% Pass
+
+19
+00:01:42,790 --> 00:01:45,810
+[Trustee · AI Governance] Infrastructure Health & AI Safety Kill Switch Governance: Zero-cloud local operation, database integrity probes, and instantaneous emergency circuit breaker
+
+20
+00:01:45,810 --> 00:01:50,620
+[Admin · System Diagnostics] Action: Run Subsystem Diagnostics & Live Health Probes: Pinging API server, database layer, AI inference gateway, and sync services
+
+21
+00:01:50,620 --> 00:01:58,599
+[Certified · Gayatri ERP] Gayatri AI — Production Multi-Tiered Institution ERP: 100% sovereign campus operating system: complete reliability, privacy, and zero SaaS lock-in

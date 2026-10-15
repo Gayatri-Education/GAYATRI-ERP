@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gayatri AI — Parent Monitoring Portal & Multi-Child Oversight</title>
+  <style>
+    :root {
+      --bg-dark: #0a0a18;
+      --surface-card: #12122b;
+      --surface-raised: #18183a;
+      --card-border: #22224d;
+      --accent-purple: #9b59b6;
+      --accent-blue: #3498db;
+      --accent-cyan: #1abc9c;
+      --accent-green: #27c93f;
+      --accent-amber: #f39c12;
+      --accent-rose: #e74c3c;
+      --text-main: #e2e8f0;
+      --text-muted: #8c8ca8;
+      --text-bright: #ffffff;
+      --brand: #53a8b6;
+      --brand-soft: rgba(83, 168, 182, 0.15);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg-dark);
+      color: var(--text-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Top Universal Header */
+    header.portal-header {
+      background: #0e0e24;
+      border-bottom: 1px solid var(--card-border);
+      padding: 12px 28px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .brand-group {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .brand-logo {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, var(--accent-purple), var(--brand));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 900;
+      font-size: 16px;
+      color: #fff;
+    }
+    .brand-title {
+      font-size: 15px;
+      font-weight: 800;
+      color: var(--text-bright);
+      letter-spacing: 0.5px;
+    }
+    .brand-subtitle {
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .parent-profile {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .profile-info {
+      text-align: right;
+    }
+    .parent-name {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text-bright);
+    }
+    .parent-role {
+      font-size: 11px;
+      color: var(--accent-cyan);
+    }
+    .avatar-circle {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: #23234d;
+      border: 1px solid var(--card-border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 13px;
+      color: var(--brand);
+    }
+
+    /* Multi-Child Selector Bar */
+    .child-selector-bar {
+      background: #141433;
+      border-bottom: 1px solid var(--card-border);
+      padding: 10px 28px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .child-selector-label {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .child-pill-list {
+      display: flex;
+      gap: 10px;
+    }
+
+    .child-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 16px;
+      border-radius: 20px;
+      background: #1b1b3d;
+      border: 1px solid var(--card-border);
+      color: var(--text-muted);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .child-pill:hover {
+      background: #22224d;
+      color: var(--text-bright);
+    }
+    .child-pill.active {
+      background: var(--brand-soft);
+      border-color: var(--brand);
+      color: #53d3e6;
+      box-shadow: 0 0 12px rgba(83, 168, 182, 0.25);
+    }
+    .child-pill .badge {
+      font-size: 10px;
+      padding: 2px 7px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.08);
+    }
+
+    /* Navigation Tabs Bar */
+    .nav-tabs-bar {
+      background: var(--surface-card);
+      border-bottom: 1px solid var(--card-border);
+      padding: 0 28px;
+      display: flex;
+      gap: 4px;
+      overflow-x: auto;
+    }
+
+    .tab-btn {
+      padding: 13px 18px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      transition: all 0.2s ease;
+      white-space: nowrap;
+    }
+    .tab-btn:hover {
+      color: var(--text-main);
+    }
+    .tab-btn.active {
+      color: var(--text-bright);
+      border-bottom-color: var(--brand);
+      background: rgba(83, 168, 182, 0.06);
+    }
+
+    /* Main Content Area */
+    main.portal-content {
+      flex: 1;
+      padding: 24px 28px;
+      overflow-y: auto;
+    }
+
+    .view-panel {
+      display: none;
+      animation: fadeIn 0.25s ease forwards;
+    }
+    .view-panel.active {
+      display: block;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Overview KPI Cards Grid */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+
+    .kpi-card {
+      background: var(--surface-card);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 18px;
+      position: relative;
+      overflow: hidden;
+    }
+    .kpi-card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      background: var(--brand);
+    }
+    .kpi-card.green::before { background: var(--accent-green); }
+    .kpi-card.purple::before { background: var(--accent-purple); }
+    .kpi-card.amber::before { background: var(--accent-amber); }
+    .kpi-card.blue::before { background: var(--accent-blue); }
+
+    .kpi-title {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: 6px;
+    }
+    .kpi-value {
+      font-size: 24px;
+      font-weight: 800;
+      color: var(--text-bright);
+      margin-bottom: 4px;
+    }
+    .kpi-sub {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    /* Section Cards */
+    .section-card {
+      background: var(--surface-card);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 22px;
+      margin-bottom: 20px;
+    }
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--card-border);
+    }
+    .section-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text-bright);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .badge-pill {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 9px;
+      border-radius: 12px;
+      background: rgba(39, 201, 63, 0.15);
+      color: var(--accent-green);
+      border: 1px solid rgba(39, 201, 63, 0.3);
+    }
+
+    /* Tables */
+    .custom-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+    .custom-table th {
+      text-align: left;
+      padding: 10px 14px;
+      color: var(--text-muted);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      border-bottom: 1px solid var(--card-border);
+      background: rgba(255, 255, 255, 0.02);
+    }
+    .custom-table td {
+      padding: 12px 14px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+      color: var(--text-main);
+    }
+    .custom-table tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    /* Buttons */
+    .btn-action {
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      border: none;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s ease;
+    }
+    .btn-primary {
+      background: var(--brand);
+      color: #0a0a18;
+    }
+    .btn-primary:hover {
+      background: #63bfce;
+    }
+    .btn-secondary {
+      background: #1e1e40;
+      color: var(--text-bright);
+      border: 1px solid var(--card-border);
+    }
+    .btn-secondary:hover {
+      background: #282855;
+    }
+
+    /* Progress bar */
+    .progress-bar-bg {
+      width: 100%;
+      height: 8px;
+      background: #1b1b3d;
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 6px;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--brand), var(--accent-green));
+      border-radius: 4px;
+    }
+
+    /* Notice item */
+    .notice-item {
+      padding: 14px;
+      background: var(--surface-raised);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      margin-bottom: 10px;
+    }
+    .notice-date {
+      font-size: 11px;
+      color: var(--brand);
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .notice-body {
+      font-size: 13px;
+      color: var(--text-main);
+      line-height: 1.4;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Universal Header -->
+  <header class="portal-header">
+    <div class="brand-group">
+      <div class="brand-logo">G</div>
+      <div>
+        <div class="brand-title">Gayatri School OS — Parent Portal</div>
+        <div class="brand-subtitle">Delhi Public School, R.K. Puram · Student Oversight & Communications</div>
+      </div>
+    </div>
+    <div class="parent-profile">
+      <div class="profile-info">
+        <div class="parent-name">Dr. Rajesh & Sunita Sharma</div>
+        <div class="parent-role">Authorized Guardians · Family ID #FAM-4091</div>
+      </div>
+      <div class="avatar-circle">RS</div>
+    </div>
+  </header>
+
+  <!-- Multi-Child Selector Bar -->
+  <div class="child-selector-bar">
+    <div class="child-selector-label">
+      <span>Active Child:</span>
+    </div>
+    <div class="child-pill-list">
+      <button class="child-pill active" id="pill-child-101" onclick="switchChild('child-101')">
+        <span>👨‍🎓 Aarav Sharma</span>
+        <span class="badge">Grade 11-A (STEM)</span>
+      </button>
+      <button class="child-pill" id="pill-child-102" onclick="switchChild('child-102')">
+        <span>👩‍🎓 Ananya Sharma</span>
+        <span class="badge">Grade 7-B</span>
+      </button>
+    </div>
+    <div style="font-size: 12px; color: var(--accent-green); font-weight: 600;">
+      ● Live Biometric Sync Verified
+    </div>
+  </div>
+
+  <!-- Navigation Tabs Bar -->
+  <nav class="nav-tabs-bar">
+    <button class="tab-btn active" id="tab-btn-progress" onclick="switchTab('progress')">📊 Child Progress</button>
+    <button class="tab-btn" id="tab-btn-attendance" onclick="switchTab('attendance')">🕒 Daily Attendance</button>
+    <button class="tab-btn" id="tab-btn-fees" onclick="switchTab('fees')">💳 Fees & Receipts</button>
+    <button class="tab-btn" id="tab-btn-academics" onclick="switchTab('academics')">📝 Exams & Report Card</button>
+    <button class="tab-btn" id="tab-btn-teacher" onclick="switchTab('teacher')">💬 Teacher Notes</button>
+    <button class="tab-btn" id="tab-btn-notices" onclick="switchTab('notices')">📢 Circulars & Notices</button>
+  </nav>
+
+  <!-- Main Content Area -->
+  <main class="portal-content">
+
+    <!-- TAB 1: CHILD PROGRESS -->
+    <div class="view-panel active" id="panel-progress">
+      <div class="kpi-grid">
+        <div class="kpi-card green">
+          <div class="kpi-title">Overall Concept Mastery</div>
+          <div class="kpi-value" id="kpi-mastery">88%</div>
+          <div class="kpi-sub">+4.2% this month · Top quartile</div>
+        </div>
+        <div class="kpi-card blue">
+          <div class="kpi-title">Verified Attendance</div>
+          <div class="kpi-value" id="kpi-attendance">96.5%</div>
+          <div class="kpi-sub">111 / 115 academic days present</div>
+        </div>
+        <div class="kpi-card purple">
+          <div class="kpi-title">AI Tutor Sessions</div>
+          <div class="kpi-value" id="kpi-tutor-sessions">42</div>
+          <div class="kpi-sub">28.5 hours of guided Socratic inquiry</div>
+        </div>
+        <div class="kpi-card amber">
+          <div class="kpi-title">Pending Homework</div>
+          <div class="kpi-value" id="kpi-pending-hw">1</div>
+          <div class="kpi-sub">Physics Lab report due tomorrow</div>
+        </div>
+      </div>
+
+      <div class="section-card">
+        <div class="section-header">
+          <div class="section-title">
+            <span>📚 Subject-Wise Competency & Knowledge Graphs</span>
+            <span class="badge-pill">Curriculum Aligned</span>
+          </div>
+          <span style="font-size: 12px; color: var(--text-muted);" id="child-curr-label">CBSE Class 11 Science Stream</span>
+        </div>
+        <table class="custom-table" id="subject-progress-table">
+          <thead>
+            <tr>
+              <th>Subject</th>
+              <th>Teacher</th>
+              <th>Current Mastery</th>
+              <th>Recent Milestones</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="subject-progress-tbody">
+            <tr>
+              <td><strong>Chemistry</strong></td>
+              <td>Dr. P. Sharma</td>
+              <td style="width: 250px;">
+                <div style="display:flex; justify-content:space-between; font-size:12px;"><span>88%</span><span style="color:var(--accent-green);">Mastered</span></div>
+                <div class="progress-bar-bg"><div class="progress-bar-fill" style="width: 88%;"></div></div>
+              </td>
+              <td>Mastered Equilibrium Constant & Le Chatelier's Principle</td>
+              <td><span class="badge-pill">On Track</span></td>
+            </tr>
+            <tr>
+              <td><strong>Physics</strong></td>
+              <td>Prof. M. K. Rao</td>
+              <td>
+                <div style="display:flex; justify-content:space-between; font-size:12px;"><span>84%</span><span style="color:var(--brand);">Advancing</span></div>
+                <div class="progress-bar-bg"><div class="progress-bar-fill" style="width: 84%;"></div></div>
+              </td>
+              <td>Completed Thermodynamics & Heat Engines</td>
+              <td><span class="badge-pill">On Track</span></td>
+            </tr>
+            <tr>
+              <td><strong>Mathematics</strong></td>
+              <td>Ms. Anjali Verma</td>
+              <td>
+                <div style="display:flex; justify-content:space-between; font-size:12px;"><span>91%</span><span style="color:var(--accent-green);">Exemplary</span></div>
+                <div class="progress-bar-bg"><div class="progress-bar-fill" style="width: 91%;"></div></div>
+              </td>
+              <td>Calculus: Limits & Derivatives Problem Set</td>
+              <td><span class="badge-pill">Top 5%</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- TAB 2: ATTENDANCE -->
+    <div class="view-panel" id="panel-attendance">
+      <div class="kpi-grid">
+        <div class="kpi-card green">
+          <div class="kpi-title">Current Term Attendance</div>
+          <div class="kpi-value">96.5%</div>
+          <div class="kpi-sub">Meets CBSE 75% minimum threshold</div>
+        </div>
+        <div class="kpi-card blue">
+          <div class="kpi-title">Today's Campus Entry</div>
+          <div class="kpi-value" style="font-size:20px; color:var(--accent-green);">07:54 AM</div>
+          <div class="kpi-sub">Gate 2 RFID Tap · Bus Route #12</div>
+        </div>
+        <div class="kpi-card purple">
+          <div class="kpi-title">Excused Absences</div>
+          <div class="kpi-value">3 Days</div>
+          <div class="kpi-sub">Medical certificates verified</div>
+        </div>
+        <div class="kpi-card amber">
+          <div class="kpi-title">Late Arrivals</div>
+          <div class="kpi-value">1 Day</div>
+          <div class="kpi-sub">Bus traffic delay on Sep 14</div>
+        </div>
+      </div>
+
+      <div class="section-card">
+        <div class="section-header">
+          <div class="section-title">
+            <span>🕒 Recent Daily Biometric / RFID Attendance Log</span>
+            <span class="badge-pill">Hardware Authenticated</span>
+          </div>
+          <button class="btn-action btn-secondary" onclick="alert('Exporting official attendance certificate...')">📥 Export Certificate</button>
+        </div>
+        <table class="custom-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Gate / Mode</th>
+              <th>Entry Time</th>
+              <th>Exit Time</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Today (Oct 16, 2026)</strong></td>
+              <td>Main Gate 2 (Smart Card Tap)</td>
+              <td>07:54 AM</td>
+              <td>In Campus</td>
+              <td><span class="badge-pill">Present</span></td>
+            </tr>
+            <tr>
+              <td>Yesterday (Oct 15, 2026)</td>
+              <td>Main Gate 2 (Smart Card Tap)</td>
+              <td>07:51 AM</td>
+              <td>03:15 PM</td>
+              <td><span class="badge-pill">Present</span></td>
+            </tr>
+            <tr>
+              <td>Oct 14, 2026</td>
+              <td>Main Gate 2 (Smart Card Tap)</td>
+              <td>07:56 AM</td>
+              <td>03:14 PM</td>
+              <td><span class="badge-pill">Present</span></td>
+            </tr>
+            <tr>
+              <td>Oct 13, 2026</td>
+              <td>Main Gate 2 (Smart Card Tap)</td>
+              <td>07:49 AM</td>
+              <td>03:12 PM</td>
+              <td><span class="badge-pill">Present</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- TAB 3: FEES & RECEIPTS -->
+    <div class="view-panel" id="panel-fees">
+      <div class="kpi-grid">
+        <div class="kpi-card green">
+          <div class="kpi-title">Total Annual Fees</div>
+          <div class="kpi-value">₹1,20,000</div>
+          <div class="kpi-sub">Academic Year 2026-27</div>
+        </div>
+        <div class="kpi-card blue">
+          <div class="kpi-title">Paid to Date</div>
+          <div class="kpi-value" style="color:var(--accent-green);">₹90,000</div>
+          <div class="kpi-sub">3 of 4 Quarters settled</div>
+        </div>
+        <div class="kpi-card amber">
+          <div class="kpi-title">Upcoming Installment (Q4)</div>
+          <div class="kpi-value" style="color:var(--accent-amber);">₹30,000</div>
+          <div class="kpi-sub">Due on Jan 15, 2027</div>
+        </div>
+        <div class="kpi-card purple">
+          <div class="kpi-title">Receipts & Invoices</div>
+          <div class="kpi-value">3 Verified</div>
+          <div class="kpi-sub">Tax 80E eligible certificates</div>
+        </div>
+      </div>
+
+      <div class="section-card">
+        <div class="section-header">
+          <div class="section-title">
+            <span>💳 Itemized Fee Ledger & Downloadable Receipts</span>
+            <span class="badge-pill">Double-Entry Audited</span>
+          </div>
+          <button class="btn-action btn-primary" onclick="alert('Opening secure payment gateway...')">💳 Pay Next Installment</button>
+        </div>
+        <table class="custom-table">
+          <thead>
+            <tr>
+              <th>Invoice #</th>
+              <th>Period</th>
+              <th>Components</th>
+              <th>Amount</th>
+              <th>Payment Date</th>
+              <th>Status</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>INV-2026-Q3-0881</strong></td>
+              <td>Term 3 (Oct - Dec 2026)</td>
+              <td>Tuition (₹22K), Lab (₹4K), Transport (₹4K)</td>
+              <td>₹30,000</td>
+              <td>Oct 05, 2026</td>
+              <td><span class="badge-pill">Paid in Full</span></td>
+              <td><button class="btn-action btn-secondary" style="padding:4px 10px; font-size:11px;">📄 Receipt</button></td>
+            </tr>
+            <tr>
+              <td><strong>INV-2026-Q2-0542</strong></td>
+              <td>Term 2 (Jul - Sep 2026)</td>
+              <td>Tuition (₹22K), Lab (₹4K), Transport (₹4K)</td>
+              <td>₹30,000</td>
+              <td>Jul 08, 2026</td>
+              <td><span class="badge-pill">Paid in Full</span></td>
+              <td><button class="btn-action btn-secondary" style="padding:4px 10px; font-size:11px;">📄 Receipt</button></td>
+            </tr>
+            <tr>
+              <td><strong>INV-2026-Q1-0119</strong></td>
+              <td>Term 1 (Apr - Jun 2026)</td>
+              <td>Tuition (₹22K), Annual Charges (₹8K)</td>
+              <td>₹30,000</td>
+              <td>Apr 10, 2026</td>
+              <td><span class="badge-pill">Paid in Full</span></td>
+              <td><button class="btn-action btn-secondary" style="padding:4px 10px; font-size:11px;">📄 Receipt</button></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- TAB 4: EXAMS & REPORT CARDS -->
+    <div class="view-panel" id="panel-academics">
+      <div class="section-card">
+        <div class="section-header">
+          <div class="section-title">
+            <span>🏆 Mid-Term Examination 2026 — Verified Report Card</span>
+            <span class="badge-pill">CBSE Standard Grading</span>
+          </div>
+          <button class="btn-action btn-secondary" onclick="alert('Downloading authenticated PDF report card...')">📄 Download PDF Report Card</button>
+        </div>
+        <table class="custom-table">
+          <thead>
+            <tr>
+              <th>Subject</th>
+              <th>Max Marks</th>
+              <th>Theory Marks</th>
+              <th>Practical Marks</th>
+              <th>Total Marks</th>
+              <th>Grade</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Physics</td>
+              <td>100</td>
+              <td>64 / 70</td>
+              <td>29 / 30</td>
+              <td><strong>93 / 100</strong></td>
+              <td><span class="badge-pill">A1</span></td>
+            </tr>
+            <tr>
+              <td>Chemistry</td>
+              <td>100</td>
+              <td>62 / 70</td>
+              <td>28 / 30</td>
+              <td><strong>90 / 100</strong></td>
+              <td><span class="badge-pill">A1</span></td>
+            </tr>
+            <tr>
+              <td>Mathematics</td>
+              <td>100</td>
+              <td>76 / 80</td>
+              <td>19 / 20</td>
+              <td><strong>95 / 100</strong></td>
+              <td><span class="badge-pill">A1</span></td>
+            </tr>
+            <tr>
+              <td>English Core</td>
+              <td>100</td>
+              <td>72 / 80</td>
+              <td>18 / 20</td>
+              <td><strong>90 / 100</strong></td>
+              <td><span class="badge-pill">A1</span></td>
+            </tr>
+          </tbody>
+        </table>
+        <div style="margin-top: 16px; padding: 12px; background: rgba(83, 168, 182, 0.08); border-radius: 8px; font-size: 13px;">
+          <strong>Principal's Remarks:</strong> Outstanding academic consistency and inquiry-driven participation. Demonstrated exceptional problem-solving in STEM subjects.
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 5: TEACHER NOTES -->
+    <div class="view-panel" id="panel-teacher">
+      <div class="section-card">
+        <div class="section-header">
+          <div class="section-title">
+            <span>💬 Direct Teacher Observations & Feedback</span>
+            <span class="badge-pill">Direct Feed</span>
+          </div>
+        </div>
+        <div class="notice-item">
+          <div class="notice-date">Dr. P. Sharma (Chemistry) · Oct 14, 2026</div>
+          <div class="notice-body">Aarav showed tremendous improvement in chemical equilibrium calculations this week. His use of the AI tutor's Socratic hints allowed him to solve advanced numericals independently. Keep it up!</div>
+        </div>
+        <div class="notice-item">
+          <div class="notice-date">Prof. M. K. Rao (Physics) · Oct 10, 2026</div>
+          <div class="notice-body">Active contributor during laboratory demonstrations. Completed thermodynamics assignment with rigorous derivation steps.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 6: NOTICES -->
+    <div class="view-panel" id="panel-notices">
+      <div class="section-card">
+        <div class="section-header">
+          <div class="section-title">
+            <span>📢 Official School Circulars & Calendar</span>
+            <span class="badge-pill">Institutional Broadcast</span>
+          </div>
+        </div>
+        <div class="notice-item">
+          <div class="notice-date">DPS Administration · Oct 12, 2026</div>
+          <div class="notice-body"><strong>Annual Science & Innovation Exhibition:</strong> The annual school exhibition will be held on Nov 14, 2026. Parents are warmly invited to witness innovative student projects.</div>
+        </div>
+        <div class="notice-item">
+          <div class="notice-date">Examination Cell · Oct 08, 2026</div>
+          <div class="notice-body"><strong>Pre-Board Examination Schedule:</strong> Timetable for Pre-Board Examination has been published. Revision modules are now active in the Student Portal.</div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    // Tab switching logic
+    function switchTab(tabId) {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.view-panel').forEach(panel => panel.classList.remove('active'));
+
+      const activeBtn = document.getElementById('tab-btn-' + tabId);
+      const activePanel = document.getElementById('panel-' + tabId);
+      if (activeBtn) activeBtn.classList.add('active');
+      if (activePanel) activePanel.classList.add('active');
+    }
+
+    // Child switching logic
+    function switchChild(childId) {
+      document.querySelectorAll('.child-pill').forEach(pill => pill.classList.remove('active'));
+      const activePill = document.getElementById('pill-' + childId);
+      if (activePill) activePill.classList.add('active');
+
+      if (childId === 'child-102') {
+        // Ananya Sharma
+        document.getElementById('kpi-mastery').innerText = '92%';
+        document.getElementById('kpi-attendance').innerText = '98.2%';
+        document.getElementById('kpi-tutor-sessions').innerText = '35';
+        document.getElementById('child-curr-label').innerText = 'CBSE Class 7 Middle School';
+        document.getElementById('subject-progress-tbody').innerHTML = `
+          <tr>
+            <td><strong>Mathematics</strong></td>
+            <td>Mrs. S. Gupta</td>
+            <td style="width: 250px;">
+              <div style="display:flex; justify-content:space-between; font-size:12px;"><span>94%</span><span style="color:var(--accent-green);">Mastered</span></div>
+              <div class="progress-bar-bg"><div class="progress-bar-fill" style="width: 94%;"></div></div>
+            </td>
+            <td>Fractions, Decimals & Algebraic Expressions</td>
+            <td><span class="badge-pill">Exemplary</span></td>
+          </tr>
+          <tr>
+            <td><strong>General Science</strong></td>
+            <td>Mr. K. Nair</td>
+            <td>
+              <div style="display:flex; justify-content:space-between; font-size:12px;"><span>89%</span><span style="color:var(--accent-green);">Mastered</span></div>
+              <div class="progress-bar-bg"><div class="progress-bar-fill" style="width: 89%;"></div></div>
+            </td>
+            <td>Cell Structure & Photosynthesis in Plants</td>
+            <td><span class="badge-pill">On Track</span></td>
+          </tr>
+        `;
+      } else {
+        // Aarav Sharma
+        document.getElementById('kpi-mastery').innerText = '88%';
+        document.getElementById('kpi-attendance').innerText = '96.5%';
+        document.getElementById('kpi-tutor-sessions').innerText = '42';
+        document.getElementById('child-curr-label').innerText = 'CBSE Class 11 Science Stream';
+        document.getElementById('subject-progress-tbody').innerHTML = `
+          <tr>
+            <td><strong>Chemistry</strong></td>
+            <td>Dr. P. Sharma</td>
+            <td style="width: 250px;">
+              <div style="display:flex; justify-content:space-between; font-size:12px;"><span>88%</span><span style="color:var(--accent-green);">Mastered</span></div>
+              <div class="progress-bar-bg"><div class="progress-bar-fill" style="width: 88%;"></div></div>
+            </td>
+            <td>Mastered Equilibrium Constant & Le Chatelier's Principle</td>
+            <td><span class="badge-pill">On Track</span></td>
+          </tr>
+          <tr>
+            <td><strong>Physics</strong></td>
+            <td>Prof. M. K. Rao</td>
+            <td>
+              <div style="display:flex; justify-content:space-between; font-size:12px;"><span>84%</span><span style="color:var(--brand);">Advancing</span></div>
+              <div class="progress-bar-bg"><div class="progress-bar-fill" style="width: 84%;"></div></div>
+            </td>
+            <td>Completed Thermodynamics & Heat Engines</td>
+            <td><span class="badge-pill">On Track</span></td>
+          </tr>
+          <tr>
+            <td><strong>Mathematics</strong></td>
+            <td>Ms. Anjali Verma</td>
+            <td>
+              <div style="display:flex; justify-content:space-between; font-size:12px;"><span>91%</span><span style="color:var(--accent-green);">Exemplary</span></div>
+              <div class="progress-bar-bg"><div class="progress-bar-fill" style="width: 91%;"></div></div>
+            </td>
+            <td>Calculus: Limits & Derivatives Problem Set</td>
+            <td><span class="badge-pill">Top 5%</span></td>
+          </tr>
+        `;
+      }
+    }
+  </script>
+</body>
+</html>

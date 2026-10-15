@@ -13,7 +13,7 @@
 [![Version](https://img.shields.io/badge/version-3.0.1-orange.svg)](VERSION)
 [![Built at DBERT](https://img.shields.io/badge/Built%20at-DBERT%20Internship%20Program-blueviolet)](https://dbert.online/startups/portfolio/gayatri-ai)
 
-[Schedule Institutional Demo](#-getting-started--evaluation) · [Explore Campus Modules](#-comprehensive-campus-modules) · [Key Benefits for Leadership](#-why-leading-institutions-choose-gayatri)
+[▶️ Watch Demo Videos](#-comprehensive-demo-walkthroughs--persona-showcases) · [Explore Campus Modules](#-comprehensive-campus-modules) · [Key Benefits for Leadership](#-why-leading-institutions-choose-gayatri) · [Quick Evaluation](#-getting-started--evaluation)
 
 </div>
 
@@ -24,6 +24,23 @@
 **Gayatri School OS** is a comprehensive, next-generation Enterprise Resource Planning (ERP) and AI Learning platform built specifically for K-12 schools, higher education institutions, and multi-branch educational trusts.
 
 Unlike legacy school software that merely records administrative paperwork, Gayatri unites **all daily school operations** (admissions, fees, attendance, timetable, examinations, payroll, and transport) with a **private, curriculum-free AI tutor** that accelerates student learning—all while running **100% offline-capable on your own campus hardware with zero mandatory recurring cloud AI fees and zero student data leaving your premises.**
+
+---
+
+## 🎬 Comprehensive Demo Walkthroughs & Persona Showcases
+
+Experience Gayatri School OS in action across every institutional stakeholder role. Each demo showcases verified production workflows with full zero-cloud privacy, live ledger updates, synchronized subtitles, and interactive operations:
+
+| Persona & Role | Walkthrough Video | Runtime | Key Capabilities & Demonstrated Actions | Subtitles |
+|---|---|:---:|---|:---:|
+| 🏛️ **School Leadership, Trustees & Admins** *(Master Demo)* | [▶️ **Watch Admin Master Walkthrough**](docs/assets/demos/demo_admin_master_walkthrough.webm) | 2m 00s | **Full ERP Operations**: Attendance roll call & quick-mark, weekly timetable conflict resolution & slot editing modal, UPI student fee collection on invoice `INV-2026-001`, double-entry ledger balance rollup, campus transport fleet route student allocation & passenger manifest, library RFID book issuance modal, tamper-proof Bonafide Certificate generation, zero-error reconciled SQL KPIs, and offline diagnostics. | [SRT](docs/assets/demos/demo_admin_master_walkthrough.srt) · [VTT](docs/assets/demos/demo_admin_master_walkthrough.vtt) |
+| 🏛️ **Admin & Trustee Governance** *(Platform Tour)* | [▶️ **Watch Admin & Trustee Tour**](docs/assets/demos/demo_admin_trustee_persona.webm) | 1m 30s | **Institutional Governance**: Multi-tenant institutional provisioning (DPS, KV, Mumbai Institute), granular RBAC policy control, timetable scheduling, audited fee ledger, CBSE report cards, smart RFID ID badges, campus fleet logistics, and local SLM AI model governance with emergency kill switch. | [SRT](docs/assets/demos/demo_admin_trustee_persona.srt) · [VTT](docs/assets/demos/demo_admin_trustee_persona.vtt) |
+| 🎒 **Student Persona** | [▶️ **Watch Student Persona Demo**](docs/assets/demos/demo_student_persona.webm) | 1m 05s | **Adaptive Socratic Learning**: Grade 11 STEM Chemistry concept mastery heatmap, inquiry-driven dialogue with live LaTeX mathematical equations, dynamic pedagogical mode switching (Explain vs. Calibrated Practice Assessment), and 100% private on-device SLM inference telemetry (47ms latency). | [SRT](docs/assets/demos/demo_student_persona.srt) · [VTT](docs/assets/demos/demo_student_persona.vtt) |
+| 👩‍🏫 **Teacher Persona** | [▶️ **Watch Teacher Persona Demo**](docs/assets/demos/demo_teacher_persona.webm) | 1m 00s | **Academic Command Center & AI Copilot**: Live cohort retention distributions, Class 11A roster mastery tracking, automated AI Copilot diagnostic briefings and remedial plans, early-warning misconception alert engine, and CBSE term marks entry ledger. | [SRT](docs/assets/demos/demo_teacher_persona.srt) · [VTT](docs/assets/demos/demo_teacher_persona.vtt) |
+| 👨‍👩‍👧 **Parent Persona** | [▶️ **Watch Parent Persona Demo**](docs/assets/demos/demo_parent_persona.webm) | 1m 00s | **Real-Time Child Oversight**: Instant single-login multi-child switcher (Aarav Grade 11-A ↔ Ananya Grade 7-B), verified RFID main gate timestamp logs (07:54 AM), itemized fee balance & instant 80E tax receipts, CBSE Distinction term report card, teacher notes, and official circulars. | [SRT](docs/assets/demos/demo_parent_persona.srt) · [VTT](docs/assets/demos/demo_parent_persona.vtt) |
+
+> [!TIP]
+> **Video Playback Notice**: All walkthrough recordings are encoded in high-definition WebM format with synchronized HUD captions and downloadable subtitles (`.srt` and `.vtt`). You can stream them directly within your browser or download them locally from [`docs/assets/demos/`](docs/assets/demos/).
 
 ---
 
@@ -114,25 +131,26 @@ Gayatri School OS delivers integrated enterprise modules designed to automate ev
 
 ## 👥 Experiences Tailored for Every Stakeholder
 
-### 👔 For School Leadership & Trustees
+### 👔 For School Leadership & Trustees · [▶️ View Admin Master Demo](docs/assets/demos/demo_admin_master_walkthrough.webm)
 - **Total Peace of Mind**: Strict student data privacy, audit-ready financial books, and zero cloud lock-in.
 - **Lower Total Cost of Ownership (TCO)**: Eliminate expensive recurring per-seat cloud software licenses.
 - **Bird’s-Eye Intelligence**: Real-time dashboards on admissions conversion, fee recovery, attendance trends, and academic outcomes.
+- **Full Operational Governance**: Automated timetable scheduling, student bus route assignments, and double-entry fee ledger accounting.
 
-### 👩‍🏫 For Teachers & Academic Staff
+### 👩‍🏫 For Teachers & Academic Staff · [▶️ View Teacher Demo](docs/assets/demos/demo_teacher_persona.webm)
 - **Less Bureaucracy, More Teaching**: Cut hours spent on manual attendance registers, marks calculations, and report card preparation.
 - **Classroom Superpowers**: AI Copilot highlights exactly which student has misunderstood what concept before it reflects in exam results.
 - **Seamless Substitutions**: Immediate timetable adjustments without confusion or lost teaching time.
 
-### 🎒 For Students
+### 🎒 For Students · [▶️ View Student Demo](docs/assets/demos/demo_student_persona.webm)
 - **Personalized Learning Companion**: A patient Socratic AI tutor available anytime, adapting to each student's pace and learning style.
 - **Never Fall Behind**: Automated review queues ensure concepts learned weeks ago are retained for board exams.
-- **Gamified Mastery Tracking**: Clear visual progress indicators inspire daily learning habits.
+- **Gamified Mastery Tracking**: Clear visual progress indicators inspire daily learning habits with 100% private on-device SLM execution.
 
-### 👨‍👩‍👧 For Parents
+### 👨‍👩‍👧 For Parents · [▶️ View Parent Demo](docs/assets/demos/demo_parent_persona.webm)
 - **Dedicated Parent Portal**: Monitor live attendance, homework updates, fee payment history, and academic report cards from desktop or mobile.
 - **Multi-Child Switcher**: Manage all enrolled children from a single login without switching accounts.
-- **Direct Institutional Communication**: Safe, broadcast notices and support ticket resolution directly from school authorities.
+- **Direct Institutional Communication**: Safe, broadcast notices, instant 80E tax fee receipts, and verified RFID gate logs.
 
 ---
 

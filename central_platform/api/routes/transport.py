@@ -43,3 +43,14 @@ def create_route(
         end_point=req.end_point,
     )
     return route.__dict__
+
+
+@router.get("/routes")
+def list_routes(
+    current_user: Any = Depends(get_current_user),
+    service: TransportService = Depends(get_transport_service),
+):
+    org_id = _get_org_id(current_user)
+    routes = service.list_routes(organization_id=org_id)
+    return [r.__dict__ for r in routes]
+

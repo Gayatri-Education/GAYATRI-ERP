@@ -1,0 +1,59 @@
+1
+00:00:01,830 --> 00:00:04,839
+[Admin · Executive] Institutional Governance & Trust Administration Portal: Comprehensive multi-tenant command center for School Trustees, Principals, and CFOs
+
+2
+00:00:04,839 --> 00:00:12,890
+[ERP · Overview] Unified Campus ERP Command Center: Live Attendance, Fee Structure, Timetable & Smart ID Badges directly on the executive dashboard
+
+3
+00:00:12,890 --> 00:00:19,000
+[Trustee · Multi-Branch] Multi-Tenant Institutional Provisioning: Delhi Public School, Kendriya Vidyalaya, Mumbai Institute, Bangalore STEM Academy
+
+4
+00:00:19,000 --> 00:00:25,329
+[Admin · RBAC] Zero-Trust Role-Based Access Control (RBAC): Granular security policies for Super Admins, Principals, Accountants, Faculty, and Parents
+
+5
+00:00:25,329 --> 00:00:29,379
+[Admin · Attendance] Campus-Wide Daily Attendance Operations: 100% Verified Attendance Rate, real-time arrival logs, biometric/RFID hardware integration
+
+6
+00:00:29,379 --> 00:00:35,909
+[Admin · Timetable] Academic Timetable Scheduling & Substitution Engine: Class 11A Weekly Period Schedule, automated period conflict solver, and active relief alerts
+
+7
+00:00:35,909 --> 00:00:43,020
+[Trustee · Finance] Double-Entry Fee Accounting & Institutional Ledger: Automated Invoicing, Fee Collections (₹1.10L), Outstanding Balances (₹75K), and Audited Ledgers
+
+8
+00:00:43,020 --> 00:00:49,859
+[Admin · Examinations] Examinations, Marks Ledger & Report Cards: Term Marks (Arjun, Priya, Rahul), CBSE Grade Tiers (A1/Distinction), and Cryptographic Report Cards
+
+9
+00:00:49,859 --> 00:00:57,020
+[Trustee · Compliance] Digital Smart ID Badges & Official Certificates: Contactless RFID chips, barcode verification, Bonafide Certificates & Transfer Certificates (TC)
+
+10
+00:00:57,020 --> 00:01:03,880
+[Admin · Logistics] Campus Logistics — Transport Fleet & Hostel Facilities: Bus Fleet Utilization (82.5%), Hostel Bed Occupancy (80%), and Science Lab Low-Stock Alerts
+
+11
+00:01:03,880 --> 00:01:07,920
+[Admin · Academics] Academic Course Catalog & Syllabus DAGs: Class 11 & 12 Chemistry, Physics, Mathematics with prerequisite dependency mapping
+
+12
+00:01:07,920 --> 00:01:14,750
+[Trustee · AI Governance] AI Model Registry & Governance Safeguards: Gayatri-Tutor-v3 SLM (Default), latency tracking, token quotas, and emergency kill switch
+
+13
+00:01:14,750 --> 00:01:18,810
+[Admin · Reliability] Platform Infrastructure & Zero-Cloud Offline Probes: Live SQLite database connectivity, model registry readiness, and latency telemetry
+
+14
+00:01:18,810 --> 00:01:26,650
+[Trustee · Analytics] Authoritative Cross-Module KPI Reconciliation: Reconciled SQL metrics: 100% Attendance, 70.3% Fees, 85% Transport, 80% Hostel, 100% Pass
+
+15
+00:01:26,650 --> 00:01:30,159
+[Trustee · Certified] Gayatri School OS — Certified Enterprise Platform: Complete institutional operating system: 100% data sovereignty, zero mandatory recurring cloud costs
