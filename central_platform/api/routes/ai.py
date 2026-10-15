@@ -48,39 +48,35 @@ _ai_gateway_service: Optional[AIGatewayService] = None
 
 
 def _verify_ai_admin_access(current_user: Optional[User]) -> None:
-    """Enforce that caller has administrative access to modify AI gateway / kill switch / providers."""
-    if is_production_mode():
-        if not current_user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authentication required for AI administration in production mode",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-    if current_user:
-        user_role = normalize_role(current_user.role)
-        if user_role not in (UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Forbidden: role '{user_role.value}' is not authorized for AI administration",
-            )
+    """Enforce that caller has administrative access to inspect or modify AI gateway / kill switch / providers."""
+    if not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required for AI administration",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    user_role = normalize_role(current_user.role)
+    if user_role not in (UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Forbidden: role '{user_role.value}' is not authorized for AI administration",
+        )
 
 
 def _verify_ai_read_access(current_user: Optional[User]) -> None:
-    """Enforce authentication for inspecting AI providers in production mode."""
-    if is_production_mode():
-        if not current_user:
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Authentication required in production mode",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-    if current_user:
-        user_role = normalize_role(current_user.role)
-        if user_role not in (UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN, UserRole.TEACHER):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Forbidden: role '{user_role.value}' is not authorized to inspect AI provider configurations",
-            )
+    """Enforce authentication for inspecting AI providers."""
+    if not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    user_role = normalize_role(current_user.role)
+    if user_role not in (UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN, UserRole.TEACHER):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Forbidden: role '{user_role.value}' is not authorized to inspect AI provider configurations",
+        )
 
 
 def get_ai_gateway_service(db: Optional[PlatformDatabase] = Depends(get_db)) -> AIGatewayService:
@@ -379,8 +375,9 @@ def get_governance_service(gw: Optional[AIGatewayService] = Depends(get_ai_gatew
 
 
 @router.get("/observability/metrics", response_model=ApiResponse[dict])
-async def get_observability_metrics():
+async def get_observability_metrics(current_user: Optional[User] = Depends(get_current_user_optional)):
     """Retrieve system-wide aggregated telemetry and performance metrics."""
+    _verify_ai_admin_access(current_user)
     gov = get_governance_service()
     metrics = gov.get_observability_metrics()
     return ApiResponse(ok=True, data=metrics)
@@ -396,8 +393,10 @@ async def get_observability_logs(
     status: Optional[str] = Query(None),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
+    current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Retrieve privacy-preserving telemetry logs (prompt hash only)."""
+    _verify_ai_admin_access(current_user)
     gov = get_governance_service()
     logs = gov.get_execution_logs(
         provider=provider,
@@ -437,8 +436,9 @@ async def get_observability_logs(
 
 
 @router.get("/governance/budgets", response_model=ApiResponse[AIBudgetStatusResponse])
-async def get_budget_status():
+async def get_budget_status(current_user: Optional[User] = Depends(get_current_user_optional)):
     """Retrieve daily budget usage, remaining spend, and alert status."""
+    _verify_ai_admin_access(current_user)
     gov = get_governance_service()
     status_data = gov.get_budget_status()
     return ApiResponse(
@@ -480,8 +480,9 @@ async def update_budget_limit(
 
 
 @router.get("/governance/circuit-breakers", response_model=ApiResponse[dict])
-async def get_circuit_breakers():
+async def get_circuit_breakers(current_user: Optional[User] = Depends(get_current_user_optional)):
     """Retrieve real-time circuit breaker states across all providers."""
+    _verify_ai_admin_access(current_user)
     gov = get_governance_service()
     return ApiResponse(ok=True, data=gov.get_circuit_breaker_statuses())
 
@@ -501,8 +502,9 @@ async def reset_circuit_breaker(
 
 
 @router.get("/governance/allowlist", response_model=ApiResponse[List[str]])
-async def get_allowlist():
+async def get_allowlist(current_user: Optional[User] = Depends(get_current_user_optional)):
     """Retrieve active model allowlist."""
+    _verify_ai_admin_access(current_user)
     gov = get_governance_service()
     return ApiResponse(ok=True, data=gov.get_model_allowlist())
 
@@ -532,8 +534,9 @@ async def remove_from_allowlist(
 
 
 @router.get("/governance/cost-breakdown", response_model=ApiResponse[dict])
-async def get_cost_breakdown():
+async def get_cost_breakdown(current_user: Optional[User] = Depends(get_current_user_optional)):
     """Retrieve authoritative cost allocation across providers and tasks."""
+    _verify_ai_admin_access(current_user)
     gov = get_governance_service()
     return ApiResponse(ok=True, data=gov.get_cost_breakdown())
 

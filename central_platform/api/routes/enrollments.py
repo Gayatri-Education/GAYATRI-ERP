@@ -21,6 +21,7 @@ from central_platform.api.schemas import (
     EnrollmentResponse,
 )
 from central_platform.auth.dependencies import (
+    enforce_resource_boundaries,
     get_current_user_optional,
     get_db,
     is_production_mode,
@@ -73,8 +74,9 @@ async def list_enrollments(
             headers={"WWW-Authenticate": "Bearer"},
         )
     effective_student_id = student_id
-    if current_user:
-        if normalize_role(current_user.role) == UserRole.STUDENT:
+    user_role = normalize_role(current_user.role) if current_user else None
+    if current_user and user_role:
+        if user_role == UserRole.STUDENT:
             # Student can only list their own enrollments
             if student_id and student_id != current_user.id:
                 raise HTTPException(
@@ -82,6 +84,19 @@ async def list_enrollments(
                     detail="Students can only view their own enrollments.",
                 )
             effective_student_id = current_user.id
+        elif user_role == UserRole.PARENT:
+            if student_id:
+                enforce_resource_boundaries(current_user, target_student_id=student_id)
+                effective_student_id = student_id
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="student_id query parameter required for parent queries",
+                )
+        else:
+            if student_id:
+                enforce_resource_boundaries(current_user, target_student_id=student_id)
+                effective_student_id = student_id
 
     if effective_student_id:
         enrollments = db.get_enrollments_for_student(effective_student_id)
@@ -89,16 +104,21 @@ async def list_enrollments(
             enrollments = [e for e in enrollments if e.course_id == course_id]
         return ApiResponse(ok=True, data=[_to_enrollment_response(e) for e in enrollments])
 
-    # For teachers/admins, query by course or return matching
+    # For teachers/admins, query by course or return matching tenant enrollments
     with db._get_connection() as conn:
         cur = conn.cursor()
+        query = (
+            "SELECT e.id, e.student_id, e.course_id, e.cohort_id, e.enrolled_at, e.is_active "
+            "FROM enrollments e JOIN users u ON e.student_id = u.id WHERE 1=1"
+        )
+        params = []
+        if current_user and user_role != UserRole.SUPER_ADMIN and current_user.organization_id:
+            query += " AND u.organization_id = ?"
+            params.append(current_user.organization_id)
         if course_id:
-            cur.execute(
-                "SELECT id, student_id, course_id, cohort_id, enrolled_at, is_active FROM enrollments WHERE course_id = ?",
-                (course_id,),
-            )
-        else:
-            cur.execute("SELECT id, student_id, course_id, cohort_id, enrolled_at, is_active FROM enrollments")
+            query += " AND e.course_id = ?"
+            params.append(course_id)
+        cur.execute(query, tuple(params))
         rows = cur.fetchall()
 
     results = []
@@ -129,15 +149,29 @@ async def create_enrollment(
             detail="Authentication required in production",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # 1. Verify course exists
+    course = db.get_course(req.course_id)
+    if not course:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Course '{req.course_id}' not found.",
+        )
+
     if current_user:
-        if normalize_role(current_user.role) == UserRole.STUDENT and req.student_id != current_user.id:
+        u_role = normalize_role(current_user.role)
+        if u_role == UserRole.STUDENT and req.student_id != current_user.id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Students can only enroll themselves.",
             )
-
-    # 1. Verify course exists
-    course = db.get_course(req.course_id)
+        if u_role != UserRole.SUPER_ADMIN:
+            if course.organization_id and current_user.organization_id != course.organization_id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Forbidden: course '{req.course_id}' belongs to another organization",
+                )
+            enforce_resource_boundaries(current_user, target_student_id=req.student_id)
     if not course:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -232,10 +266,6 @@ async def get_enrollment(
     )
 
     if current_user:
-        if normalize_role(current_user.role) == UserRole.STUDENT and e.student_id != current_user.id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Students can only access their own enrollments.",
-            )
+        enforce_resource_boundaries(current_user, target_student_id=e.student_id)
 
     return ApiResponse(ok=True, data=e)

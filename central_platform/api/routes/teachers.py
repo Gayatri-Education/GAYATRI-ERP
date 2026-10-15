@@ -52,6 +52,7 @@ from central_platform.auth.dependencies import (
 from central_platform.courses.service import CourseService
 from central_platform.models.schema import Assignment, ClassGroup, Cohort, CourseVisibility, User, UserRole
 from central_platform.rag.service import RAGService
+from central_platform.rbac.engine import normalize_role
 from central_platform.teacher.portal import TeacherPortalService, get_shared_portal_service
 from central_platform.teacher.instruction import (
     InstructionStatus,
@@ -78,6 +79,12 @@ router = APIRouter(prefix="/teachers", tags=["Teachers"])
 _slr_service = SLRService()
 
 _portal_service = get_shared_portal_service()
+
+
+def _is_student_or_parent(user: Optional[User]) -> bool:
+    if not user:
+        return False
+    return normalize_role(user.role) in (UserRole.STUDENT, UserRole.PARENT)
 _instruction_engine = TeacherInstructionEngine()
 _intervention_engine = TeacherInterventionEngine()
 _copilot = TeacherCopilot()
@@ -97,7 +104,7 @@ async def get_teacher_dashboard(
             headers={"WWW-Authenticate": "Bearer"},
         )
     if current_user:
-        if current_user.role == UserRole.STUDENT:
+        if _is_student_or_parent(current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Forbidden: students are not authorized to access teacher dashboard",
@@ -203,12 +210,12 @@ async def create_instruction(
             headers={"WWW-Authenticate": "Bearer"},
         )
     if current_user:
-        if current_user.role == UserRole.STUDENT:
+        if _is_student_or_parent(current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Forbidden: students cannot create teacher instructions",
             )
-        if current_user.role == UserRole.TEACHER and req.class_id:
+        if normalize_role(current_user.role) == UserRole.TEACHER and req.class_id:
             db = get_db()
             cg = db.get_class_group(req.class_id)
             if cg and current_user.organization_id and cg.organization_id != current_user.organization_id:
@@ -216,7 +223,7 @@ async def create_instruction(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail=f"Forbidden: class '{req.class_id}' belongs to another organization",
                 )
-        if current_user.role == UserRole.TEACHER and req.student_id not in ("all", "*", "", None):
+        if normalize_role(current_user.role) == UserRole.TEACHER and req.student_id not in ("all", "*", "", None):
             db = get_db()
             target_user = db.get_user(req.student_id)
             if target_user and target_user.organization_id and current_user.organization_id:
@@ -232,7 +239,7 @@ async def create_instruction(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail=f"Forbidden: student '{req.student_id}' is not assigned to this teacher",
                 )
-        if current_user.role == UserRole.TEACHER and req.organization_id:
+        if normalize_role(current_user.role) == UserRole.TEACHER and req.organization_id:
             if current_user.organization_id and req.organization_id != current_user.organization_id:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
@@ -309,7 +316,7 @@ async def get_instructions(
 ):
     """Get active instructions scoped to a student, class, course, or org with optional hierarchical resolution."""
     if current_user:
-        if current_user.role == UserRole.STUDENT:
+        if _is_student_or_parent(current_user):
             # Student can only see instructions addressed to them or 'all'
             if student_id and student_id != current_user.id:
                 raise HTTPException(
@@ -360,7 +367,7 @@ async def get_instruction_by_id(
     if not inst:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Instruction not found")
 
-    if current_user and current_user.role == UserRole.STUDENT:
+    if _is_student_or_parent(current_user):
         if inst.student_id not in (current_user.id, "all", "*"):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -377,7 +384,7 @@ async def update_instruction(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Update priority, scope, expiration, or status of an instruction."""
-    if current_user and current_user.role == UserRole.STUDENT:
+    if _is_student_or_parent(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden: students cannot update instructions",
@@ -403,7 +410,7 @@ async def delete_or_revoke_instruction(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Revoke a teacher instruction and record the revocation in its audit log."""
-    if current_user and current_user.role == UserRole.STUDENT:
+    if _is_student_or_parent(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden: students cannot revoke teacher instructions",
@@ -423,7 +430,7 @@ async def toggle_instruction(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Enable or disable a teacher instruction."""
-    if current_user and current_user.role == UserRole.STUDENT:
+    if _is_student_or_parent(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden: students cannot toggle teacher instructions",
@@ -440,7 +447,7 @@ async def resolve_alert(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Resolve an intervention alert."""
-    if current_user and current_user.role == UserRole.STUDENT:
+    if _is_student_or_parent(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden: students cannot resolve intervention alerts",
@@ -481,7 +488,7 @@ async def create_intervention(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Create a new teacher intervention."""
-    if current_user and current_user.role == UserRole.STUDENT:
+    if _is_student_or_parent(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden: students cannot create interventions",
@@ -518,7 +525,7 @@ async def get_interventions(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """List teacher interventions matching query criteria."""
-    if current_user and current_user.role == UserRole.STUDENT:
+    if _is_student_or_parent(current_user):
         if student_id and student_id != current_user.id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -545,7 +552,7 @@ async def get_intervention_by_id(
     itv = _intervention_engine.get_intervention(intervention_id)
     if not itv:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Intervention not found")
-    if current_user and current_user.role == UserRole.STUDENT:
+    if _is_student_or_parent(current_user):
         if itv.student_id != current_user.id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -561,7 +568,7 @@ async def update_intervention(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Update priority, due date, status, or assigned teacher on an intervention."""
-    if current_user and current_user.role == UserRole.STUDENT:
+    if _is_student_or_parent(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden: students cannot update interventions",
@@ -593,7 +600,7 @@ async def add_intervention_note(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Append a pedagogical note to an intervention."""
-    if current_user and current_user.role == UserRole.STUDENT:
+    if _is_student_or_parent(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden: students cannot add teacher notes",
@@ -612,7 +619,7 @@ async def resolve_intervention(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Formally resolve an intervention with mandatory resolution note."""
-    if current_user and current_user.role == UserRole.STUDENT:
+    if _is_student_or_parent(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden: students cannot resolve interventions",
@@ -634,7 +641,7 @@ async def dismiss_intervention(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Dismiss an intervention with mandatory justification reason."""
-    if current_user and current_user.role == UserRole.STUDENT:
+    if _is_student_or_parent(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden: students cannot dismiss interventions",
@@ -655,7 +662,7 @@ async def evaluate_interventions(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Evaluate SLR data and events to trigger interventions with concrete evidence."""
-    if current_user and current_user.role == UserRole.STUDENT:
+    if _is_student_or_parent(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden: students cannot evaluate interventions",
@@ -684,12 +691,12 @@ async def get_copilot_briefing(
 ):
     """Generate diagnostic AI Copilot briefing for a student or cohort."""
     if current_user:
-        if current_user.role == UserRole.STUDENT:
+        if _is_student_or_parent(current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Forbidden: students cannot access teacher copilot briefing",
             )
-        if current_user.role == UserRole.TEACHER and student_id:
+        if normalize_role(current_user.role) == UserRole.TEACHER and student_id:
             db = get_db()
             assigned = db.get_assigned_student_ids_for_teacher(current_user.id)
             if assigned and student_id not in assigned:
@@ -716,12 +723,12 @@ async def query_teacher_copilot(
     traceability to authorized SLR data, zero fabrication, and strict RBAC isolation.
     """
     if current_user:
-        if current_user.role == UserRole.STUDENT:
+        if _is_student_or_parent(current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Forbidden: students cannot access teacher copilot",
             )
-        if current_user.role == UserRole.TEACHER and request.student_id:
+        if normalize_role(current_user.role) == UserRole.TEACHER and request.student_id:
             db = get_db()
             assigned = db.get_assigned_student_ids_for_teacher(current_user.id)
             if assigned and request.student_id not in assigned:
@@ -753,12 +760,12 @@ async def get_teacher_student_slr(
             headers={"WWW-Authenticate": "Bearer"},
         )
     if current_user:
-        if current_user.role == UserRole.STUDENT:
+        if _is_student_or_parent(current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Forbidden: students cannot use teacher endpoints",
             )
-        if current_user.role == UserRole.TEACHER:
+        if normalize_role(current_user.role) == UserRole.TEACHER:
             db = get_db()
             assigned = db.get_assigned_student_ids_for_teacher(current_user.id)
             if assigned and student_id not in assigned:
@@ -784,7 +791,7 @@ async def get_teacher_students(
             headers={"WWW-Authenticate": "Bearer"},
         )
     if current_user:
-        if current_user.role == UserRole.STUDENT:
+        if _is_student_or_parent(current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Forbidden: students are not authorized to access teacher endpoints",
@@ -810,23 +817,23 @@ async def get_teacher_student_detail(
             headers={"WWW-Authenticate": "Bearer"},
         )
     if current_user:
-        if current_user.role == UserRole.STUDENT:
+        if _is_student_or_parent(current_user):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Forbidden: students cannot use teacher endpoints",
             )
         from fastapi.params import Depends as DependsClass
         effective_db = get_db() if (db is None or isinstance(db, DependsClass)) else db
-        if current_user.role in (UserRole.TEACHER, UserRole.ORG_ADMIN):
+        if normalize_role(current_user.role) in (UserRole.TEACHER, UserRole.ORG_ADMIN):
             target_student = effective_db.get_user(student_id)
             if target_student and target_student.organization_id and current_user.organization_id:
                 if target_student.organization_id not in ("org-default", None) and current_user.organization_id not in ("org-default", None):
-                    if current_user.role != UserRole.SUPER_ADMIN and target_student.organization_id != current_user.organization_id:
+                    if normalize_role(current_user.role) != UserRole.SUPER_ADMIN and target_student.organization_id != current_user.organization_id:
                         raise HTTPException(
                             status_code=status.HTTP_403_FORBIDDEN,
                             detail=f"Forbidden: cross-organization access to student '{student_id}' prohibited",
                         )
-            if current_user.role == UserRole.TEACHER:
+            if normalize_role(current_user.role) == UserRole.TEACHER:
                 assigned = effective_db.get_assigned_student_ids_for_teacher(current_user.id)
                 if assigned and student_id not in assigned:
                     raise HTTPException(
@@ -911,7 +918,7 @@ async def get_teacher_courses(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """List all courses available to the teacher's organization."""
-    if current_user and current_user.role == UserRole.STUDENT:
+    if _is_student_or_parent(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden: students cannot access teacher courses",
@@ -944,7 +951,7 @@ async def get_teacher_classes(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """List class groups for the teacher's organization, optionally filtered by course."""
-    if current_user and current_user.role == UserRole.STUDENT:
+    if _is_student_or_parent(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden: students cannot access teacher classes",
@@ -978,7 +985,7 @@ async def create_teacher_class(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Create a new class group under an organization course."""
-    if current_user and current_user.role == UserRole.STUDENT:
+    if _is_student_or_parent(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden: students cannot create classes",
@@ -1034,7 +1041,7 @@ async def get_teacher_class_students(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Retrieve students enrolled in a specific class group."""
-    if current_user and current_user.role == UserRole.STUDENT:
+    if _is_student_or_parent(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden: students cannot view class rosters",
@@ -1072,7 +1079,7 @@ async def upload_class_note(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Upload class notes scoped strictly to a specific class group."""
-    if current_user and current_user.role == UserRole.STUDENT:
+    if _is_student_or_parent(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden: students cannot upload class notes",
@@ -1125,7 +1132,7 @@ async def upload_remedial_content(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Upload targeted remedial content visible strictly to specified students."""
-    if current_user and current_user.role == UserRole.STUDENT:
+    if _is_student_or_parent(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden: students cannot upload remedial content",
@@ -1199,7 +1206,7 @@ async def create_teacher_assignment(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
     """Create a new assignment distributed to a course or class group."""
-    if current_user and current_user.role == UserRole.STUDENT:
+    if _is_student_or_parent(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden: students cannot create assignments",
@@ -1262,7 +1269,7 @@ async def get_teacher_assignments(
     class_group_id: Optional[str] = None,
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
-    if current_user and current_user.role == UserRole.STUDENT:
+    if _is_student_or_parent(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden: students cannot access teacher assignments management",
@@ -1291,7 +1298,7 @@ async def get_teacher_assessments(
     course_id: str = "crs-chem-101",
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
-    if current_user and current_user.role == UserRole.STUDENT:
+    if _is_student_or_parent(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden: students cannot access teacher assessments management",
@@ -1308,7 +1315,7 @@ async def get_teacher_alerts(
     course_id: str = "crs-chem-101",
     current_user: Optional[User] = Depends(get_current_user_optional),
 ):
-    if current_user and current_user.role == UserRole.STUDENT:
+    if _is_student_or_parent(current_user):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden: students cannot access teacher alerts",

@@ -45,6 +45,7 @@ from central_platform.models.schema import (
     User,
     UserRole,
 )
+from central_platform.rbac.engine import normalize_role
 
 logger = logging.getLogger("gayatri.api.courses")
 
@@ -186,15 +187,7 @@ async def get_course_review_queue(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required to access the course review queue.",
         )
-    _role = current_user.role if isinstance(current_user.role, UserRole) else None
-    if _role is None:
-        try:
-            _role = UserRole(str(current_user.role).lower())
-        except ValueError:
-            try:
-                _role = UserRole[str(current_user.role).upper()]
-            except KeyError:
-                _role = UserRole.STUDENT
+    _role = normalize_role(current_user.role)
     if _role not in (UserRole.ORG_ADMIN, UserRole.SUPER_ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

@@ -55,6 +55,7 @@ from central_platform.models.schema import (
     User,
     UserRole,
 )
+from central_platform.rbac.engine import normalize_role
 from core.assessment.manager import SAMPLE_QUESTION_BANK
 
 router = APIRouter(prefix="/assessments", tags=["Assessments"])
@@ -76,13 +77,14 @@ def _enforce_assessment_access(
             detail="Authentication required in production mode.",
         )
     if current_user:
-        if require_teacher and current_user.role == UserRole.STUDENT:
+        user_role = normalize_role(current_user.role)
+        if require_teacher and user_role in (UserRole.STUDENT, UserRole.PARENT):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access forbidden: role 'STUDENT' is not authorized for this operation.",
+                detail=f"Access forbidden: role '{user_role.value}' is not authorized for this operation.",
             )
         if target_org_id:
-            enforce_resource_boundaries(current_user, target_org_id)
+            enforce_resource_boundaries(current_user, target_org_id=target_org_id)
 
 
 def _enforce_student_isolation(current_user: Optional[User], student_id: Optional[str]) -> None:
@@ -92,12 +94,8 @@ def _enforce_student_isolation(current_user: Optional[User], student_id: Optiona
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required in production mode.",
         )
-    if current_user and current_user.role == UserRole.STUDENT and student_id:
-        if current_user.id != student_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Access forbidden: student '{current_user.id}' cannot access records for student '{student_id}'.",
-            )
+    if current_user and student_id:
+        enforce_resource_boundaries(current_user, target_student_id=student_id)
 
 
 # ── 1. Question Bank Endpoints ───────────────────────────────────────────────
@@ -148,7 +146,7 @@ async def list_assessment_items(
                     )
                 )
 
-    is_student = current_user and current_user.role == UserRole.STUDENT
+    is_student = current_user and normalize_role(current_user.role) in (UserRole.STUDENT, UserRole.PARENT)
     data = [
         QuestionBankItemResponse(
             id=it.id,
@@ -242,7 +240,7 @@ async def get_question_bank_item(
     if not item:
         raise HTTPException(status_code=404, detail=f"Question '{item_id}' not found.")
     
-    is_student = current_user and current_user.role == UserRole.STUDENT
+    is_student = current_user and normalize_role(current_user.role) in (UserRole.STUDENT, UserRole.PARENT)
     return ApiResponse(
         ok=True,
         data=QuestionBankItemResponse(

@@ -13,11 +13,13 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from central_platform.api.schemas import ApiResponse, UserCreateRequest, UserResponse
 from central_platform.auth.dependencies import (
+    enforce_resource_boundaries,
     get_current_user_optional,
     get_db,
     is_production_mode,
 )
 from central_platform.models.schema import User, UserRole
+from central_platform.rbac.engine import normalize_role
 
 logger = logging.getLogger("gayatri.central_platform.api.routes.users")
 
@@ -67,17 +69,19 @@ async def list_users(
             headers={"WWW-Authenticate": "Bearer"},
         )
     if current_user:
-        if current_user.role == UserRole.STUDENT:
+        user_role = normalize_role(current_user.role)
+        if user_role not in (UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Forbidden: students cannot list users",
+                detail="Forbidden: administrative privileges required to list users",
             )
-        if current_user.role == UserRole.ORG_ADMIN and organization_id:
-            if organization_id != current_user.organization_id:
+        if user_role == UserRole.ORG_ADMIN:
+            if organization_id and organization_id != current_user.organization_id:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail=f"Forbidden: cross-org user query for '{organization_id}' prohibited",
                 )
+            organization_id = current_user.organization_id
 
     results = _USERS_STORE
     if role:
@@ -101,12 +105,13 @@ async def create_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     if current_user:
-        if current_user.role in (UserRole.STUDENT, UserRole.TEACHER):
+        user_role = normalize_role(current_user.role)
+        if user_role not in (UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Forbidden: only administrators can create users",
             )
-        if current_user.role == UserRole.ORG_ADMIN:
+        if user_role == UserRole.ORG_ADMIN:
             # Org admin cannot create users for another organization (modified organization_id)
             if req.organization_id and req.organization_id != current_user.organization_id:
                 raise HTTPException(
@@ -136,7 +141,7 @@ async def create_user(
             id=new_user.user_id,
             email=new_user.email,
             full_name=new_user.username,
-            role=UserRole(new_user.role),
+            role=normalize_role(new_user.role),
             organization_id=new_user.organization_id,
             is_active=True,
         )
@@ -162,11 +167,13 @@ async def get_user_by_id(
             headers={"WWW-Authenticate": "Bearer"},
         )
     if current_user:
-        if current_user.role == UserRole.STUDENT and current_user.id != user_id:
+        user_role = normalize_role(current_user.role)
+        if user_role == UserRole.STUDENT and current_user.id != user_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Forbidden: students can only access their own profile",
             )
+        enforce_resource_boundaries(current_user, target_student_id=user_id)
 
     for u in _USERS_STORE:
         if u.user_id == user_id:

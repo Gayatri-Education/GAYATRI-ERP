@@ -20,6 +20,8 @@ from central_platform.api.schemas import (
     TeacherInstructionResponse,
 )
 from central_platform.auth.dependencies import (
+    enforce_resource_boundaries,
+    get_current_user,
     get_current_user_optional,
     get_db,
     is_production_mode,
@@ -31,6 +33,7 @@ from central_platform.models.schema import (
     User,
     UserRole,
 )
+from central_platform.rbac.engine import normalize_role
 from central_platform.teacher.instruction import TeacherInstructionValidator
 
 logger = logging.getLogger("gayatri.api.instructions")
@@ -81,25 +84,46 @@ async def list_instructions(
     session_id: Optional[str] = Query(None, description="Session ID filter"),
     hierarchical: bool = Query(True, description="Resolve 5-tier instruction cascade"),
     db: PlatformDatabase = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """List teacher instructions with optional 5-tier hierarchical cascading resolution."""
-    if hierarchical and (course_id or organization_id or class_id or student_id or session_id):
+    """List teacher instructions with tenant isolation and hierarchical cascading resolution."""
+    user_role = normalize_role(current_user.role)
+    effective_org_id = organization_id
+    effective_student_id = student_id
+
+    if user_role == UserRole.STUDENT:
+        effective_student_id = current_user.id
+        effective_org_id = current_user.organization_id
+    elif user_role == UserRole.PARENT:
+        if student_id:
+            enforce_resource_boundaries(current_user, target_student_id=student_id)
+            effective_student_id = student_id
+        effective_org_id = current_user.organization_id
+    elif user_role != UserRole.SUPER_ADMIN:
+        if organization_id and organization_id != current_user.organization_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Forbidden: cross-organization access to '{organization_id}' prohibited",
+            )
+        effective_org_id = current_user.organization_id
+
+    if hierarchical and (course_id or effective_org_id or class_id or effective_student_id or session_id):
         instructions = db.get_hierarchical_teacher_instructions(
             course_id=course_id,
-            organization_id=organization_id,
+            organization_id=effective_org_id,
             class_id=class_id,
-            student_id=student_id,
+            student_id=effective_student_id,
             session_id=session_id,
             only_active=True,
         )
     else:
         instructions = db.get_teacher_instructions(course_id=course_id)
-        if organization_id:
-            instructions = [i for i in instructions if i.organization_id == organization_id]
+        if effective_org_id:
+            instructions = [i for i in instructions if i.organization_id == effective_org_id]
         if class_id:
             instructions = [i for i in instructions if i.class_id == class_id]
-        if student_id:
-            instructions = [i for i in instructions if i.student_id in (student_id, "all")]
+        if effective_student_id:
+            instructions = [i for i in instructions if i.student_id in (effective_student_id, "all")]
 
     return ApiResponse(ok=True, data=[_to_instruction_response(i) for i in instructions])
 
@@ -125,28 +149,23 @@ async def create_instruction(
         organization_id=req.organization_id or "org-default",
     )
 
-    allowed_roles = {UserRole.TEACHER, UserRole.ORG_ADMIN, UserRole.SUPER_ADMIN, "TEACHER", "ORG_ADMIN", "SUPER_ADMIN"}
-    user_role = actor.role.value if isinstance(actor.role, UserRole) else str(actor.role).upper()
-    if user_role not in allowed_roles and actor.role not in allowed_roles:
+    user_role = normalize_role(actor.role)
+    allowed_roles = {UserRole.TEACHER, UserRole.ORG_ADMIN, UserRole.SUPER_ADMIN}
+    if user_role not in allowed_roles:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Students cannot create teacher instructions.",
+            detail="Forbidden: role not authorized to create teacher instructions.",
         )
 
     # Cross-tenant and student isolation check
-    if user_role not in (UserRole.SUPER_ADMIN.value, "SUPER_ADMIN"):
+    if user_role != UserRole.SUPER_ADMIN:
         if req.organization_id and actor.organization_id and req.organization_id != actor.organization_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Forbidden: cross-organization instruction creation is prohibited ('{req.organization_id}' != '{actor.organization_id}')",
             )
         if req.student_id and req.student_id != "all":
-            st_rec = db.get_user(req.student_id)
-            if st_rec and st_rec.organization_id and actor.organization_id and st_rec.organization_id != actor.organization_id:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"Forbidden: student '{req.student_id}' belongs to another organization",
-                )
+            enforce_resource_boundaries(actor, target_student_id=req.student_id)
 
     # Invariant and safety validation
     val = TeacherInstructionValidator.validate(req.instruction)
@@ -212,13 +231,25 @@ async def create_instruction(
 async def get_instruction(
     instruction_id: str,
     db: PlatformDatabase = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """Retrieve an instruction by ID."""
+    """Retrieve an instruction by ID with tenant verification."""
     inst = db.get_teacher_instruction(instruction_id)
     if not inst:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Instruction '{instruction_id}' not found.",
+        )
+    user_role = normalize_role(current_user.role)
+    if user_role != UserRole.SUPER_ADMIN and inst.organization_id and inst.organization_id != current_user.organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Forbidden: cross-organization access to instruction '{instruction_id}' prohibited",
+        )
+    if user_role == UserRole.STUDENT and inst.student_id not in ("all", "*", current_user.id, None):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: students cannot view instructions directed to another student",
         )
     return ApiResponse(ok=True, data=_to_instruction_response(inst))
 
@@ -227,27 +258,25 @@ async def get_instruction(
 async def delete_instruction(
     instruction_id: str,
     db: PlatformDatabase = Depends(get_db),
-    current_user: Optional[User] = Depends(get_current_user_optional),
+    current_user: User = Depends(get_current_user),
 ):
     """Deactivate or remove a teacher instruction."""
-    if is_production_mode() and not current_user:
+    user_role = normalize_role(current_user.role)
+    if user_role in (UserRole.STUDENT, UserRole.PARENT):
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Authentication required to delete teacher instructions",
-            headers={"WWW-Authenticate": "Bearer"},
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Students and parents cannot delete teacher instructions.",
         )
-    if current_user:
-        user_role = current_user.role.value if isinstance(current_user.role, UserRole) else str(current_user.role).upper()
-        if user_role in (UserRole.STUDENT.value, "STUDENT"):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Students cannot delete teacher instructions.",
-            )
     inst = db.get_teacher_instruction(instruction_id)
     if not inst:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Instruction '{instruction_id}' not found.",
+        )
+    if user_role != UserRole.SUPER_ADMIN and inst.organization_id and inst.organization_id != current_user.organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Forbidden: cross-organization access to instruction '{instruction_id}' prohibited",
         )
     db.delete_teacher_instruction(instruction_id)
     return ApiResponse(ok=True, data={"deleted": True, "instruction_id": instruction_id})

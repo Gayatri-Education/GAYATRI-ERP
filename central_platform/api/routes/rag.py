@@ -24,6 +24,7 @@ from central_platform.api.schemas import (
 from central_platform.auth.dependencies import get_current_user, get_db
 from central_platform.models.schema import RAGSource, User, UserRole
 from central_platform.rag.service import RAGService
+from central_platform.rbac.engine import normalize_role
 
 router = APIRouter(prefix="/rag", tags=["RAG"])
 
@@ -33,19 +34,7 @@ _ADMIN_PLUS = {UserRole.ORG_ADMIN, UserRole.SUPER_ADMIN}
 
 def _get_role(user: User) -> UserRole:
     """Normalize current_user.role to a UserRole enum instance."""
-    r = user.role
-    if isinstance(r, UserRole):
-        return r
-    # Might be a string — try both name and value
-    try:
-        return UserRole(str(r).lower())
-    except ValueError:
-        pass
-    try:
-        return UserRole[str(r).upper()]
-    except KeyError:
-        pass
-    return UserRole.STUDENT  # safe fallback
+    return normalize_role(user.role)
 
 
 def _require_teacher_plus(current_user: User) -> UserRole:

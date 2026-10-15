@@ -11,7 +11,7 @@
 | **QA-003** | Toast-only fee admin & fabricated invoice counts | P1 | FIXED_VERIFIED | Database-backed atomic billing runs, deduplication, verified receipt prints | 03 |
 | **QA-004** | Payment webhook tenant spoofing & org-default fallback | P1 | FIXED_VERIFIED | Gateway-derived tenant binding, constant-time HMAC check, double-entry ledger | 04 |
 | **QA-005** | Edge device auth bypass & silent invalid enum conversion | P1 | FIXED_VERIFIED | Registered device credentials, 422 on invalid enum, atomic punch batches | 05 |
-| **QA-006** | Ad-hoc role comparison & route-level tenant leaks | P1 | NOT_STARTED | Unified RBAC normalization across all routes, zero cross-tenant IDOR | 06 |
+| **QA-006** | Ad-hoc role comparison & route-level tenant leaks | P1 | FIXED_VERIFIED | Unified RBAC normalization across all routes, zero cross-tenant IDOR | 06 |
 | **QA-007** | Invalid task type conversion & synthetic tutor context | P1/P2 | NOT_STARTED | 422 on invalid task type, real student context, scoped RAG grounding | 07 |
 | **QA-008** | Database lifecycle, transactions & singleton isolation | P1 | NOT_STARTED | Explicit instance-scoped DB containers, atomic multi-table rollbacks | 08 |
 | **QA-009** | Disconnected UI buttons & unverified success toasts | P1/P2 | NOT_STARTED | Full UI-to-API-to-DB E2E integration with refreshed postcondition | 09 |
