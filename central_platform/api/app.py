@@ -25,9 +25,16 @@ if "pytest" not in sys.modules and "PYTEST_CURRENT_TEST" not in os.environ and n
 
 logger = logging.getLogger("gayatri.api.app")
 
-from fastapi import Body, FastAPI, HTTPException, Query, Request, Response, status
+from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, JSONResponse
+
+from central_platform.auth.dependencies import (
+    get_current_user_optional,
+    is_production_mode,
+)
+from central_platform.models.schema import User, UserRole
+from central_platform.rbac.engine import normalize_role
 
 from central_platform.api.middleware import (
     RequestIDMiddleware,
@@ -100,6 +107,27 @@ _instruction_engine = TeacherInstructionEngine()
 _intervention_engine = TeacherInterventionEngine()
 _copilot = TeacherCopilot()
 _sync_manager = SyncManager()
+
+
+def _enforce_legacy_auth(
+    current_user: Optional[User],
+    allowed_roles: Optional[set] = None,
+) -> None:
+    """Enforce caller authentication and authorization for legacy mutating routes in production mode."""
+    if is_production_mode():
+        if not current_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required for mutating legacy endpoints in production mode",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+    if current_user and allowed_roles:
+        user_role = normalize_role(current_user.role)
+        if user_role not in allowed_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Forbidden: role '{user_role.value}' is not authorized for this resource",
+            )
 
 
 def create_app() -> FastAPI:
@@ -273,14 +301,21 @@ def create_app() -> FastAPI:
 
     @app.post("/api/teacher/instruction", tags=["Legacy Compatibility"])
     @app.post("/instruction", tags=["Legacy Compatibility"])
-    async def legacy_add_instruction(payload: Dict[str, Any] = Body(...)):
+    async def legacy_add_instruction(
+        payload: Dict[str, Any] = Body(...),
+        current_user: Optional[User] = Depends(get_current_user_optional),
+    ):
+        _enforce_legacy_auth(
+            current_user,
+            allowed_roles={UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN, UserRole.TEACHER},
+        )
         instruction_text = payload.get("instruction", "").strip()
         if not instruction_text:
             raise HTTPException(status_code=400, detail="Missing instruction text")
         inst_id = f"inst-{uuid.uuid4().hex[:6]}"
         inst = TeacherInstruction(
             instruction_id=inst_id,
-            teacher_id="tchr-101",
+            teacher_id=current_user.id if current_user else "tchr-101",
             student_id=payload.get("student_id", "all"),
             course_id=payload.get("course_id", "crs-chem-101"),
             instruction_text=instruction_text,
@@ -292,7 +327,14 @@ def create_app() -> FastAPI:
         return {"ok": True, "instruction_id": inst_id, "instruction": inst.to_dict()}
 
     @app.post("/instruction/toggle", tags=["Legacy Compatibility"])
-    async def legacy_toggle_instruction(payload: Dict[str, Any] = Body(...)):
+    async def legacy_toggle_instruction(
+        payload: Dict[str, Any] = Body(...),
+        current_user: Optional[User] = Depends(get_current_user_optional),
+    ):
+        _enforce_legacy_auth(
+            current_user,
+            allowed_roles={UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN, UserRole.TEACHER},
+        )
         inst_id = payload.get("instruction_id")
         active = payload.get("active", True)
         success = _instruction_engine.toggle_instruction(inst_id, active)
@@ -300,15 +342,34 @@ def create_app() -> FastAPI:
 
     @app.post("/alert/resolve", tags=["Legacy Compatibility"])
     @app.post("/api/teacher/alert/resolve", tags=["Legacy Compatibility"])
-    async def legacy_resolve_alert(payload: Dict[str, Any] = Body(...)):
+    async def legacy_resolve_alert(
+        payload: Dict[str, Any] = Body(...),
+        current_user: Optional[User] = Depends(get_current_user_optional),
+    ):
+        _enforce_legacy_auth(
+            current_user,
+            allowed_roles={UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN, UserRole.TEACHER},
+        )
         alert_id = payload.get("alert_id")
         note = payload.get("resolution_note", "Resolved by teacher directive")
         success = _intervention_engine.resolve_alert(alert_id, note)
         return {"ok": success, "alert_id": alert_id}
 
     @app.post("/api/student/snapshot", tags=["Legacy Compatibility"])
-    async def legacy_student_snapshot(payload: Dict[str, Any] = Body(...)):
+    async def legacy_student_snapshot(
+        payload: Dict[str, Any] = Body(...),
+        current_user: Optional[User] = Depends(get_current_user_optional),
+    ):
+        _enforce_legacy_auth(
+            current_user,
+            allowed_roles={UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN, UserRole.TEACHER, UserRole.STUDENT},
+        )
         sid = payload.get("student_id", "student_001")
+        if current_user and normalize_role(current_user.role) == UserRole.STUDENT and current_user.id != sid:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Students can only submit snapshots for their own account",
+            )
         name = payload.get("student_name", f"Student {sid}")
         mastery = float(payload.get("mastery", 0.5))
         needs_attn = bool(payload.get("needs_attention", False))
@@ -329,9 +390,21 @@ def create_app() -> FastAPI:
         return {"ok": True, "student_id": sid, "mastery": mastery}
 
     @app.post("/api/sync/events", tags=["Legacy Compatibility"])
-    async def legacy_sync_events(payload: Dict[str, Any] = Body(...)):
+    async def legacy_sync_events(
+        payload: Dict[str, Any] = Body(...),
+        current_user: Optional[User] = Depends(get_current_user_optional),
+    ):
+        _enforce_legacy_auth(
+            current_user,
+            allowed_roles={UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN, UserRole.TEACHER, UserRole.STUDENT},
+        )
         events = payload.get("events", [])
         student_id = payload.get("student_id", "student_001")
+        if current_user and normalize_role(current_user.role) == UserRole.STUDENT and current_user.id != student_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Students can only sync events for their own account",
+            )
         for ev in events:
             sync_ev = SyncEvent(
                 event_id=ev.get("event_id", f"sync-{uuid.uuid4().hex[:6]}"),

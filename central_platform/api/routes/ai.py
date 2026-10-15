@@ -6,7 +6,7 @@ and kill switch / budget safety controls.
 from __future__ import annotations
 
 from typing import List, Optional
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from central_platform.ai.gateway import AIGatewayService
 from central_platform.ai.schema import (
@@ -32,10 +32,52 @@ from central_platform.api.schemas import (
     ApiResponse,
     ErrorDetail,
 )
-from central_platform.auth.dependencies import get_db
+from central_platform.auth.dependencies import (
+    get_current_user_optional,
+    get_db,
+    is_production_mode,
+)
+from central_platform.models.schema import User, UserRole
+from central_platform.rbac.engine import normalize_role
 
 router = APIRouter(prefix="/ai", tags=["AI Gateway"])
 _ai_gateway_service: Optional[AIGatewayService] = None
+
+
+def _verify_ai_admin_access(current_user: Optional[User]) -> None:
+    """Enforce that caller has administrative access to modify AI gateway / kill switch / providers."""
+    if is_production_mode():
+        if not current_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required for AI administration in production mode",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+    if current_user:
+        user_role = normalize_role(current_user.role)
+        if user_role not in (UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Forbidden: role '{user_role.value}' is not authorized for AI administration",
+            )
+
+
+def _verify_ai_read_access(current_user: Optional[User]) -> None:
+    """Enforce authentication for inspecting AI providers in production mode."""
+    if is_production_mode():
+        if not current_user:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Authentication required in production mode",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+    if current_user:
+        user_role = normalize_role(current_user.role)
+        if user_role not in (UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN, UserRole.TEACHER):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Forbidden: role '{user_role.value}' is not authorized to inspect AI provider configurations",
+            )
 
 
 def get_ai_gateway_service() -> AIGatewayService:
@@ -146,8 +188,9 @@ async def execute_ai_prompt(req: AIExecutionApiRequest):
 
 
 @router.get("/providers", response_model=ApiResponse[List[AIProviderResponse]])
-async def list_providers():
+async def list_providers(current_user: Optional[User] = Depends(get_current_user_optional)):
     """List all registered AI providers and their configured models."""
+    _verify_ai_read_access(current_user)
     svc = get_ai_gateway_service()
     providers = list(svc.router.providers.values())
     return ApiResponse(
@@ -171,17 +214,24 @@ async def list_providers():
 
 
 @router.post("/providers", response_model=ApiResponse[AIProviderResponse], status_code=status.HTTP_201_CREATED)
-async def create_or_update_provider(req: AIProviderCreateRequest):
+async def create_or_update_provider(
+    req: AIProviderCreateRequest,
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
     """Register or update an AI provider configuration."""
+    _verify_ai_admin_access(current_user)
     svc = get_ai_gateway_service()
     try:
-        ptype = ProviderType(req.provider_type) if req.provider_type in ProviderType._value2member_map_ else ProviderType.MOCK
+        ptype = ProviderType(req.provider_type)
     except Exception:
-        ptype = ProviderType.MOCK
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid provider_type: '{req.provider_type}'",
+        )
 
     cfg = ProviderConfig(
         provider_name=req.provider_name,
-        provider_type=pttype,
+        provider_type=ptype,
         api_key_ref=req.api_key_ref,
         base_url=req.base_url,
         enabled=req.enabled,
@@ -210,8 +260,13 @@ async def create_or_update_provider(req: AIProviderCreateRequest):
 
 
 @router.post("/providers/{provider_name}/toggle", response_model=ApiResponse[dict])
-async def toggle_provider(provider_name: str, enabled: bool = Query(...)):
+async def toggle_provider(
+    provider_name: str,
+    enabled: bool = Query(...),
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
     """Enable or disable a specific provider (provider kill switch)."""
+    _verify_ai_admin_access(current_user)
     svc = get_ai_gateway_service()
     if provider_name not in svc.router.providers:
         raise HTTPException(status_code=404, detail=f"Provider '{provider_name}' not found.")
@@ -222,8 +277,12 @@ async def toggle_provider(provider_name: str, enabled: bool = Query(...)):
 
 
 @router.post("/killswitch", response_model=ApiResponse[dict])
-async def toggle_global_killswitch(req: AIKillSwitchRequest):
+async def toggle_global_killswitch(
+    req: AIKillSwitchRequest,
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
     """Toggle global AI kill switch to instantly halt or resume all AI generation."""
+    _verify_ai_admin_access(current_user)
     svc = get_ai_gateway_service()
     svc.policy_engine.global_kill_switch = req.enabled
     return ApiResponse(
@@ -348,8 +407,12 @@ async def get_budget_status():
 
 
 @router.put("/governance/budgets", response_model=ApiResponse[AIBudgetStatusResponse])
-async def update_budget_limit(req: AIBudgetUpdateRequest):
+async def update_budget_limit(
+    req: AIBudgetUpdateRequest,
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
     """Update daily AI budget threshold in USD."""
+    _verify_ai_admin_access(current_user)
     gov = get_governance_service()
     try:
         updated = gov.set_budget(req.daily_budget_usd)
@@ -376,8 +439,12 @@ async def get_circuit_breakers():
 
 
 @router.post("/governance/circuit-breakers/{provider_name}/reset", response_model=ApiResponse[dict])
-async def reset_circuit_breaker(provider_name: str):
+async def reset_circuit_breaker(
+    provider_name: str,
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
     """Manually reset a tripped circuit breaker to CLOSED state."""
+    _verify_ai_admin_access(current_user)
     gov = get_governance_service()
     reset = gov.reset_circuit_breaker(provider_name)
     if not reset:
@@ -393,16 +460,24 @@ async def get_allowlist():
 
 
 @router.post("/governance/allowlist", response_model=ApiResponse[List[str]])
-async def update_allowlist(req: AIAllowlistUpdateRequest):
+async def update_allowlist(
+    req: AIAllowlistUpdateRequest,
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
     """Set or replace model allowlist."""
+    _verify_ai_admin_access(current_user)
     gov = get_governance_service()
     updated = gov.set_model_allowlist(req.models)
     return ApiResponse(ok=True, data=updated)
 
 
 @router.delete("/governance/allowlist/{model_name}", response_model=ApiResponse[List[str]])
-async def remove_from_allowlist(model_name: str):
+async def remove_from_allowlist(
+    model_name: str,
+    current_user: Optional[User] = Depends(get_current_user_optional),
+):
     """Remove a model from the active allowlist."""
+    _verify_ai_admin_access(current_user)
     gov = get_governance_service()
     updated = gov.remove_model_from_allowlist(model_name)
     return ApiResponse(ok=True, data=updated)

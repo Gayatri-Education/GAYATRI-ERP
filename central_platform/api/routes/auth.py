@@ -140,12 +140,28 @@ async def logout(
 ):
     """Log out current user and invalidate active session tokens."""
     raw_token = extract_bearer_token(authorization)
+    ref_tok = body.get("refresh_token") if (body and isinstance(body, dict)) else None
+
+    if not raw_token and not ref_tok:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No token provided for logout",
+        )
+
+    success = True
     if raw_token:
-        revoke_token(raw_token, reason="user_logout")
-    if body and isinstance(body, dict):
-        ref_tok = body.get("refresh_token")
-        if ref_tok:
-            revoke_token(ref_tok, reason="user_logout_refresh")
+        if not revoke_token(raw_token, reason="user_logout"):
+            success = False
+    if ref_tok:
+        if not revoke_token(ref_tok, reason="user_logout_refresh"):
+            success = False
+
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to persist token revocation; logout unsuccessful",
+        )
+
     return ApiResponse(ok=True, data={"logged_out": True})
 
 

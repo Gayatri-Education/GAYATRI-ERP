@@ -1,0 +1,212 @@
+project: GAYATRI-ERP
+repository: https://github.com/Gayatri-Education/GAYATRI-ERP
+default_branch: main
+overall_status: IN_PROGRESS
+current_phase: PHASE-02
+baseline:
+  commit: becd081b295cbad6c0920a352f493d57671bb0e8
+  inspected_at_utc: "2026-10-15T07:15:00Z"
+  working_tree_clean: false
+last_updated_utc: "2026-10-15T09:47:00Z"
+notes:
+  - "Statuses and test results must be based on actual evidence; do not invent counts, timestamps, commits, or URLs."
+  - "Each phase must plan, reproduce, implement, test, debug, verify, document, and publish before the next phase."
+  - "Initial findings are hypotheses to re-verify against the current checkout."
+phases:
+  - id: PHASE-00
+    title: Repository baseline, inventory, and reproducibility
+    status: DONE
+    branch: dev/phase-00-baseline
+    issue_url: null
+    pull_request_url: null
+    commit_shas: ["becd081b295cbad6c0920a352f493d57671bb0e8"]
+    findings: []
+    files_changed: ["docs/qa/phase-logs/PHASE_00_LOG.md", "docs/development/DEVELOPMENT_GUIDE.md"]
+    test_evidence: ["1651/1651 passed in 235.45s (0 failures, 0 errors, 0 skipped)", "0 compile errors across packages"]
+    blockers: []
+  - id: PHASE-01
+    title: Authentication, authorization, tenant isolation, and revocation
+    status: DONE
+    branch: dev/phase-00-baseline
+    issue_url: null
+    pull_request_url: null
+    commit_shas: []
+    findings: [ERP-003, ERP-004, ERP-012, ERP-014, ERP-015, ERP-019]
+    files_changed:
+      - "central_platform/auth/tokens.py"
+      - "central_platform/api/routes/auth.py"
+      - "central_platform/api/routes/ai.py"
+      - "central_platform/api/app.py"
+      - "tests/test_qa_phase01_auth_remediation.py"
+      - "docs/qa/phase-logs/PHASE_01_PLAN.md"
+      - "docs/qa/phase-logs/PHASE_01_LOG.md"
+    test_evidence:
+      - "8/8 passed in tests/test_qa_phase01_auth_remediation.py in 4.40s"
+      - "86/86 passed across related suites in 16.50s"
+      - "1659/1659 passed in full automated regression suite in 180.92s (0 failures, 0 skipped)"
+    blockers: []
+  - id: PHASE-02
+    title: Database lifecycle, dependency injection, transactions, and durable state
+    status: NOT_STARTED
+    branch: null
+    issue_url: null
+    pull_request_url: null
+    commit_shas: []
+    findings: [ERP-002, ERP-005, ERP-021]
+    files_changed: []
+    test_evidence: []
+    blockers: []
+  - id: PHASE-03
+    title: Finance, payment webhooks, invoices, ledger, and receipts
+    status: NOT_STARTED
+    branch: null
+    issue_url: null
+    pull_request_url: null
+    commit_shas: []
+    findings: [ERP-001, ERP-002, ERP-009]
+    files_changed: []
+    test_evidence: []
+    blockers: []
+  - id: PHASE-04
+    title: AI execution, provider configuration, kill switch, and error contracts
+    status: NOT_STARTED
+    branch: null
+    issue_url: null
+    pull_request_url: null
+    commit_shas: []
+    findings: [ERP-012, ERP-013, ERP-014]
+    files_changed: []
+    test_evidence: []
+    blockers: []
+  - id: PHASE-05
+    title: Student, teacher, admin, and fee UI-to-API wiring
+    status: NOT_STARTED
+    branch: null
+    issue_url: null
+    pull_request_url: null
+    commit_shas: []
+    findings: [ERP-007, ERP-008, ERP-009, ERP-011, ERP-018]
+    files_changed: []
+    test_evidence: []
+    blockers: []
+  - id: PHASE-06
+    title: Student learning, review lifecycle, and persistence
+    status: NOT_STARTED
+    branch: null
+    issue_url: null
+    pull_request_url: null
+    commit_shas: []
+    findings: [ERP-010]
+    files_changed: []
+    test_evidence: []
+    blockers: []
+  - id: PHASE-07
+    title: Assessment, question bank, grading, and anti-fallback behavior
+    status: NOT_STARTED
+    branch: null
+    issue_url: null
+    pull_request_url: null
+    commit_shas: []
+    findings: [ERP-016]
+    files_changed: []
+    test_evidence: []
+    blockers: []
+  - id: PHASE-08
+    title: Tutor orchestration, RAG grounding, and blocked-turn semantics
+    status: NOT_STARTED
+    branch: null
+    issue_url: null
+    pull_request_url: null
+    commit_shas: []
+    findings: [ERP-017]
+    files_changed: []
+    test_evidence: []
+    blockers: []
+  - id: PHASE-09
+    title: Attendance, academic workflows, notifications, and sync
+    status: NOT_STARTED
+    branch: null
+    issue_url: null
+    pull_request_url: null
+    commit_shas: []
+    findings: [ERP-015]
+    files_changed: []
+    test_evidence: []
+    blockers: []
+  - id: PHASE-10
+    title: Health, readiness, observability, and failure reporting
+    status: NOT_STARTED
+    branch: null
+    issue_url: null
+    pull_request_url: null
+    commit_shas: []
+    findings: [ERP-006, ERP-020]
+    files_changed: []
+    test_evidence: []
+    blockers: []
+  - id: PHASE-11
+    title: API contracts, validation, rate limits, and idempotency
+    status: NOT_STARTED
+    branch: null
+    issue_url: null
+    pull_request_url: null
+    commit_shas: []
+    findings: [ERP-013, ERP-020]
+    files_changed: []
+    test_evidence: []
+    blockers: []
+  - id: PHASE-12
+    title: Privacy, secrets, XSS, supply chain, and security regression
+    status: NOT_STARTED
+    branch: null
+    issue_url: null
+    pull_request_url: null
+    commit_shas: []
+    findings: [ERP-018]
+    files_changed: []
+    test_evidence: []
+    blockers: []
+  - id: PHASE-13
+    title: Performance, concurrency, reliability, and recovery
+    status: NOT_STARTED
+    branch: null
+    issue_url: null
+    pull_request_url: null
+    commit_shas: []
+    findings: []
+    files_changed: []
+    test_evidence: []
+    blockers: []
+  - id: PHASE-14
+    title: End-to-end product acceptance and release gate
+    status: NOT_STARTED
+    branch: null
+    issue_url: null
+    pull_request_url: null
+    commit_shas: []
+    findings: [ERP-022]
+    files_changed: []
+    test_evidence: []
+    blockers: []
+  - id: PHASE-15
+    title: Repository cleanup and documentation consolidation
+    status: NOT_STARTED
+    branch: null
+    issue_url: null
+    pull_request_url: null
+    commit_shas: []
+    findings: []
+    files_changed: []
+    test_evidence: []
+    blockers: []
+  - id: PHASE-16
+    title: Final audit, handover, and maintenance
+    status: NOT_STARTED
+    branch: null
+    issue_url: null
+    pull_request_url: null
+    commit_shas: []
+    findings: []
+    files_changed: []
+    test_evidence: []
+    blockers: []

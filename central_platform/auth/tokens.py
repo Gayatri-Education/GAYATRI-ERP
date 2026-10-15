@@ -90,11 +90,18 @@ class DatabaseRevocationStore(RevocationStore):
     - Write-through local caching for microsecond-level query hits.
     """
 
-    def __init__(self, db_path: Optional[str] = None):
-        self.db_path = db_path
+    def __init__(self, db_path: Optional[Any] = None):
+        if hasattr(db_path, "is_token_revoked"):
+            self._db = db_path
+            self.db_path = getattr(db_path, "db_path", None)
+        else:
+            self._db = None
+            self.db_path = db_path
         self._local_cache: Set[str] = set()
 
     def _get_db(self):
+        if self._db is not None:
+            return self._db
         from central_platform.db import PlatformDatabase
         path = self.db_path or os.environ.get("GAYATRI_DB_PATH")
         return PlatformDatabase(path)
@@ -107,8 +114,8 @@ class DatabaseRevocationStore(RevocationStore):
             if db.is_token_revoked(jti):
                 self._local_cache.add(jti)
                 return True
-        except Exception:
-            pass
+        except Exception as exc:
+            raise PermissionError(f"Revocation store verification failed: database unavailable ({exc})") from exc
         return False
 
     def revoke(
@@ -123,7 +130,7 @@ class DatabaseRevocationStore(RevocationStore):
             db = self._get_db()
             return db.revoke_token(jti, user_id=user_id, expires_at=expires_at, reason=reason)
         except Exception:
-            return True
+            return False
 
     def clear(self) -> None:
         self._local_cache.clear()
