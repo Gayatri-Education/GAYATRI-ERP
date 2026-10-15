@@ -1,5 +1,11 @@
 # Gayatri Repository — QA, Bug-Fix, Hardening & Production Readiness Execution Plan
 
+> [!IMPORTANT] Superseded by Canonical QA Remediation Contract
+> This preliminary plan has been superseded by the authoritative 14-phase remediation contract:  
+> **[`GAYATRI_ERP_QA_REMEDIATION_GOAL.md`](GAYATRI_ERP_QA_REMEDIATION_GOAL.md)**  
+> Track live phase progress at: **[`docs/qa/REMEDIATION_MASTER_TRACKER.md`](docs/qa/REMEDIATION_MASTER_TRACKER.md)**  
+> Issue register: **[`docs/qa/REMEDIATION_ISSUE_REGISTER.md`](docs/qa/REMEDIATION_ISSUE_REGISTER.md)**
+
 **Repository:** `https://github.com/Gayatri-Education/Gayatri`  
 **Branch:** `main`  
 **Document purpose:** This file is the master execution specification for a local AI coding agent responsible for auditing, fixing, validating, and hardening the Gayatri repository.

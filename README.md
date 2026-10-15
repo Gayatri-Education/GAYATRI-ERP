@@ -201,13 +201,30 @@ run.bat
 
 ## 📖 Institutional Governance & Verification
 
-Gayatri School OS has been developed and verified through a strict 19-phase engineering transformation plan with **1,775+ automated non-GUI regression tests** passing across all domains:
+Gayatri School OS is governed and hardened under a strict 14-phase QA remediation program with **100% automated regression test pass rates** across all domains:
 
-- 📋 **Master Progress Tracker**: [`docs/erp_agent/MASTER_PROGRESS.md`](docs/erp_agent/MASTER_PROGRESS.md)
+- 📋 **Canonical QA Remediation Tracker**: [`docs/qa/REMEDIATION_MASTER_TRACKER.md`](docs/qa/REMEDIATION_MASTER_TRACKER.md)
+- 🐞 **Canonical Remediation Issue Register (QA-001 through QA-015)**: [`docs/qa/REMEDIATION_ISSUE_REGISTER.md`](docs/qa/REMEDIATION_ISSUE_REGISTER.md)
+- 🔌 **Hardware & Cloud Gateway Disclosures**: [`docs/operations/HARDWARE_AND_THIRD_PARTY_DISCLOSURES.md`](docs/operations/HARDWARE_AND_THIRD_PARTY_DISCLOSURES.md)
+- 🛡️ **Route Authorization & Tenant Audit Matrix**: [`docs/qa/REMEDIATION_ROUTE_AUTHORIZATION_MATRIX.md`](docs/qa/REMEDIATION_ROUTE_AUTHORIZATION_MATRIX.md)
+- 📦 **Authoritative Release Handover**: [`docs/qa/RELEASE_HANDOVER.md`](docs/qa/RELEASE_HANDOVER.md)
 - 🗺️ **Full Architecture & Subsystem Map**: [`docs/erp_agent/REPOSITORY_MAP.md`](docs/erp_agent/REPOSITORY_MAP.md)
-- 🏛️ **Architecture Decisions (DEC-000 to DEC-012)**: [`docs/erp_agent/DECISIONS.md`](docs/erp_agent/DECISIONS.md)
-- 🛡️ **STRIDE Threat Model & Security Posture**: [`docs/erp_agent/THREAT_MODEL.md`](docs/erp_agent/THREAT_MODEL.md)
-- 🔍 **Transformation Contract**: [`ERP_TRANSFORMATION_DEVELOPMENT.md`](ERP_TRANSFORMATION_DEVELOPMENT.md)
+- 🔍 **Remediation Contract**: [`GAYATRI_ERP_QA_REMEDIATION_GOAL.md`](GAYATRI_ERP_QA_REMEDIATION_GOAL.md)
+
+---
+
+## ⚖️ Claims vs. Evidence Matrix
+
+To maintain production integrity and transparent engineering standards, all product capabilities are mapped to reproducible code verification and disclosed operational boundaries:
+
+| Domain / Capability | Implementation & Verification Evidence | Verification Status | Operational Limitation / Disclosure |
+|---|---|:---:|---|
+| **100% Student Data Privacy & Local AI** | `core/providers/local.py`, `core/rag/retriever.py`, `tests/test_phase11_offline_sync_and_hardware.py` | **VERIFIED** | Local SLM inference runs strictly on-device via `llama-cpp-python` with zero external network calls. Empty RAG returns honest `RAG_EMPTY` without remote fallback. |
+| **Offline Reliability & Crash Recovery** | `local_runtime/sync_outbox.py`, `central_platform/sync/edge_service.py`, `tests/test_phase11_offline_sync_and_hardware.py` | **VERIFIED** | Operations queued in durable SQLite WAL outbox; in-flight items recover to `PENDING` upon unexpected shutdown; exponential backoff prevents retry storms. |
+| **Multi-Modal Attendance & Edge Hardware** | `central_platform/edge/drivers/simulator.py`, `central_platform/edge/protocol.py`, `tests/test_phase05_edge_sync_remediation.py` | **SIMULATED / CONTRACT_VERIFIED** | Software packet framing, CRC-16 checks, and outbox buffering are fully verified. Physical RFID/biometric terminal acceptance is **`BLOCKED`** (`BLK-003`) until physical devices are connected. |
+| **Double-Entry Fee Ledger & Webhooks** | `central_platform/finance/service.py`, `central_platform/payments/razorpay.py`, `tests/test_phase04_payment_webhook_remediation.py` | **VERIFIED** | Constant-time HMAC-SHA256 signature verification, tenant order binding, and idempotent billing runs are verified. Live payment gateway processing requires customer Razorpay API keys. |
+| **Multi-Tenant RBAC & IDOR Isolation** | `central_platform/auth/deps.py`, `docs/qa/REMEDIATION_ROUTE_AUTHORIZATION_MATRIX.md`, `tests/test_phase06_rbac_tenant_audit.py` | **VERIFIED** | Centralized dependency injection enforces organization ID boundaries and canonical role hierarchy across all API routes. Zero cross-tenant leakage. |
+| **Deterministic Database Migrations** | `migrations/` (16 scripts), `scripts/migrate_db.py`, `scripts/backup_restore_db.py`, `tests/test_phase08_database_isolation.py` | **VERIFIED** | 16 forward and reverse migrations with SHA-256 checksum tracking; hot online WAL backup verified with foreign key checks. |
 
 ---
 

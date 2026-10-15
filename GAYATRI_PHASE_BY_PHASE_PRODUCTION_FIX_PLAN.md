@@ -1,5 +1,11 @@
 # Gayatri AI — Phase-by-Phase Production Fix & Verification Plan
 
+> [!IMPORTANT] Superseded by Canonical QA Remediation Contract
+> This preliminary plan has been superseded by the authoritative 14-phase remediation contract:  
+> **[`GAYATRI_ERP_QA_REMEDIATION_GOAL.md`](GAYATRI_ERP_QA_REMEDIATION_GOAL.md)**  
+> Track live phase progress at: **[`docs/qa/REMEDIATION_MASTER_TRACKER.md`](docs/qa/REMEDIATION_MASTER_TRACKER.md)**  
+> Issue register: **[`docs/qa/REMEDIATION_ISSUE_REGISTER.md`](docs/qa/REMEDIATION_ISSUE_REGISTER.md)**
+
 **Repository:** https://github.com/Gayatri-Education/Gayatri  
 **Purpose:** Execution specification for a local AI coding agent to remediate defects and validation gaps, then prove production readiness with reproducible evidence.  
 **Audit input:** `INDEPENDENT_QA_PRODUCTION_READINESS_AUDIT_2026-10-14.md`  
