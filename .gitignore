@@ -94,7 +94,5 @@ PRIVATE_WORK/
 *.csv
 local_auth_tokens.json
 demo_recordings/
-*.webm
-*.srt
-*.vtt
+
 
