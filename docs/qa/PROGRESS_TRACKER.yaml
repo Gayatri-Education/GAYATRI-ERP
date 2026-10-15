@@ -347,7 +347,7 @@ phases:
     branch: dev/phase-00-baseline
     issue_url: null
     pull_request_url: null
-    commit_shas: []
+    commit_shas: ["4131e35"]
     findings: []
     files_changed:
       - "docs/qa/RELEASE_HANDOVER.md"
