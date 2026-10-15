@@ -7,10 +7,13 @@ from __future__ import annotations
 
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import JSONResponse
 
 from central_platform.ai.gateway import AIGatewayService
+from central_platform.db import PlatformDatabase
 from central_platform.ai.schema import (
     AIExecutionRequest,
+    ModelExecutionStatus,
     ModelTier,
     ProviderConfig,
     ProviderType,
@@ -80,18 +83,18 @@ def _verify_ai_read_access(current_user: Optional[User]) -> None:
             )
 
 
-def get_ai_gateway_service() -> AIGatewayService:
+def get_ai_gateway_service(db: Optional[PlatformDatabase] = Depends(get_db)) -> AIGatewayService:
     global _ai_gateway_service
-    if _ai_gateway_service is None:
+    if db is None or not isinstance(db, PlatformDatabase):
         db = get_db()
+    if _ai_gateway_service is None or _ai_gateway_service.db is not db:
         _ai_gateway_service = AIGatewayService(db=db)
     return _ai_gateway_service
 
 
 @router.get("/status", response_model=ApiResponse[AIStatusResponse])
-async def get_ai_status():
+async def get_ai_status(svc: AIGatewayService = Depends(get_ai_gateway_service)):
     """Retrieve AI model router health, token usage, active provider, and budget."""
-    svc = get_ai_gateway_service()
     data = svc.get_status()
     return ApiResponse(
         ok=True,
@@ -114,9 +117,30 @@ async def get_ai_status():
 
 
 @router.post("/execute", response_model=ApiResponse[AIExecutionApiResponse])
-async def execute_ai_prompt(req: AIExecutionApiRequest):
+async def execute_ai_prompt(
+    req: AIExecutionApiRequest,
+    current_user: Optional[User] = Depends(get_current_user_optional),
+    svc: AIGatewayService = Depends(get_ai_gateway_service),
+):
     """Execute AI generation through the Gateway pipeline with routing, policy checks, and failover."""
-    svc = get_ai_gateway_service()
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required for AI execution in production mode",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if current_user:
+        user_role = normalize_role(current_user.role)
+        if user_role == UserRole.STUDENT:
+            if req.student_id and req.student_id != current_user.id:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Forbidden: Students may only execute AI generation for their own account",
+                )
+            if not req.student_id:
+                req.student_id = current_user.id
+
     try:
         task_type_enum = TaskType(req.task_type) if req.task_type in TaskType._value2member_map_ else TaskType.GENERAL
     except Exception:
@@ -138,32 +162,51 @@ async def execute_ai_prompt(req: AIExecutionApiRequest):
 
     result = svc.execute(exec_req)
     if not result.success:
-        return ApiResponse(
-            ok=False,
-            error=ErrorDetail(
-                code=result.error_class or "AI_EXECUTION_ERROR",
-                message=result.error_message or "AI Execution failed",
-            ),
-            data=AIExecutionApiResponse(
-                request_id=result.request_id,
-                content="",
-                provider=result.provider,
-                model=result.model,
-                prompt_tokens=result.prompt_tokens,
-                completion_tokens=result.completion_tokens,
-                total_tokens=result.total_tokens,
-                latency_ms=result.latency_ms,
-                estimated_cost_usd=result.estimated_cost_usd,
-                success=False,
-                error_class=result.error_class,
-                error_message=result.error_message,
-                fallback_used=result.fallback_used,
-                original_provider=result.original_provider,
-                mock=getattr(result, "mock", False),
-                status=result.status.value if hasattr(result.status, "value") else str(result.status or ""),
-            ),
-        )
+        err_cls = result.error_class or ""
+        msg = (result.error_message or "").lower()
+        status_enum = result.status
 
+        if "killswitch" in err_cls.lower() or "kill switch" in msg or status_enum == ModelExecutionStatus.MODEL_UNAVAILABLE:
+            http_status = status.HTTP_503_SERVICE_UNAVAILABLE
+        elif "rate limit" in msg or status_enum == ModelExecutionStatus.MODEL_RATE_LIMITED:
+            http_status = status.HTTP_429_TOO_MANY_REQUESTS
+        elif "timeout" in msg or status_enum == ModelExecutionStatus.MODEL_TIMEOUT:
+            http_status = status.HTTP_504_GATEWAY_TIMEOUT
+        elif "mockinproductionprohibited" in err_cls.lower() or status_enum == ModelExecutionStatus.MODEL_CONFIGURATION_ERROR:
+            http_status = status.HTTP_422_UNPROCESSABLE_ENTITY
+        elif "policyviolation" in err_cls.lower() or "policy" in msg:
+            http_status = status.HTTP_403_FORBIDDEN
+        else:
+            http_status = status.HTTP_503_SERVICE_UNAVAILABLE
+
+        return JSONResponse(
+            status_code=http_status,
+            content=ApiResponse(
+                ok=False,
+                error=ErrorDetail(
+                    code=result.error_class or "AI_EXECUTION_ERROR",
+                    message=result.error_message or "AI Execution failed",
+                ),
+                data=AIExecutionApiResponse(
+                    request_id=result.request_id,
+                    content="",
+                    provider=result.provider,
+                    model=result.model,
+                    prompt_tokens=result.prompt_tokens,
+                    completion_tokens=result.completion_tokens,
+                    total_tokens=result.total_tokens,
+                    latency_ms=result.latency_ms,
+                    estimated_cost_usd=result.estimated_cost_usd,
+                    success=False,
+                    error_class=result.error_class,
+                    error_message=result.error_message,
+                    fallback_used=result.fallback_used,
+                    original_provider=result.original_provider,
+                    mock=getattr(result, "mock", False),
+                    status=result.status.value if hasattr(result.status, "value") else str(result.status or ""),
+                ),
+            ).dict(),
+        )
 
     return ApiResponse(
         ok=True,
@@ -188,10 +231,12 @@ async def execute_ai_prompt(req: AIExecutionApiRequest):
 
 
 @router.get("/providers", response_model=ApiResponse[List[AIProviderResponse]])
-async def list_providers(current_user: Optional[User] = Depends(get_current_user_optional)):
+async def list_providers(
+    current_user: Optional[User] = Depends(get_current_user_optional),
+    svc: AIGatewayService = Depends(get_ai_gateway_service),
+):
     """List all registered AI providers and their configured models."""
     _verify_ai_read_access(current_user)
-    svc = get_ai_gateway_service()
     providers = list(svc.router.providers.values())
     return ApiResponse(
         ok=True,
@@ -217,10 +262,10 @@ async def list_providers(current_user: Optional[User] = Depends(get_current_user
 async def create_or_update_provider(
     req: AIProviderCreateRequest,
     current_user: Optional[User] = Depends(get_current_user_optional),
+    svc: AIGatewayService = Depends(get_ai_gateway_service),
 ):
     """Register or update an AI provider configuration."""
     _verify_ai_admin_access(current_user)
-    svc = get_ai_gateway_service()
     try:
         ptype = ProviderType(req.provider_type)
     except Exception:
@@ -264,10 +309,10 @@ async def toggle_provider(
     provider_name: str,
     enabled: bool = Query(...),
     current_user: Optional[User] = Depends(get_current_user_optional),
+    svc: AIGatewayService = Depends(get_ai_gateway_service),
 ):
     """Enable or disable a specific provider (provider kill switch)."""
     _verify_ai_admin_access(current_user)
-    svc = get_ai_gateway_service()
     if provider_name not in svc.router.providers:
         raise HTTPException(status_code=404, detail=f"Provider '{provider_name}' not found.")
 
@@ -280,10 +325,10 @@ async def toggle_provider(
 async def toggle_global_killswitch(
     req: AIKillSwitchRequest,
     current_user: Optional[User] = Depends(get_current_user_optional),
+    svc: AIGatewayService = Depends(get_ai_gateway_service),
 ):
     """Toggle global AI kill switch to instantly halt or resume all AI generation."""
     _verify_ai_admin_access(current_user)
-    svc = get_ai_gateway_service()
     svc.policy_engine.global_kill_switch = req.enabled
     return ApiResponse(
         ok=True,
@@ -295,9 +340,11 @@ async def toggle_global_killswitch(
 
 
 @router.post("/route", response_model=ApiResponse[AIRoutePreviewResponse])
-async def preview_routing(req: AIRoutePreviewRequest):
+async def preview_routing(
+    req: AIRoutePreviewRequest,
+    svc: AIGatewayService = Depends(get_ai_gateway_service),
+):
     """Preview which provider and model the router will select for a workload."""
-    svc = get_ai_gateway_service()
     try:
         task_type_enum = TaskType(req.task_type) if req.task_type in TaskType._value2member_map_ else TaskType.GENERAL
     except Exception:
@@ -324,9 +371,10 @@ async def preview_routing(req: AIRoutePreviewRequest):
 
 # ── Phase 18: AI Governance & Observability Endpoints ────────────────────
 
-def get_governance_service():
+def get_governance_service(gw: Optional[AIGatewayService] = Depends(get_ai_gateway_service)):
+    if gw is None or not isinstance(gw, AIGatewayService):
+        gw = get_ai_gateway_service()
     from central_platform.ai.governance import AIGovernanceService
-    gw = get_ai_gateway_service()
     return AIGovernanceService(gateway=gw, db=gw.db)
 
 

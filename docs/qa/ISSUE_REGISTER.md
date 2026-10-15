@@ -18,7 +18,7 @@
 | ERP-010 | Student review action may be toast-only | P1/P2 | NEEDS_REVALIDATION | Review lifecycle and restart persistence test | 06 |
 | ERP-011 | Teacher Copilot action may not call backend | P1/P2 | NEEDS_REVALIDATION | Request/result/error E2E test | 05 |
 | ERP-012 | AI execution/provider control endpoints may lack effective authorization | P1 | FIXED_VERIFIED | Role and tenant negative tests for all AI routes | 01, 04 |
-| ERP-013 | AI failures may be encoded as HTTP 200 | P1/P2 | NEEDS_REVALIDATION | API contract tests for provider failures | 04, 11 |
+| ERP-013 | AI failures may be encoded as HTTP 200 | P1/P2 | FIXED_VERIFIED | API contract tests for provider failures | 04, 11 |
 | ERP-014 | Unknown provider type may silently default to mock | P2 | FIXED_VERIFIED | Invalid enum must reject without provider mutation | 01, 04 |
 | ERP-015 | Legacy API endpoints may bypass canonical auth/persistence | P1 | FIXED_VERIFIED | Route inventory, auth matrix, restart tests | 01, 09 |
 | ERP-016 | Assessment bank may serve fallback sample questions in empty production state | P1/P2 | NEEDS_REVALIDATION | Empty-bank and explicit demo-mode tests | 07 |
