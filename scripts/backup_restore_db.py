@@ -68,7 +68,11 @@ def verify_database_integrity(db_path: str) -> Dict[str, Any]:
     integrity_rows = cursor.execute("PRAGMA integrity_check;").fetchall()
     is_ok = len(integrity_rows) == 1 and integrity_rows[0][0] == "ok"
 
-    # 2. Table counts
+    # 2. PRAGMA foreign_key_check
+    fk_rows = cursor.execute("PRAGMA foreign_key_check;").fetchall()
+    fk_ok = len(fk_rows) == 0
+
+    # 3. Table counts
     table_counts = {}
     tables = [r[0] for r in cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';").fetchall()]
     for tbl in tables:
@@ -78,6 +82,8 @@ def verify_database_integrity(db_path: str) -> Dict[str, Any]:
     conn.close()
     return {
         "integrity_ok": is_ok,
+        "foreign_keys_ok": fk_ok,
+        "foreign_key_violations": len(fk_rows),
         "tables": table_counts,
         "table_count": len(tables),
     }
