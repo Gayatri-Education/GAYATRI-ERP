@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger("gayatri.central_platform.assessment.service")
@@ -178,6 +178,33 @@ class AssessmentService:
         if not assessment.created_at:
             assessment.created_at = datetime.now(timezone.utc).isoformat()
         self._ensure_entities(course_id=assessment.course_id, org_id=assessment.organization_id)
+
+        # Deduplicate item_ids while preserving order
+        if assessment.item_ids:
+            seen = set()
+            deduped = []
+            for iid in assessment.item_ids:
+                if iid not in seen:
+                    seen.add(iid)
+                    deduped.append(iid)
+            assessment.item_ids = deduped
+
+            # Validate question item course and tenant boundaries
+            if not self.allow_auto_provision:
+                for iid in assessment.item_ids:
+                    item = self.get_question(iid)
+                    if item:
+                        if item.course_id and assessment.course_id and item.course_id != assessment.course_id:
+                            raise ValueError(
+                                f"Cross-course contamination: Question item '{iid}' belongs to course '{item.course_id}', "
+                                f"not assessment course '{assessment.course_id}'."
+                            )
+                        if item.organization_id and assessment.organization_id and item.organization_id != assessment.organization_id:
+                            raise ValueError(
+                                f"Cross-tenant contamination: Question item '{iid}' belongs to organization '{item.organization_id}', "
+                                f"not assessment organization '{assessment.organization_id}'."
+                            )
+
         return self.db.create_assessment(assessment)
 
     def get_assessment(self, assessment_id: str) -> Optional[Assessment]:
@@ -385,8 +412,8 @@ class AssessmentService:
         if not attempt:
             raise ValueError(f"Attempt '{attempt_id}' not found.")
 
-        if attempt.status in (AttemptStatus.GRADED.value, AttemptStatus.SUBMITTED.value, "reviewed"):
-            raise ValueError(f"Attempt '{attempt_id}' is already finalized (status: {attempt.status}).")
+        if attempt.status in (AttemptStatus.GRADED.value, AttemptStatus.SUBMITTED.value, "reviewed", AttemptStatus.ABANDONED.value, "expired"):
+            raise ValueError(f"Attempt '{attempt_id}' is already finalized or closed (status: {attempt.status}).")
 
         if student_id and attempt.student_id != student_id:
             raise ValueError(f"Student ID mismatch: attempt '{attempt_id}' belongs to '{attempt.student_id}', but was submitted by '{student_id}'.")
@@ -394,6 +421,22 @@ class AssessmentService:
         asmt = self.get_assessment(attempt.assessment_id)
         if not asmt:
             raise ValueError(f"Assessment '{attempt.assessment_id}' not found.")
+
+        # Check duration limit if configured (with 5 minute grace period)
+        if asmt.duration_minutes and asmt.duration_minutes > 0 and attempt.started_at:
+            started_dt = datetime.fromisoformat(attempt.started_at)
+            if started_dt.tzinfo is None:
+                started_dt = started_dt.replace(tzinfo=timezone.utc)
+            now_dt = datetime.now(timezone.utc)
+            elapsed_minutes = (now_dt - started_dt).total_seconds() / 60.0
+            max_allowed_minutes = float(asmt.duration_minutes) + 5.0
+            if elapsed_minutes > max_allowed_minutes:
+                attempt.status = AttemptStatus.ABANDONED.value
+                self.db.record_assessment_attempt(attempt)
+                raise ValueError(
+                    f"Attempt '{attempt_id}' has expired. Time limit of {asmt.duration_minutes} minutes exceeded "
+                    f"({round(elapsed_minutes, 1)} minutes elapsed)."
+                )
 
         # Retrieve items to grade
         items_to_grade: List[QuestionBankItem] = []

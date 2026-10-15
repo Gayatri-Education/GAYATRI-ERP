@@ -41,6 +41,34 @@ def ensure_isolated_test_database(tmp_path_factory):
                 "VALUES ('org-default', 'Default Organization', 'default', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
             )
             conn.commit()
+
+        cur.execute("SELECT COUNT(*) FROM courses WHERE id = 'crs-chem-101'")
+        if cur.fetchone()[0] == 0:
+            cur.execute(
+                "INSERT INTO courses (id, organization_id, code, title, subject, created_at, updated_at) "
+                "VALUES ('crs-chem-101', 'org-default', 'CHEM101', 'Thermodynamics', 'Chemistry', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+            )
+            conn.commit()
+
+        cur.execute("SELECT COUNT(*) FROM question_bank_items WHERE id = 'q1'")
+        if cur.fetchone()[0] == 0:
+            import json
+            cur.execute(
+                "INSERT INTO question_bank_items (id, course_id, organization_id, concept_id, question_text, item_type, options, correct_answer, difficulty, is_active, created_at) "
+                "VALUES ('q1', 'crs-chem-101', 'org-default', 'chem_thermo_first_law', 'For a spontaneous process at constant temperature and pressure, what is delta G?', 'MCQ', ?, 'delta G < 0', 2, 1, CURRENT_TIMESTAMP)",
+                (json.dumps(["delta G < 0", "delta G > 0", "delta G = 0", "delta G is undefined"]),)
+            )
+            conn.commit()
+
+        cur.execute("SELECT COUNT(*) FROM assessments WHERE id = 'asmt-001'")
+        if cur.fetchone()[0] == 0:
+            import json
+            cur.execute(
+                "INSERT INTO assessments (id, course_id, organization_id, title, assessment_type, total_marks, item_ids, passing_score, status, created_at, updated_at) "
+                "VALUES ('asmt-001', 'crs-chem-101', 'org-default', 'Thermodynamics Diagnostic', 'formative', 4.0, ?, 70.0, 'published', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)",
+                (json.dumps(["q1"]),)
+            )
+            conn.commit()
     finally:
         conn.close()
 

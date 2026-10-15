@@ -21,7 +21,7 @@
 | ERP-013 | AI failures may be encoded as HTTP 200 | P1/P2 | FIXED_VERIFIED | API contract tests for provider failures | 04, 11 |
 | ERP-014 | Unknown provider type may silently default to mock | P2 | FIXED_VERIFIED | Invalid enum must reject without provider mutation | 01, 04 |
 | ERP-015 | Legacy API endpoints may bypass canonical auth/persistence | P1 | FIXED_VERIFIED | Route inventory, auth matrix, restart tests | 01, 09 |
-| ERP-016 | Assessment bank may serve fallback sample questions in empty production state | P1/P2 | NEEDS_REVALIDATION | Empty-bank and explicit demo-mode tests | 07 |
+| ERP-016 | Assessment bank may serve fallback sample questions in empty production state | P1/P2 | FIXED_VERIFIED | Empty-bank and explicit demo-mode tests | 07 |
 | ERP-017 | Blocked tutor turn may look like a successful completed turn | P2 | NEEDS_REVALIDATION | Status contract and progress non-mutation test | 08 |
 | ERP-018 | Dynamic `innerHTML` / inline handler interpolation may enable injection | P2 | FIXED_VERIFIED | Contextual escaping and XSS regression tests | 05, 12 |
 | ERP-019 | Optional/missing bearer token edge cases | P1 | FIXED_VERIFIED | Route-by-route anonymous/malformed-header tests | 01 |

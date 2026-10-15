@@ -737,12 +737,12 @@ class QuestionBankItemResponse(BaseModel):
     concept_id: str = ""
     topic_id: str = ""
     options: List[str] = Field(default_factory=list)
-    correct_answer: str = ""
+    correct_answer: Optional[str] = None
     rubric: Dict[str, Any] = Field(default_factory=dict)
     difficulty: int = 1
     bloom_level: str = "recall"
     hints: List[str] = Field(default_factory=list)
-    explanation: str = ""
+    explanation: Optional[str] = None
     tags: List[str] = Field(default_factory=list)
     is_active: bool = True
     created_at: str

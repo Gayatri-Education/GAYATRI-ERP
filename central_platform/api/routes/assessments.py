@@ -12,6 +12,7 @@ Fulfills Master Plan Section 28:
 
 from __future__ import annotations
 
+import os
 import uuid
 from typing import Any, Dict, List, Optional
 
@@ -40,18 +41,63 @@ from central_platform.api.schemas import (
 )
 from central_platform.assessment.models import AssessmentType
 from central_platform.assessment.service import AssessmentService
+from central_platform.auth.dependencies import (
+    enforce_resource_boundaries,
+    get_current_user_optional,
+    get_db,
+    is_production_mode,
+)
+from central_platform.db import PlatformDatabase
 from central_platform.models.schema import (
     Assessment,
     Assignment,
     QuestionBankItem,
+    User,
+    UserRole,
 )
 from core.assessment.manager import SAMPLE_QUESTION_BANK
 
 router = APIRouter(prefix="/assessments", tags=["Assessments"])
 
 
-def get_assessment_service() -> AssessmentService:
-    return AssessmentService()
+def get_assessment_service(db: PlatformDatabase = Depends(get_db)) -> AssessmentService:
+    return AssessmentService(db=db)
+
+
+def _enforce_assessment_access(
+    current_user: Optional[User],
+    target_org_id: Optional[str] = None,
+    require_teacher: bool = False,
+) -> None:
+    """Enforce authentication in production mode and role/tenant boundaries."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required in production mode.",
+        )
+    if current_user:
+        if require_teacher and current_user.role == UserRole.STUDENT:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access forbidden: role 'STUDENT' is not authorized for this operation.",
+            )
+        if target_org_id:
+            enforce_resource_boundaries(current_user, target_org_id)
+
+
+def _enforce_student_isolation(current_user: Optional[User], student_id: Optional[str]) -> None:
+    """Enforce authentication in production mode and student self-access isolation."""
+    if is_production_mode() and not current_user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Authentication required in production mode.",
+        )
+    if current_user and current_user.role == UserRole.STUDENT and student_id:
+        if current_user.id != student_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Access forbidden: student '{current_user.id}' cannot access records for student '{student_id}'.",
+            )
 
 
 # ── 1. Question Bank Endpoints ───────────────────────────────────────────────
@@ -63,9 +109,17 @@ async def list_assessment_items(
     difficulty: Optional[int] = Query(None, description="Difficulty filter (1-5)"),
     item_type: Optional[str] = Query(None, description="Question type filter"),
     topic_id: Optional[str] = Query(None, description="Legacy topic ID alias"),
+    include_demo: bool = Query(False, description="Explicitly request sample questions if bank is empty (prohibited in production)"),
+    current_user: Optional[User] = Depends(get_current_user_optional),
     service: AssessmentService = Depends(get_assessment_service),
 ):
-    """Retrieve question bank items with filtering. Defaults to populated bank or sample items."""
+    """Retrieve question bank items with filtering. Defaults to populated bank.
+    
+    Anti-Fallback Policy (ERP-016):
+    In production mode or when include_demo is False, an empty question bank returns an empty list.
+    Sample fallback questions are never returned in production mode and require explicit include_demo=True in non-prod.
+    """
+    _enforce_assessment_access(current_user)
     effective_concept = concept_id or topic_id
     items = service.list_questions(
         course_id=course_id,
@@ -74,8 +128,10 @@ async def list_assessment_items(
         item_type=item_type,
     )
 
-    if not items:
-        # Fallback to SAMPLE_QUESTION_BANK for seamless backward compatibility
+    is_prod = is_production_mode()
+    allow_demo = (not is_prod) and (include_demo or os.environ.get("GAYATRI_DEMO_MODE", "").lower() in ("true", "1"))
+
+    if not items and allow_demo:
         for q in SAMPLE_QUESTION_BANK:
             q_concept = getattr(q, "concept_id", getattr(q, "topic_id", "chem_thermo_first_law"))
             if not effective_concept or q_concept == effective_concept:
@@ -92,6 +148,7 @@ async def list_assessment_items(
                     )
                 )
 
+    is_student = current_user and current_user.role == UserRole.STUDENT
     data = [
         QuestionBankItemResponse(
             id=it.id,
@@ -103,12 +160,12 @@ async def list_assessment_items(
             concept_id=it.concept_id,
             topic_id=it.topic_id,
             options=it.options,
-            correct_answer=it.correct_answer,
-            rubric=it.rubric,
+            correct_answer=None if is_student else it.correct_answer,
+            rubric={} if is_student else it.rubric,
             difficulty=it.difficulty,
             bloom_level=it.bloom_level,
             hints=it.hints,
-            explanation=it.explanation,
+            explanation=None if is_student else it.explanation,
             tags=it.tags,
             is_active=it.is_active,
             created_at=it.created_at,
@@ -121,9 +178,11 @@ async def list_assessment_items(
 @router.post("/items", response_model=ApiResponse[QuestionBankItemResponse], status_code=status.HTTP_201_CREATED)
 async def create_question_bank_item(
     req: QuestionBankItemCreateRequest,
+    current_user: Optional[User] = Depends(get_current_user_optional),
     service: AssessmentService = Depends(get_assessment_service),
 ):
     """Create a new question bank item."""
+    _enforce_assessment_access(current_user, target_org_id=req.organization_id, require_teacher=True)
     item = QuestionBankItem(
         id=f"qb-{uuid.uuid4().hex[:10]}",
         course_id=req.course_id,
@@ -174,12 +233,16 @@ async def create_question_bank_item(
 @router.get("/items/{item_id}", response_model=ApiResponse[QuestionBankItemResponse])
 async def get_question_bank_item(
     item_id: str,
+    current_user: Optional[User] = Depends(get_current_user_optional),
     service: AssessmentService = Depends(get_assessment_service),
 ):
     """Get question bank item details by ID."""
+    _enforce_assessment_access(current_user)
     item = service.get_question(item_id)
     if not item:
         raise HTTPException(status_code=404, detail=f"Question '{item_id}' not found.")
+    
+    is_student = current_user and current_user.role == UserRole.STUDENT
     return ApiResponse(
         ok=True,
         data=QuestionBankItemResponse(
@@ -192,12 +255,12 @@ async def get_question_bank_item(
             concept_id=item.concept_id,
             topic_id=item.topic_id,
             options=item.options,
-            correct_answer=item.correct_answer,
-            rubric=item.rubric,
+            correct_answer=None if is_student else item.correct_answer,
+            rubric={} if is_student else item.rubric,
             difficulty=item.difficulty,
             bloom_level=item.bloom_level,
             hints=item.hints,
-            explanation=item.explanation,
+            explanation=None if is_student else item.explanation,
             tags=item.tags,
             is_active=item.is_active,
             created_at=item.created_at,
@@ -210,9 +273,11 @@ async def get_question_bank_item(
 @router.post("", response_model=ApiResponse[AssessmentResponse], status_code=status.HTTP_201_CREATED)
 async def create_assessment(
     req: AssessmentCreateRequest,
+    current_user: Optional[User] = Depends(get_current_user_optional),
     service: AssessmentService = Depends(get_assessment_service),
 ):
     """Create an assessment definition (Diagnostic, Formative, Summative, Adaptive, etc.)."""
+    _enforce_assessment_access(current_user, target_org_id=req.organization_id, require_teacher=True)
     try:
         asmt_type = AssessmentType(req.assessment_type.lower())
     except ValueError:
@@ -265,9 +330,11 @@ async def list_assessments(
     organization_id: Optional[str] = Query(None),
     assessment_type: Optional[str] = Query(None),
     status_filter: Optional[str] = Query(None, alias="status"),
+    current_user: Optional[User] = Depends(get_current_user_optional),
     service: AssessmentService = Depends(get_assessment_service),
 ):
     """List assessments matching filters."""
+    _enforce_assessment_access(current_user, target_org_id=organization_id)
     asmts = service.list_assessments(
         course_id=course_id,
         organization_id=organization_id,
@@ -300,9 +367,11 @@ async def list_assessments(
 @router.get("/{assessment_id}", response_model=ApiResponse[AssessmentResponse])
 async def get_assessment(
     assessment_id: str,
+    current_user: Optional[User] = Depends(get_current_user_optional),
     service: AssessmentService = Depends(get_assessment_service),
 ):
     """Get assessment definition by ID."""
+    _enforce_assessment_access(current_user)
     asmt = service.get_assessment(assessment_id)
     if not asmt:
         raise HTTPException(status_code=404, detail=f"Assessment '{assessment_id}' not found.")
@@ -331,6 +400,7 @@ async def get_assessment(
 @router.get("/{assessment_id}/sanitized", response_model=ApiResponse[SanitizedAssessmentResponse])
 async def get_sanitized_assessment(
     assessment_id: str,
+    current_user: Optional[User] = Depends(get_current_user_optional),
     service: AssessmentService = Depends(get_assessment_service),
 ):
     """Retrieve an assessment sanitized for student question delivery.
@@ -338,6 +408,7 @@ async def get_sanitized_assessment(
     Anti-Answer-Leakage Invariant:
     All correct answers, answer keys, rubrics, and teacher explanations are scrubbed.
     """
+    _enforce_assessment_access(current_user)
     asmt_data = service.get_sanitized_assessment(assessment_id)
     if not asmt_data:
         raise HTTPException(status_code=404, detail=f"Assessment '{assessment_id}' not found.")
@@ -406,13 +477,14 @@ async def get_sanitized_assessment(
     )
 
 
-
 @router.post("/{assessment_id}/publish", response_model=ApiResponse[AssessmentResponse])
 async def publish_assessment(
     assessment_id: str,
+    current_user: Optional[User] = Depends(get_current_user_optional),
     service: AssessmentService = Depends(get_assessment_service),
 ):
     """Publish an assessment."""
+    _enforce_assessment_access(current_user, require_teacher=True)
     published = service.publish_assessment(assessment_id)
     if not published:
         raise HTTPException(status_code=404, detail=f"Assessment '{assessment_id}' not found.")
@@ -443,9 +515,11 @@ async def publish_assessment(
 @router.post("/assignments", response_model=ApiResponse[AssignmentResponse], status_code=status.HTTP_201_CREATED)
 async def create_assignment(
     req: AssignmentCreateRequest,
+    current_user: Optional[User] = Depends(get_current_user_optional),
     service: AssessmentService = Depends(get_assessment_service),
 ):
     """Assign an assessment to a course, cohort, or class group."""
+    _enforce_assessment_access(current_user, target_org_id=req.organization_id, require_teacher=True)
     assign = Assignment(
         id=f"assign-{uuid.uuid4().hex[:10]}",
         course_id=req.course_id,
@@ -485,9 +559,11 @@ async def list_assignments(
     course_id: Optional[str] = Query(None),
     cohort_id: Optional[str] = Query(None),
     organization_id: Optional[str] = Query(None),
+    current_user: Optional[User] = Depends(get_current_user_optional),
     service: AssessmentService = Depends(get_assessment_service),
 ):
     """List active assignments."""
+    _enforce_assessment_access(current_user, target_org_id=organization_id)
     assignments = service.list_assignments(
         course_id=course_id,
         cohort_id=cohort_id,
@@ -518,9 +594,11 @@ async def list_assignments(
 @router.post("/attempts/start", response_model=ApiResponse[AttemptStartResponse], status_code=status.HTTP_201_CREATED)
 async def start_attempt(
     req: AttemptStartRequest,
+    current_user: Optional[User] = Depends(get_current_user_optional),
     service: AssessmentService = Depends(get_assessment_service),
 ):
     """Start an assessment attempt (Diagnostic, Formative, Summative, Adaptive)."""
+    _enforce_student_isolation(current_user, req.student_id)
     try:
         attempt = service.start_attempt(
             assessment_id=req.assessment_id,
@@ -549,9 +627,13 @@ async def start_attempt(
 @router.get("/attempts/{attempt_id}/adaptive-next", response_model=ApiResponse[Optional[QuestionBankItemResponse]])
 async def get_next_adaptive_question(
     attempt_id: str,
+    current_user: Optional[User] = Depends(get_current_user_optional),
     service: AssessmentService = Depends(get_assessment_service),
 ):
     """Get the next dynamically selected question for an adaptive assessment."""
+    attempt = service.get_attempt(attempt_id)
+    if attempt:
+        _enforce_student_isolation(current_user, attempt.student_id)
     try:
         item = service.get_next_adaptive_item(attempt_id)
         if not item:
@@ -587,9 +669,13 @@ async def get_next_adaptive_question(
 async def submit_attempt(
     attempt_id: str,
     req: AttemptSubmitRequest,
+    current_user: Optional[User] = Depends(get_current_user_optional),
     service: AssessmentService = Depends(get_assessment_service),
 ):
     """Submit attempt answers, trigger hybrid grading, and feed central learning events."""
+    attempt_rec = service.get_attempt(attempt_id)
+    target_student = req.student_id or (attempt_rec.student_id if attempt_rec else None)
+    _enforce_student_isolation(current_user, target_student)
     try:
         attempt = service.submit_attempt(
             attempt_id=attempt_id,
@@ -627,12 +713,14 @@ async def submit_attempt(
 @router.get("/attempts/{attempt_id}", response_model=ApiResponse[AttemptDetailResponse])
 async def get_attempt(
     attempt_id: str,
+    current_user: Optional[User] = Depends(get_current_user_optional),
     service: AssessmentService = Depends(get_assessment_service),
 ):
     """Retrieve full attempt details with rubric evaluation and feedback."""
     attempt = service.get_attempt(attempt_id)
     if not attempt:
         raise HTTPException(status_code=404, detail=f"Attempt '{attempt_id}' not found.")
+    _enforce_student_isolation(current_user, attempt.student_id)
     return ApiResponse(
         ok=True,
         data=AttemptDetailResponse(
@@ -663,9 +751,11 @@ async def get_attempt(
 async def list_student_attempts(
     student_id: str,
     limit: int = Query(50, ge=1, le=200),
+    current_user: Optional[User] = Depends(get_current_user_optional),
     service: AssessmentService = Depends(get_assessment_service),
 ):
     """List all assessment attempts for a student."""
+    _enforce_student_isolation(current_user, student_id)
     attempts = service.get_student_attempts(student_id, limit=limit)
     data = [
         AttemptDetailResponse(
@@ -702,9 +792,11 @@ async def teacher_review_attempt(
     attempt_id: str,
     req: TeacherReviewAttemptRequest,
     teacher_id: str = Query("teacher-default"),
+    current_user: Optional[User] = Depends(get_current_user_optional),
     service: AssessmentService = Depends(get_assessment_service),
 ):
     """Teacher review, score override, and approval."""
+    _enforce_assessment_access(current_user, require_teacher=True)
     try:
         attempt = service.teacher_review_attempt(
             attempt_id=attempt_id,
@@ -745,9 +837,13 @@ async def teacher_review_attempt(
 async def generate_reassessment(
     attempt_id: str,
     req: ReassessmentGenerateRequest,
+    current_user: Optional[User] = Depends(get_current_user_optional),
     service: AssessmentService = Depends(get_assessment_service),
 ):
     """Generate targeted diagnostic/adaptive reassessment based on weak concepts from a prior attempt."""
+    attempt_rec = service.get_attempt(attempt_id)
+    target_student = attempt_rec.student_id if attempt_rec else None
+    _enforce_student_isolation(current_user, target_student)
     try:
         new_asmt, reassessment = service.generate_reassessment(
             original_attempt_id=attempt_id,
@@ -776,18 +872,26 @@ async def generate_reassessment(
 @router.post("/submit", response_model=ApiResponse[AssessmentSubmitResponse])
 async def submit_assessment_legacy(
     submission: AssessmentSubmitRequest,
+    current_user: Optional[User] = Depends(get_current_user_optional),
     service: AssessmentService = Depends(get_assessment_service),
 ):
     """Legacy backward-compatible submission endpoint."""
+    _enforce_student_isolation(current_user, submission.student_id)
+    is_prod = is_production_mode()
     legacy_service = AssessmentService(
         db=service.db,
         event_store=service.event_store,
         slr_service=service.slr_service,
-        allow_auto_provision=True,
+        allow_auto_provision=not is_prod,
     )
     total = max(len(submission.answers), 1)
     asmt = legacy_service.get_assessment(submission.assessment_id)
     if not asmt:
+        if is_prod:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Assessment '{submission.assessment_id}' not found. Auto-provisioning is prohibited in production.",
+            )
         item_ids = []
         for q_id, ans_val in submission.answers.items():
             matching_sample = next((sq for sq in SAMPLE_QUESTION_BANK if getattr(sq, "id", "") == q_id or getattr(sq, "question_id", "") == q_id), None)
