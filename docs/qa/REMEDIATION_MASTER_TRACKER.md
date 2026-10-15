@@ -30,7 +30,7 @@
 | **06** | Central authorization & tenant-isolation audit | P1 | **PASSED** | [`phase-logs/REMEDIATION_PHASE_06_LOG.md`](phase-logs/REMEDIATION_PHASE_06_LOG.md) | Universal role normalization, tenant isolation, route matrix generated (12/12 passed). Proceed to Phase 07 |
 | **07** | AI task validation, tutor context & RAG trust | P1/P2 | **PASSED** | [`phase-logs/REMEDIATION_PHASE_07_LOG.md`](phase-logs/REMEDIATION_PHASE_07_LOG.md) | Task validation (422), client placeholder elimination, RAG & degraded state integrity verified (10/10 passed). Proceed to Phase 08 |
 | **08** | Database lifecycle, transactions & service isolation | P1 | **PASSED** | [`phase-logs/REMEDIATION_PHASE_08_LOG.md`](phase-logs/REMEDIATION_PHASE_08_LOG.md) | Elimination of _USERS_STORE and _ACTIVE_SESSIONS, multi-table atomic transaction rollback, and migration safety verified (9/9 passed). Proceed to Phase 09 |
-| **09** | Genuine UI-to-API-to-database E2E workflows | P1/P2 | **NOT_STARTED** | `phase-logs/REMEDIATION_PHASE_09_LOG.md` | Depends on Phase 08 |
+| **09** | Genuine UI-to-API-to-database E2E workflows | P1/P2 | **PASSED** | [`phase-logs/REMEDIATION_PHASE_09_LOG.md`](phase-logs/REMEDIATION_PHASE_09_LOG.md) | Disconnected toast buttons eliminated, 8 major E2E workflows verified UI-to-API-to-DB (8/8 passed). Proceed to Phase 10 |
 | **10** | Install, dependency lock & model-readiness | P2 | **NOT_STARTED** | `phase-logs/REMEDIATION_PHASE_10_LOG.md` | Depends on Phase 09 |
 | **11** | Offline mode, sync recovery & hardware disclosures | P2 | **NOT_STARTED** | `phase-logs/REMEDIATION_PHASE_11_LOG.md` | Depends on Phase 10 |
 | **12** | Consolidate documentation, trackers & claims | P1 | **NOT_STARTED** | `phase-logs/REMEDIATION_PHASE_12_LOG.md` | Depends on Phase 11 |
