@@ -23,6 +23,16 @@ Gayatri is an **open, curriculum-free AI tutoring platform** — any school, ins
 
 ---
 
+## 🏫 GAYATRI-ERP Transformation Plan & Progress
+
+The school transformation follows the phase-gated execution contract in [`ERP_TRANSFORMATION_DEVELOPMENT.md`](ERP_TRANSFORMATION_DEVELOPMENT.md). Comprehensive progress tracking, architecture decisions, threat models, phase plans, and automated regression logs are documented under [`docs/erp_agent/`](docs/erp_agent/):
+- **Master Progress Tracker:** [`docs/erp_agent/MASTER_PROGRESS.md`](docs/erp_agent/MASTER_PROGRESS.md)
+- **Architecture Decisions:** [`docs/erp_agent/DECISIONS.md`](docs/erp_agent/DECISIONS.md)
+- **Threat Model:** [`docs/erp_agent/THREAT_MODEL.md`](docs/erp_agent/THREAT_MODEL.md)
+- **Repository Architecture Map:** [`docs/erp_agent/REPOSITORY_MAP.md`](docs/erp_agent/REPOSITORY_MAP.md)
+
+---
+
 ## 🎯 What Makes It Different
 
 | | Gayatri | Typical EdTech |
