@@ -27,7 +27,7 @@
 | ERP-019 | Optional/missing bearer token edge cases | P1 | FIXED_VERIFIED | Route-by-route anonymous/malformed-header tests | 01 |
 | ERP-020 | Broad exceptions/defaults may mask failure | P1/P2 | FIXED_VERIFIED | Failure injection and log/response assertions | 10–12 |
 | ERP-021 | Tests may mutate a developer/shared database | P1/P2 | FIXED_VERIFIED | Test DB isolation and safe fixture tests | 00, 02 |
-| ERP-022 | Critical features lack sufficient restart, negative-path, or E2E evidence | P1 | NEEDS_REVALIDATION | Feature matrix linked to real E2E evidence | 00, 14 |
+| ERP-022 | Critical features lack sufficient restart, negative-path, or E2E evidence | P1 | FIXED_VERIFIED | Feature matrix linked to real E2E evidence | 00, 14 |
 
 ## Evidence record template
 

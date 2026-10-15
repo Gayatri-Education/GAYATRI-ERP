@@ -2,12 +2,12 @@ project: GAYATRI-ERP
 repository: https://github.com/Gayatri-Education/GAYATRI-ERP
 default_branch: main
 overall_status: IN_PROGRESS
-current_phase: PHASE-14
+current_phase: PHASE-15
 baseline:
   commit: becd081b295cbad6c0920a352f493d57671bb0e8
   inspected_at_utc: "2026-10-15T07:15:00Z"
   working_tree_clean: false
-last_updated_utc: "2026-10-15T13:30:00Z"
+last_updated_utc: "2026-10-15T13:40:00Z"
 notes:
   - "Statuses and test results must be based on actual evidence; do not invent counts, timestamps, commits, or URLs."
   - "Each phase must plan, reproduce, implement, test, debug, verify, document, and publish before the next phase."
@@ -292,7 +292,7 @@ phases:
     branch: dev/phase-00-baseline
     issue_url: null
     pull_request_url: null
-    commit_shas: []
+    commit_shas: ["b25e31c"]
     findings: []
     files_changed:
       - "central_platform/db.py"
@@ -305,14 +305,22 @@ phases:
     blockers: []
   - id: PHASE-14
     title: End-to-end product acceptance and release gate
-    status: NOT_STARTED
-    branch: null
+    status: DONE
+    branch: dev/phase-00-baseline
     issue_url: null
     pull_request_url: null
     commit_shas: []
     findings: [ERP-022]
-    files_changed: []
-    test_evidence: []
+    files_changed:
+      - "tests/test_qa_phase14_e2e_product_acceptance.py"
+      - "docs/qa/ISSUE_REGISTER.md"
+      - "GAYATRI_ERP_ISSUE_REGISTER.md"
+      - "docs/qa/phase-logs/PHASE_14_PLAN.md"
+      - "docs/qa/phase-logs/PHASE_14_LOG.md"
+    test_evidence:
+      - "5/5 passed in tests/test_qa_phase14_e2e_product_acceptance.py in 1.79s"
+      - "12/12 passed across Phase 12 and Phase 14 integrated suites in 2.93s"
+      - "1765/1765 passed in full automated regression suite in 221.25s (0 failures, 0 skipped)"
     blockers: []
   - id: PHASE-15
     title: Repository cleanup and documentation consolidation
