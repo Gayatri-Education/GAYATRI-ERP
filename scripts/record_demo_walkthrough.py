@@ -269,7 +269,7 @@ def record_walkthrough():
             "Delhi Public School, Kendriya Vidyalaya, Mumbai Institute, Bangalore STEM",
             scene_tag="Admin · Orgs",
         )
-        page.wait_for_timeout(2200)
+        page.wait_for_timeout(2000)
 
         # 2B. Users & Role-Based Access Control
         page.click("#nav-users")
@@ -280,9 +280,75 @@ def record_walkthrough():
             "Granular permission segregation for Super Admins, Principals, Faculty, and Parents",
             scene_tag="Admin · RBAC",
         )
+        page.wait_for_timeout(2000)
+
+        # 2C. School Attendance & Roll Call
+        page.click("#nav-attendance")
+        page.wait_for_timeout(800)
+        set_hud_caption(
+            page,
+            "School Operations — Daily Attendance & Roll Call",
+            "100% Attendance Rate, 7 Present, 1 Tardy, individual arrival times and toggle actions",
+            scene_tag="ERP · Attendance",
+        )
         page.wait_for_timeout(2500)
 
-        # 2C. Course Catalog & Curricula DAGs
+        # 2D. Timetable & Schedule Management
+        page.click("#nav-timetable")
+        page.wait_for_timeout(800)
+        set_hud_caption(
+            page,
+            "Academic Timetable & Schedule Management",
+            "Class 11A Weekly Period Schedule (Periods 1–6) & Active Teacher Substitution Alerts",
+            scene_tag="ERP · Timetable",
+        )
+        page.wait_for_timeout(2500)
+
+        # 2E. Fee Accounting & Double-Entry Ledger
+        page.click("#nav-fees")
+        page.wait_for_timeout(800)
+        set_hud_caption(
+            page,
+            "School Fee Accounting & Double-Entry Ledger",
+            "Invoicing, Fee Collections (₹1.10L), Outstanding Balances (₹75K), and Audited Ledgers",
+            scene_tag="ERP · Accounting",
+        )
+        page.wait_for_timeout(2500)
+
+        # 2F. Examinations, Marks & Report Cards
+        page.click("#nav-examinations")
+        page.wait_for_timeout(800)
+        set_hud_caption(
+            page,
+            "Examinations, Marks Ledger & Report Cards",
+            "Term Marks (Arjun, Priya, Rahul), Grade Tiers (A1/Distinction), and SHA-256 Report Cards",
+            scene_tag="ERP · Examinations",
+        )
+        page.wait_for_timeout(2500)
+
+        # 2G. Student Smart ID Badges & Official Certificates
+        page.click("#nav-id-cards")
+        page.wait_for_timeout(800)
+        set_hud_caption(
+            page,
+            "Student Digital Smart ID Badges & Official Certificates",
+            "Contactless RFID chips, barcode verification, Bonafide Certificates & Transfer Certificates (TC)",
+            scene_tag="ERP · ID & Certs",
+        )
+        page.wait_for_timeout(2800)
+
+        # 2H. Campus Logistics: Transport, Hostel & Inventory
+        page.click("#nav-logistics")
+        page.wait_for_timeout(800)
+        set_hud_caption(
+            page,
+            "Campus Logistics — Transport, Hostel & Stock Inventory",
+            "Bus Fleet Utilization (82.5%), Hostel Bed Occupancy (80%), and Science Lab Low-Stock Alerts",
+            scene_tag="ERP · Logistics",
+        )
+        page.wait_for_timeout(2500)
+
+        # 2I. Course Catalog & Curricula DAGs
         page.click("#nav-courses")
         page.wait_for_timeout(800)
         set_hud_caption(
@@ -291,9 +357,9 @@ def record_walkthrough():
             "Class 11 & 12 Chemistry, Physics, Mathematics with prerequisite dependency mapping",
             scene_tag="Admin · Academics",
         )
-        page.wait_for_timeout(2500)
+        page.wait_for_timeout(2200)
 
-        # 2D. AI Providers & Governance Models
+        # 2J. AI Providers & Governance Models
         page.click("#nav-models")
         page.wait_for_timeout(800)
         set_hud_caption(
@@ -302,9 +368,9 @@ def record_walkthrough():
             "Gayatri-Tutor-v3 SLM (Default), latency tracking, token quotas, and emergency kill switch",
             scene_tag="Admin · AI Governance",
         )
-        page.wait_for_timeout(2500)
+        page.wait_for_timeout(2200)
 
-        # 2E. System Health & Probes
+        # 2K. System Health & Probes
         page.click("#nav-system")
         page.wait_for_timeout(800)
         set_hud_caption(
@@ -313,7 +379,7 @@ def record_walkthrough():
             "Live SQLite database connectivity, model registry readiness, and latency telemetry",
             scene_tag="Admin · Health",
         )
-        page.wait_for_timeout(2200)
+        page.wait_for_timeout(2000)
 
         # =========================================================================
         # SCENE 3: INSTITUTIONAL ANALYTICS & RECONCILED KPIS (Phase 08)

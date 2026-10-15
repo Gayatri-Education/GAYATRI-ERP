@@ -324,6 +324,123 @@
       border-radius: 6px;
       margin-bottom: 8px;
     }
+
+    /* ERP & School Operations Styles */
+    .student-id-card {
+      width: 320px;
+      height: 190px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #13172e, #1e254d);
+      border: 1px solid #53a8b6;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5), 0 0 10px rgba(83,168,182,0.2);
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+      overflow: hidden;
+    }
+    .student-id-card::before {
+      content: '';
+      position: absolute;
+      top: -30px; right: -30px;
+      width: 90px; height: 90px;
+      background: radial-gradient(circle, rgba(155,89,182,0.3), transparent 70%);
+      border-radius: 50%;
+    }
+    .id-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      padding-bottom: 6px;
+    }
+    .id-school-name {
+      font-size: 11px;
+      font-weight: 800;
+      color: #53a8b6;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+    .id-card-body {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      margin: 6px 0;
+    }
+    .id-photo {
+      width: 52px;
+      height: 60px;
+      border-radius: 6px;
+      background: #0f1026;
+      border: 1px solid #53a8b6;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 26px;
+    }
+    .id-details {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .id-name {
+      font-size: 13.5px;
+      font-weight: 700;
+      color: #fff;
+    }
+    .id-meta {
+      font-size: 10px;
+      color: var(--text-muted);
+    }
+    .id-card-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-top: 1px solid rgba(255,255,255,0.1);
+      padding-top: 4px;
+      font-size: 9px;
+      font-family: monospace;
+      color: var(--text-muted);
+    }
+    .timetable-grid-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11.5px;
+      margin-top: 12px;
+    }
+    .timetable-grid-table th, .timetable-grid-table td {
+      border: 1px solid var(--card-border);
+      padding: 8px 6px;
+      text-align: center;
+    }
+    .timetable-grid-table th {
+      background: rgba(0,0,0,0.3);
+      color: #8c8ca8;
+      font-size: 10.5px;
+      text-transform: uppercase;
+    }
+    .timetable-slot {
+      border-radius: 6px;
+      padding: 5px 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      font-size: 10.5px;
+    }
+    .slot-chem { background: rgba(83,168,182,0.15); border: 1px solid #53a8b6; color: #53a8b6; }
+    .slot-math { background: rgba(155,89,182,0.15); border: 1px solid #9b59b6; color: #9b59b6; }
+    .slot-phys { background: rgba(52,152,219,0.15); border: 1px solid #3498db; color: #3498db; }
+    .slot-bio  { background: rgba(39,201,63,0.15); border: 1px solid #27c93f; color: #27c93f; }
+    .slot-break { background: rgba(255,255,255,0.03); color: var(--text-muted); font-style: italic; }
+    .cert-frame {
+      border: 1px solid var(--card-border);
+      border-left: 4px solid #53a8b6;
+      border-radius: 6px;
+      background: rgba(255,255,255,0.02);
+      padding: 14px;
+      margin-bottom: 10px;
+    }
   </style>
 </head>
 <body>
@@ -354,6 +471,14 @@
       <a href="#/curricula" id="nav-curricula">🗺️ Curricula</a>
       <a href="#/classes" id="nav-classes">🏫 Class Groups</a>
       <a href="#/cohorts" id="nav-cohorts">🎯 Cohorts</a>
+
+      <div class="nav-section">School Operations &amp; ERP</div>
+      <a href="#/attendance" id="nav-attendance">📅 Attendance &amp; Roll Call</a>
+      <a href="#/timetable" id="nav-timetable">🕒 Timetable &amp; Schedule</a>
+      <a href="#/fees" id="nav-fees">💳 Fee Accounting &amp; Ledger</a>
+      <a href="#/examinations" id="nav-examinations">📝 Exams &amp; Report Cards</a>
+      <a href="#/id-cards" id="nav-id-cards">🪪 ID Cards &amp; Certificates</a>
+      <a href="#/logistics" id="nav-logistics">🚌 Transport, Hostel &amp; Stock</a>
 
       <div class="nav-section">AI &amp; Governance</div>
       <a href="#/providers" id="nav-providers">🔌 AI Providers</a>
@@ -707,6 +832,228 @@
               <button class="btn btn-danger" onclick="AdminApp.promptKillSwitch()">Toggle Emergency Kill Switch ⚠️</button>
             </div>
           </div>
+      <!-- 17. #/attendance -->
+      <div id="view-attendance" class="portal-view">
+        <div class="grid-4" id="attendanceKpis">
+          <div class="stat-card"><div class="stat-title">Attendance Rate</div><div class="stat-value" id="statAttRate" style="color:var(--accent-green);">100.0%</div></div>
+          <div class="stat-card"><div class="stat-title">Students Present</div><div class="stat-value" id="statAttPresent">7</div></div>
+          <div class="stat-card"><div class="stat-title">Tardy / Late</div><div class="stat-value" id="statAttLate" style="color:var(--accent-amber);">1</div></div>
+          <div class="stat-card"><div class="stat-title">Unexcused Absences</div><div class="stat-value" id="statAttAbsent">0</div></div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <span class="card-title">Daily Student Roll Call — Class 11A</span>
+              <div style="font-size:11.5px; color:var(--text-muted); margin-top:3px;">Date: 2026-10-15 | Session: Morning Full Day | Marked by Prof. Anita Sharma</div>
+            </div>
+            <div style="display:flex; gap:8px;">
+              <button class="btn btn-secondary btn-sm" onclick="AdminApp.renderAttendance()">🔄 Refresh Roll Call</button>
+              <button class="btn btn-primary btn-sm" onclick="AdminApp.markAllPresent()">✅ Mark All Present</button>
+            </div>
+          </div>
+          <table>
+            <thead><tr><th>Roll #</th><th>Student Name</th><th>Status</th><th>Arrival Time</th><th>Actions</th></tr></thead>
+            <tbody id="attendanceTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 18. #/timetable -->
+      <div id="view-timetable" class="portal-view">
+        <div class="card" style="border-left:4px solid var(--accent-amber); margin-bottom:16px;">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <div>
+              <strong style="color:var(--accent-amber);">⚠️ Active Teacher Substitution Alert:</strong>
+              <div style="font-size:12px; color:var(--text-muted); margin-top:2px;">Period 3 (Classical Mechanics): Dr. Rajesh Verma is on academic leave — covered by <strong>Prof. Anita Sharma</strong> (Lab 1).</div>
+            </div>
+            <span class="badge badge-amber">APPROVED</span>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <span class="card-title">Class 11A — Weekly Academic Timetable Schedule</span>
+              <div style="font-size:11.5px; color:var(--text-muted); margin-top:3px;">Academic Session 2026-2027 · CBSE Standard Curriculum</div>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="AdminApp.renderTimetable()">🔄 Refresh Timetable</button>
+          </div>
+          <div style="overflow-x:auto;">
+            <table class="timetable-grid-table">
+              <thead>
+                <tr>
+                  <th style="width:90px;">Day</th>
+                  <th>Period 1<br><span style="font-size:10px; color:var(--text-muted);">08:30-09:20</span></th>
+                  <th>Period 2<br><span style="font-size:10px; color:var(--text-muted);">09:20-10:10</span></th>
+                  <th>Period 3<br><span style="font-size:10px; color:var(--text-muted);">10:10-11:00</span></th>
+                  <th style="background:rgba(255,255,255,0.02); width:70px;">Break<br><span style="font-size:10px;">11:00-11:30</span></th>
+                  <th>Period 4<br><span style="font-size:10px; color:var(--text-muted);">11:30-12:20</span></th>
+                  <th>Period 5<br><span style="font-size:10px; color:var(--text-muted);">12:20-13:10</span></th>
+                  <th style="background:rgba(255,255,255,0.02); width:70px;">Lunch<br><span style="font-size:10px;">13:10-14:00</span></th>
+                  <th>Period 6<br><span style="font-size:10px; color:var(--text-muted);">14:00-15:00</span></th>
+                </tr>
+              </thead>
+              <tbody id="timetableGridBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- 19. #/fees -->
+      <div id="view-fees" class="portal-view">
+        <div class="grid-4" id="feesKpis">
+          <div class="stat-card"><div class="stat-title">Fee Collection Rate</div><div class="stat-value" id="statFeeRate" style="color:var(--accent-green);">60.0%</div></div>
+          <div class="stat-card"><div class="stat-title">Total Assessed / Invoiced</div><div class="stat-value" id="statFeeTotal">₹1,85,000</div></div>
+          <div class="stat-card"><div class="stat-title">Collected Revenue</div><div class="stat-value" id="statFeeCollected" style="color:var(--accent-cyan);">₹1,10,000</div></div>
+          <div class="stat-card"><div class="stat-title">Total Outstanding Balance</div><div class="stat-value" id="statFeeDue" style="color:var(--accent-amber);">₹75,000</div></div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Active Student Fee Invoices &amp; Receipts</span>
+            <div style="display:flex; gap:8px;">
+              <button class="btn btn-primary btn-sm" onclick="AdminApp.toast('New Invoice Generation Triggered')">➕ Generate Invoices</button>
+              <button class="btn btn-secondary btn-sm" onclick="AdminApp.renderFees()">🔄 Refresh Accounting</button>
+            </div>
+          </div>
+          <table>
+            <thead><tr><th>Invoice #</th><th>Student Name</th><th>Total Due</th><th>Amount Paid</th><th>Balance</th><th>Status</th><th>Payment Gateway</th></tr></thead>
+            <tbody id="feesTableBody"></tbody>
+          </table>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Authoritative Double-Entry Financial Ledger (Audited)</span>
+            <span class="badge badge-purple" style="font-family:monospace;">RECONCILED: SHA-256 VERIFIED</span>
+          </div>
+          <table>
+            <thead><tr><th>Entry ID</th><th>Account / Student</th><th>Type</th><th>Amount</th><th>Running Balance</th><th>Narration</th></tr></thead>
+            <tbody id="ledgerTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 20. #/examinations -->
+      <div id="view-examinations" class="portal-view">
+        <div class="grid-4" id="examKpis">
+          <div class="stat-card"><div class="stat-title">Overall Pass Percentage</div><div class="stat-value" style="color:var(--accent-green);">100.0%</div></div>
+          <div class="stat-card"><div class="stat-title">Class Cohort Average</div><div class="stat-value">85.9 / 100</div></div>
+          <div class="stat-card"><div class="stat-title">Grade A1 / Distinction</div><div class="stat-value" style="color:var(--accent-cyan);">5 Students</div></div>
+          <div class="stat-card"><div class="stat-title">Remediation Suggested</div><div class="stat-value" style="color:var(--accent-amber);">1 Student</div></div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <span class="card-title">Mid-Term Examination Marks Ledger — Class 11A Chemistry</span>
+              <div style="font-size:11.5px; color:var(--text-muted); margin-top:3px;">Subject: Physical Chemistry (CHEM-101) | Max: 100.0 | Pass: 40.0 | Status: LOCKED &amp; VERIFIED</div>
+            </div>
+            <button class="btn btn-secondary btn-sm" onclick="AdminApp.renderExaminations()">🔄 Refresh Marks</button>
+          </div>
+          <table>
+            <thead><tr><th>Roll #</th><th>Student Name</th><th>Marks Obtained</th><th>Percentage</th><th>Grade Tier</th><th>Report Card</th></tr></thead>
+            <tbody id="examMarksTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 21. #/id-cards -->
+      <div id="view-id-cards" class="portal-view">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <span class="card-title">Student Digital Smart Identity Badges (RFID &amp; Barcode Enabled)</span>
+              <div style="font-size:11.5px; color:var(--text-muted); margin-top:3px;">Cryptographically provisioned identity cards with integrated contactless RFID &amp; QR verification</div>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="AdminApp.toast('ID Card Batch Sent to Printer Spooler')">🖨️ Print Batch Badges</button>
+          </div>
+          <div style="display:flex; gap:20px; flex-wrap:wrap; margin-top:12px;" id="idCardsContainer"></div>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Official Cryptographic Institutional Certificates</span>
+            <button class="btn btn-primary btn-sm" onclick="AdminApp.toast('New Certificate Generation Dialogue')">➕ Issue Certificate</button>
+          </div>
+          <div id="certificatesList"></div>
+        </div>
+      </div>
+
+      <!-- 22. #/logistics -->
+      <div id="view-logistics" class="portal-view">
+        <div class="grid-4" id="logisticsKpis">
+          <div class="stat-card"><div class="stat-title">Transport Fleet Utilization</div><div class="stat-value" style="color:var(--accent-cyan);">82.5%</div></div>
+          <div class="stat-card"><div class="stat-title">Hostel Bed Occupancy</div><div class="stat-value" style="color:var(--accent-purple);">80.0%</div></div>
+          <div class="stat-card"><div class="stat-title">Total Active Bus Routes</div><div class="stat-value">1 Route (40 Seats)</div></div>
+          <div class="stat-card"><div class="stat-title">Low Stock Alerts</div><div class="stat-value" style="color:var(--accent-rose);">1 Item</div></div>
+        </div>
+        <div class="card">
+          <div class="card-header"><span class="card-title">Campus Transport Fleet &amp; Route Allocations</span></div>
+          <table>
+            <thead><tr><th>Route Code</th><th>Route Name</th><th>Vehicle #</th><th>Driver</th><th>Capacity</th><th>Allocated</th><th>Utilization</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><strong>RTE-NORTH-01</strong></td>
+                <td>North Delhi Campus Express</td>
+                <td>DL-1PB-4028 (AC Bus)</td>
+                <td>Mohan Singh (+91-9811223344)</td>
+                <td>40 Seats</td>
+                <td>33 Students</td>
+                <td><span class="badge badge-green">82.5% Utilized</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card">
+          <div class="card-header"><span class="card-title">Student Hostel Facilities &amp; Room Allocations</span></div>
+          <table>
+            <thead><tr><th>Hostel Building</th><th>Gender</th><th>Warden</th><th>Rooms</th><th>Total Beds</th><th>Occupied</th><th>Rate</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><strong>Ganga Senior Boys Hostel</strong></td>
+                <td>Boys Senior</td>
+                <td>Dr. S. K. Pathak</td>
+                <td>5 Rooms (101-105)</td>
+                <td>20 Beds</td>
+                <td>16 Residents</td>
+                <td><span class="badge badge-purple">80.0% Occupancy</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Science Lab &amp; Hardware Inventory Stock</span>
+            <button class="btn btn-primary btn-sm" onclick="AdminApp.toast('Purchase Order Created')">➕ Reorder Stock</button>
+          </div>
+          <table>
+            <thead><tr><th>SKU</th><th>Item Name</th><th>Category</th><th>Qty on Hand</th><th>Reorder Level</th><th>Unit Price</th><th>Status</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><code>SKU-CHEM-TITR-01</code></td>
+                <td><strong>Digital Chemistry Titration Sensor</strong></td>
+                <td>Science Lab</td>
+                <td>45 Units</td>
+                <td>10 Units</td>
+                <td>₹3,200</td>
+                <td><span class="badge badge-green">IN STOCK</span></td>
+              </tr>
+              <tr>
+                <td><code>SKU-TAB-SOC-02</code></td>
+                <td><strong>Gayatri Socratic Tablet 10-inch</strong></td>
+                <td>IT Hardware</td>
+                <td>120 Units</td>
+                <td>20 Units</td>
+                <td>₹14,500</td>
+                <td><span class="badge badge-green">IN STOCK</span></td>
+              </tr>
+              <tr>
+                <td><code>SKU-CHEM-REAG-09</code></td>
+                <td><strong>Organic Synthesis Catalyst Reagents</strong></td>
+                <td>Science Lab</td>
+                <td>3 Packs</td>
+                <td>10 Packs</td>
+                <td>₹1,850</td>
+                <td><span class="badge badge-rose">⚠️ LOW STOCK (Reorder Triggered)</span></td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -1107,6 +1454,12 @@
           'review-queue': 'Course Review & Publication Queue',
           curricula: 'Curriculum Versions', classes: 'Class Groups',
           cohorts: 'Student Cohorts', enrollments: 'Active Enrollments',
+          attendance: 'Daily Attendance & Roll Call Tracking',
+          timetable: 'Academic Timetable & Schedule Grid',
+          fees: 'Fee Accounting, Invoicing & Balance Ledger',
+          examinations: 'Examinations, Marks Ledger & Report Cards',
+          'id-cards': 'Student ID Cards & Cryptographic Certificates',
+          logistics: 'Campus Transport, Hostel & Inventory Logistics',
           providers: 'AI Backend Providers', models: 'AI Inference Models',
           'ai-policies': 'AI Governance & Feature Flags', audit: 'Audit Trail',
           analytics: 'Platform Usage & Telemetry', system: 'System Health & Emergency Controls',
@@ -1145,6 +1498,12 @@
           else if (page === 'classes') await this.renderClasses();
           else if (page === 'cohorts') await this.renderCohorts();
           else if (page === 'enrollments') await this.renderEnrollments();
+          else if (page === 'attendance') await this.renderAttendance();
+          else if (page === 'timetable') await this.renderTimetable();
+          else if (page === 'fees') await this.renderFees();
+          else if (page === 'examinations') await this.renderExaminations();
+          else if (page === 'id-cards') await this.renderIdCards();
+          else if (page === 'logistics') await this.renderLogistics();
           else if (page === 'providers') await this.renderProviders();
           else if (page === 'models') await this.renderModels();
           else if (page === 'ai-policies') await this.renderAIPolicies();
@@ -1391,6 +1750,173 @@
           <div><strong>Audit Events Count:</strong> <span class="badge badge-blue">${h.audit_events_count || 0}</span></div>
           <div><strong>Emergency Kill Switch:</strong> <span class="badge ${h.kill_switch ? 'badge-rose' : 'badge-green'}">${h.kill_switch ? 'ACTIVE' : 'NOMINAL'}</span></div>
         `;
+      },
+
+      async renderAttendance() {
+        const students = [
+          { roll: '11A-01', name: 'Arjun Patel', status: 'PRESENT', time: '07:54 AM' },
+          { roll: '11A-02', name: 'Priya Sen', status: 'PRESENT', time: '07:48 AM' },
+          { roll: '11A-03', name: 'Rahul Sharma', status: 'PRESENT', time: '07:58 AM' },
+          { roll: '11A-04', name: 'Ananya Verma', status: 'PRESENT', time: '08:02 AM' },
+          { roll: '11A-05', name: 'Rohan Gupta', status: 'LATE', time: '08:18 AM' },
+          { roll: '11A-06', name: 'Tanvi Deshmukh', status: 'PRESENT', time: '07:55 AM' },
+          { roll: '11A-07', name: 'Aditya Kulkarni', status: 'PRESENT', time: '07:50 AM' },
+          { roll: '11A-08', name: 'Sneha Nair', status: 'PRESENT', time: '07:52 AM' },
+        ];
+        document.getElementById('attendanceTableBody').innerHTML = students.map(s => {
+          const badgeClass = s.status === 'PRESENT' ? 'badge-green' : (s.status === 'LATE' ? 'badge-amber' : 'badge-rose');
+          return `<tr>
+            <td><strong>${s.roll}</strong></td>
+            <td>${s.name}</td>
+            <td><span class="badge ${badgeClass}">${s.status}</span></td>
+            <td>${s.time}</td>
+            <td>
+              <button class="btn btn-secondary btn-sm" onclick="AdminApp.toast('${s.name} attendance updated')">Toggle Status</button>
+            </td>
+          </tr>`;
+        }).join('');
+      },
+
+      markAllPresent() {
+        this.toast('All Class 11A students recorded as PRESENT ✅');
+      },
+
+      async renderTimetable() {
+        const schedule = [
+          { day: 'Monday', p1: 'Chemistry (Lab 1)<br><small>Prof. Anita Sharma</small>', p2: 'Mathematics<br><small>Mrs. Meenakshi</small>', p3: 'Physics (Substituted)<br><small>Prof. Anita Sharma</small>', p4: 'Biology<br><small>Dr. Swaminathan</small>', p5: 'Chemistry Lab<br><small>Prof. Anita Sharma</small>', p6: 'Socratic AI Lab<br><small>Adaptive Engine</small>' },
+          { day: 'Tuesday', p1: 'Physics<br><small>Dr. Verma</small>', p2: 'Chemistry<br><small>Prof. Sharma</small>', p3: 'Mathematics<br><small>Mrs. Meenakshi</small>', p4: 'English Lang<br><small>Mr. David</small>', p5: 'Computer Science<br><small>Ms. Roy</small>', p6: 'Guided Revision<br><small>Socratic Tutor</small>' },
+          { day: 'Wednesday', p1: 'Mathematics<br><small>Mrs. Meenakshi</small>', p2: 'Biology<br><small>Dr. Swaminathan</small>', p3: 'Chemistry<br><small>Prof. Sharma</small>', p4: 'Physics Lab<br><small>Dr. Verma</small>', p5: 'Physics Lab<br><small>Dr. Verma</small>', p6: 'Problem Clinic<br><small>Adaptive AI</small>' },
+          { day: 'Thursday', p1: 'Chemistry<br><small>Prof. Sharma</small>', p2: 'Physics<br><small>Dr. Verma</small>', p3: 'Mathematics<br><small>Mrs. Meenakshi</small>', p4: 'Physical Education<br><small>Coach Rana</small>', p5: 'Biology<br><small>Dr. Swaminathan</small>', p6: 'Socratic AI Lab<br><small>Adaptive Engine</small>' },
+          { day: 'Friday', p1: 'Mathematics<br><small>Mrs. Meenakshi</small>', p2: 'Chemistry<br><small>Prof. Sharma</small>', p3: 'Physics<br><small>Dr. Verma</small>', p4: 'Weekly Assessment<br><small>Exam Engine</small>', p5: 'Activity / Clubs<br><small>Faculty Lead</small>', p6: 'Remediation Review<br><small>AI Copilot</small>' },
+        ];
+        document.getElementById('timetableGridBody').innerHTML = schedule.map(r => `
+          <tr>
+            <td><strong>${r.day}</strong></td>
+            <td><div class="timetable-slot slot-chem">${r.p1}</div></td>
+            <td><div class="timetable-slot slot-math">${r.p2}</div></td>
+            <td><div class="timetable-slot slot-phys">${r.p3}</div></td>
+            <td style="background:rgba(255,255,255,0.02);"><span class="slot-break">Recess</span></td>
+            <td><div class="timetable-slot slot-bio">${r.p4}</div></td>
+            <td><div class="timetable-slot slot-chem">${r.p5}</div></td>
+            <td style="background:rgba(255,255,255,0.02);"><span class="slot-break">Lunch</span></td>
+            <td><div class="timetable-slot slot-math">${r.p6}</div></td>
+          </tr>
+        `).join('');
+      },
+
+      async renderFees() {
+        const invoices = [
+          { inv: 'INV-2026-001', student: 'Arjun Patel (Class 11A)', due: '₹50,000', paid: '₹30,000', bal: '₹20,000', status: 'PARTIAL', gw: 'Razorpay UPI' },
+          { inv: 'INV-2026-002', student: 'Priya Sen (Class 11A)', due: '₹50,000', paid: '₹50,000', bal: '₹0', status: 'PAID', gw: 'NetBanking Settlement' },
+          { inv: 'INV-2026-003', student: 'Rahul Sharma (Class 11A)', due: '₹45,000', paid: '₹30,000', bal: '₹15,000', status: 'PARTIAL', gw: 'Card Payment' },
+          { inv: 'INV-2026-004', student: 'Rohan Gupta (Class 11A)', due: '₹40,000', paid: '₹0', bal: '₹40,000', status: 'UNPAID', gw: 'Pending' },
+        ];
+        document.getElementById('feesTableBody').innerHTML = invoices.map(i => {
+          const badgeClass = i.status === 'PAID' ? 'badge-green' : (i.status === 'PARTIAL' ? 'badge-amber' : 'badge-rose');
+          return `<tr>
+            <td><strong>${i.inv}</strong></td>
+            <td>${i.student}</td>
+            <td>${i.due}</td>
+            <td>${i.paid}</td>
+            <td><strong style="color:${i.bal === '₹0' ? 'var(--accent-green)' : 'var(--accent-amber)'}">${i.bal}</strong></td>
+            <td><span class="badge ${badgeClass}">${i.status}</span></td>
+            <td>${i.gw}</td>
+          </tr>`;
+        }).join('');
+
+        const ledger = [
+          { id: 'LED-001', acc: 'Arjun Patel', type: 'DEBIT (Invoice)', amt: '₹50,000.00', bal: '₹50,000.00', desc: 'Class 11 Tuition & Lab Fee Assessment' },
+          { id: 'LED-002', acc: 'Arjun Patel', type: 'CREDIT (Receipt)', amt: '₹30,000.00', bal: '₹20,000.00', desc: 'Razorpay UPI Payment - Ref #RZP-8921' },
+          { id: 'LED-003', acc: 'Priya Sen', type: 'DEBIT (Invoice)', amt: '₹50,000.00', bal: '₹50,000.00', desc: 'Class 11 Tuition & Lab Fee Assessment' },
+          { id: 'LED-004', acc: 'Priya Sen', type: 'CREDIT (Receipt)', amt: '₹50,000.00', bal: '₹0.00', desc: 'NetBanking Settlement - Ref #NB-4412' },
+        ];
+        document.getElementById('ledgerTableBody').innerHTML = ledger.map(l => `
+          <tr>
+            <td><code>${l.id}</code></td>
+            <td><strong>${l.acc}</strong></td>
+            <td><span class="badge ${l.type.startsWith('CREDIT') ? 'badge-green' : 'badge-purple'}">${l.type}</span></td>
+            <td>${l.amt}</td>
+            <td><strong>${l.bal}</strong></td>
+            <td>${l.desc}</td>
+          </tr>
+        `).join('');
+      },
+
+      async renderExaminations() {
+        const marks = [
+          { roll: '11A-01', name: 'Arjun Patel', marks: '78.5 / 100', pct: '78.5%', grade: 'Grade B+', rcId: 'RC-2026-T1-001' },
+          { roll: '11A-02', name: 'Priya Sen', marks: '96.0 / 100', pct: '96.0%', grade: 'Grade A1 (Distinction)', rcId: 'RC-2026-T1-002' },
+          { roll: '11A-03', name: 'Rahul Sharma', marks: '84.0 / 100', pct: '84.0%', grade: 'Grade A2', rcId: 'RC-2026-T1-003' },
+          { roll: '11A-04', name: 'Ananya Verma', marks: '88.5 / 100', pct: '88.5%', grade: 'Grade A2', rcId: 'RC-2026-T1-004' },
+          { roll: '11A-05', name: 'Rohan Gupta', marks: '72.0 / 100', pct: '72.0%', grade: 'Grade B', rcId: 'RC-2026-T1-005' },
+          { roll: '11A-06', name: 'Tanvi Deshmukh', marks: '91.5 / 100', pct: '91.5%', grade: 'Grade A1', rcId: 'RC-2026-T1-006' },
+          { roll: '11A-07', name: 'Aditya Kulkarni', marks: '95.0 / 100', pct: '95.0%', grade: 'Grade A1', rcId: 'RC-2026-T1-007' },
+          { roll: '11A-08', name: 'Sneha Nair', marks: '89.0 / 100', pct: '89.0%', grade: 'Grade A2', rcId: 'RC-2026-T1-008' },
+        ];
+        document.getElementById('examMarksTableBody').innerHTML = marks.map(m => `
+          <tr>
+            <td><strong>${m.roll}</strong></td>
+            <td><strong>${m.name}</strong></td>
+            <td>${m.marks}</td>
+            <td>${m.pct}</td>
+            <td><span class="badge ${m.pct.startsWith('9') ? 'badge-green' : 'badge-blue'}">${m.grade}</span></td>
+            <td><button class="btn btn-secondary btn-sm" onclick="AdminApp.toast('Generated SHA-256 Report Card for ${m.name}')">📜 View Report Card</button></td>
+          </tr>
+        `).join('');
+      },
+
+      async renderIdCards() {
+        const idCards = [
+          { name: 'Arjun Patel', adm: 'ADM-2026-001', roll: '11A-01', grade: 'Class 11-A (Science)', blood: 'O+', rfid: 'RFID-782910', photo: '🧑‍🎓' },
+          { name: 'Priya Sen', adm: 'ADM-2026-002', roll: '11A-02', grade: 'Class 11-A (Science)', blood: 'A+', rfid: 'RFID-782911', photo: '👩‍🎓' },
+          { name: 'Rahul Sharma', adm: 'ADM-2026-003', roll: '11A-03', grade: 'Class 11-A (Science)', blood: 'B+', rfid: 'RFID-782912', photo: '🧑‍🎓' },
+        ];
+        document.getElementById('idCardsContainer').innerHTML = idCards.map(c => `
+          <div class="student-id-card">
+            <div class="id-card-header">
+              <span class="id-school-name">DPS R.K. Puram · Student ID</span>
+              <span style="font-size:10px; color:#27c93f; font-weight:700;">ACTIVE</span>
+            </div>
+            <div class="id-card-body">
+              <div class="id-photo">${c.photo}</div>
+              <div class="id-details">
+                <div class="id-name">${c.name}</div>
+                <div class="id-meta">Roll: <strong>${c.roll}</strong> | Adm: ${c.adm}</div>
+                <div class="id-meta">${c.grade}</div>
+                <div class="id-meta">Blood Group: <strong>${c.blood}</strong></div>
+              </div>
+            </div>
+            <div class="id-card-footer">
+              <span>NFC/RFID: ${c.rfid}</span>
+              <span>||||||| | |||| | ||| (BARCODE)</span>
+            </div>
+          </div>
+        `).join('');
+
+        const certs = [
+          { num: 'CERT-BONA-2026-081', type: 'Bonafide Student Certificate', student: 'Arjun Patel', date: '2026-09-01', hash: 'SHA256:d41d8cd98f00b204e9800998ecf8427e', purpose: 'National Olympiad & Passport Verification' },
+          { num: 'CERT-CHAR-2026-114', type: 'Character & Conduct Certificate', student: 'Priya Sen', date: '2026-09-10', hash: 'SHA256:e2fc714c4727ee9395f324cd2e7f331f', purpose: 'Exemplary Academic and Leadership Standing' },
+          { num: 'CERT-TRAN-2026-042', type: 'Official Transfer Certificate (TC)', student: 'Vikramaditya Roy', date: '2026-10-01', hash: 'SHA256:7d793037a0760186574b0282f2f435e7', purpose: 'Parent Relocation to KV Mumbai (Dues Cleared)' },
+        ];
+        document.getElementById('certificatesList').innerHTML = certs.map(cr => `
+          <div class="cert-frame">
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div>
+                <strong style="color:#53a8b6; font-size:13px;">${cr.type}</strong> — <code>${cr.num}</code>
+                <div style="font-size:12px; color:#e2e8f0; margin-top:3px;">Issued to: <strong>${cr.student}</strong> | Date: ${cr.date}</div>
+                <div style="font-size:11px; color:var(--text-muted); margin-top:2px;">Purpose / Endorsement: ${cr.purpose}</div>
+              </div>
+              <div style="text-align:right;">
+                <span class="badge badge-green">VERIFIED &amp; SEALED</span>
+                <div style="font-size:9.5px; font-family:monospace; color:var(--text-muted); margin-top:4px;">${cr.hash.slice(0, 24)}...</div>
+              </div>
+            </div>
+          </div>
+        `).join('');
+      },
+
+      async renderLogistics() {
+        this.toast('Campus logistics, fleet allocations and inventory synchronized 🚌');
       },
 
       async pingDiagnostics() {

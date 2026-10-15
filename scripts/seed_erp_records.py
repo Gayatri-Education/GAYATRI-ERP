@@ -185,9 +185,92 @@ def seed_erp_data(db_path: str = "gayatri_local.db"):
     """, (org_id, now, now))
     print("  [OK] Seeded Approved Staff Leave Request")
 
+    # 10. Timetable Periods & Class Schedule Slots
+    periods = [
+        ("per_01", "Period 1 (Morning)", 1, "08:30:00", "09:20:00", 0),
+        ("per_02", "Period 2", 2, "09:20:00", "10:10:00", 0),
+        ("per_03", "Period 3", 3, "10:10:00", "11:00:00", 0),
+        ("per_break", "Morning Recess", 4, "11:00:00", "11:30:00", 1),
+        ("per_04", "Period 4", 5, "11:30:00", "12:20:00", 0),
+        ("per_05", "Period 5", 6, "12:20:00", "13:10:00", 0),
+        ("per_lunch", "Lunch Break", 7, "13:10:00", "14:00:00", 1),
+        ("per_06", "Period 6 (Socratic AI Lab)", 8, "14:00:00", "15:00:00", 0),
+    ]
+    for pid, pname, pnum, pstart, pend, is_brk in periods:
+        cur.execute("""
+            INSERT OR IGNORE INTO timetable_periods (
+                id, organization_id, academic_year_id, name, period_number, start_time, end_time, is_break, created_at
+            ) VALUES (?, ?, 'ay_2026_27', ?, ?, ?, ?, ?, ?);
+        """, (pid, org_id, pname, pnum, pstart, pend, is_brk, now))
+
+    slots = [
+        ("slot_mon_p1", "per_01", "MONDAY", "subj_chem", "usr_teacher_sharma", "Lab 1"),
+        ("slot_mon_p2", "per_02", "MONDAY", "subj_math", "usr_teacher_sundaram", "Room 204"),
+        ("slot_mon_p3", "per_03", "MONDAY", "subj_phys", "usr_teacher_verma", "Room 204"),
+        ("slot_mon_p4", "per_04", "MONDAY", "subj_bio", "usr_teacher_swaminathan", "Bio Lab"),
+        ("slot_mon_p5", "per_05", "MONDAY", "subj_chem", "usr_teacher_sharma", "Lab 1"),
+        ("slot_mon_p6", "per_06", "MONDAY", "subj_chem", "usr_teacher_sharma", "Computer Hub 3"),
+    ]
+    for sid, pid, day, subj, tchr, rm in slots:
+        cur.execute("""
+            INSERT OR IGNORE INTO class_timetable_slots (
+                id, organization_id, academic_year_id, class_id, period_id, day_of_week, subject_id, teacher_id, room_name, status, created_at, updated_at
+            ) VALUES (?, ?, 'ay_2026_27', 'cls_11a', ?, ?, ?, ?, ?, 'ACTIVE', ?, ?);
+        """, (sid, org_id, pid, day, subj, tchr, rm, now, now))
+
+    cur.execute("""
+        INSERT OR IGNORE INTO teacher_substitutions (
+            id, organization_id, slot_id, date, original_teacher_id, substitute_teacher_id, reason, status, created_at
+        ) VALUES ('sub_001', ?, 'slot_mon_p3', '2026-10-15', 'usr_teacher_verma', 'usr_teacher_sharma', 'Academic Conference Attendance', 'ACTIVE', ?);
+    """, (org_id, now))
+    print(f"  [OK] Seeded Timetable ({len(periods)} Periods, {len(slots)} Class Slots, Active Substitution)")
+
+    # 11. Financial Accounting Ledgers
+    ledger_entries = [
+        ("led_001", "acc_student_arjun", "inv_001", None, "INVOICE_GENERATED", 50000.0, 50000.0, "Class 11 Tuition & Lab Fee Assessment"),
+        ("led_002", "acc_student_arjun", None, "pay_001", "PAYMENT_RECEIVED", 30000.0, 20000.0, "Razorpay UPI Payment - Ref #RZP-8921"),
+        ("led_003", "acc_student_priya", "inv_002", None, "INVOICE_GENERATED", 50000.0, 50000.0, "Class 11 Tuition & Lab Fee Assessment"),
+        ("led_004", "acc_student_priya", None, "pay_002", "PAYMENT_RECEIVED", 50000.0, 0.0, "NetBanking Settlement - Ref #NB-4412"),
+    ]
+    for lid, acc, inv, pay, etype, amt, bal, desc in ledger_entries:
+        cur.execute("""
+            INSERT OR IGNORE INTO financial_ledger_entries (
+                id, organization_id, account_id, invoice_id, payment_id, entry_type, amount, balance_after, description, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        """, (lid, org_id, acc, inv, pay, etype, amt, bal, desc, now))
+    print(f"  [OK] Seeded {len(ledger_entries)} Accounting Ledger Entries (Credits & Debits)")
+
+    # 12. Student Official Certificates & ID Badges
+    certs = [
+        ("cert_bonafide_arjun", "usr_student_arjun", "BONAFIDE", "CERT-BONA-2026-081", "2026-09-01", "ISSUED", "d41d8cd98f00b204e9800998ecf8427e", '{"purpose":"National Olympiad & Passport Verification","grade":"11-A"}', "usr_dps_admin"),
+        ("cert_char_priya", "usr_student_priya", "CHARACTER_CERTIFICATE", "CERT-CHAR-2026-114", "2026-09-10", "ISSUED", "e2fc714c4727ee9395f324cd2e7f331f", '{"conduct":"Exemplary Academic and Leadership Standing","grade":"11-A"}', "usr_dps_admin"),
+        ("cert_tc_vikram", "usr_student_vikram", "TRANSFER_CERTIFICATE", "CERT-TRAN-2026-042", "2026-10-01", "ISSUED", "7d793037a0760186574b0282f2f435e7", '{"reason":"Parent Relocation to KV Mumbai","dues_cleared":true}', "usr_dps_admin"),
+    ]
+    for cid, sid, ctype, cnum, idate, stat, chash, pjson, iby in certs:
+        cur.execute("""
+            INSERT OR IGNORE INTO official_certificates (
+                id, organization_id, student_id, certificate_type, certificate_number, issue_date, status, document_hash, payload_json, issued_by, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        """, (cid, org_id, sid, ctype, cnum, idate, stat, chash, pjson, iby, now, now))
+    print(f"  [OK] Seeded {len(certs)} Cryptographic Official Certificates (Bonafide, Character, TC)")
+
+    # 13. Student Report Cards
+    report_cards = [
+        ("rc_arjun_t1", "usr_student_arjun", "ay_2026_27", "term_monsoon_2026", "RC-2026-T1-001", "2026-09-30", "PUBLISHED", "Solid conceptual mastery in Thermodynamics. Recommended adaptive revision in Le Chatelier equilibrium shifts.", "SHA256:7f3b890a5e812d45c6e8790a12b45678"),
+        ("rc_priya_t1", "usr_student_priya", "ay_2026_27", "term_monsoon_2026", "RC-2026-T1-002", "2026-09-30", "PUBLISHED", "Outstanding academic performance across all subjects (96%). Nominated for Regional STEM Olympiad.", "SHA256:9a4c123d4e5f67890a1b2c3d4e5f6a7b"),
+    ]
+    for rcid, sid, ay, tm, rnum, idate, stat, rem, dhash in report_cards:
+        cur.execute("""
+            INSERT OR IGNORE INTO student_report_cards (
+                id, organization_id, student_id, academic_year_id, academic_term_id, report_number, issue_date, status, general_remarks, document_hash, published_at, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+        """, (rcid, org_id, sid, ay, tm, rnum, idate, stat, rem, dhash, now, now, now))
+    print(f"  [OK] Seeded {len(report_cards)} Published Cryptographic Report Cards")
+
     conn.commit()
     conn.close()
     print("[SUCCESS] All Phase 02A/B ERP operational records seeded successfully!\n")
 
 if __name__ == "__main__":
     seed_erp_data()
+
