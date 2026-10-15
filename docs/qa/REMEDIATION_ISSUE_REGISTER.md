@@ -18,4 +18,4 @@
 | **QA-010** | Inconsistent dependency lock & packaging entrypoints | P2 | FIXED_VERIFIED | Unified lock usage, cross-platform launcher scripts, SHA-256 release manifest | 10 |
 | **QA-011** | Unverifiable hardware & cloud provider declarations | P2 | FIXED_VERIFIED | Truthful BLOCKED/SIMULATED hardware labeling, offline local outbox sync | 11 |
 | **QA-012** | Competing documentation, trackers & stale claims | P1 | FIXED_VERIFIED | Consolidate single canonical source of truth; reconcile claims vs evidence | 12 |
-| **QA-013** | Final forensic review, complete regression & release gate | P0/P1 | NOT_STARTED | 100% CI pass rate across platforms, zero P0/P1 defects, signed release | 13 |
+| **QA-013** | Final forensic review, complete regression & release gate | P0/P1 | FIXED_VERIFIED | 100% CI pass rate across platforms, zero P0/P1 defects, signed release | 13 |
