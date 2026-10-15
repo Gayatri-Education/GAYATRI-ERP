@@ -248,7 +248,7 @@ phases:
     branch: dev/phase-00-baseline
     issue_url: null
     pull_request_url: null
-    commit_shas: []
+    commit_shas: ["b210721"]
     findings: [ERP-013, ERP-020]
     files_changed:
       - "central_platform/api/schemas.py"
