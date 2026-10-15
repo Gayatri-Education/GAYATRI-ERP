@@ -473,94 +473,95 @@ class AdmissionsService:
         first_name = name_parts[0]
         last_name = name_parts[1] if len(name_parts) > 1 else ""
 
-        with self.db._get_connection() as conn:
-            # 1. Create Person
-            conn.execute(
-                """
-                INSERT INTO persons (
-                    id, organization_id, first_name, last_name, email, phone, date_of_birth, gender, address_line1, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-                """,
-                (person_id, organization_id, first_name, last_name, app.email, app.phone, app.date_of_birth, app.gender, app.address, now, now),
-            )
-
-            # 2. Create Student Profile
-            conn.execute(
-                """
-                INSERT INTO student_profiles (
-                    id, person_id, organization_id, admission_number, roll_number, admission_date, academic_status, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?);
-                """,
-                (student_id, person_id, organization_id, app.application_number, roll_number, now, now, now),
-            )
-
-            # 3. Create Guardian if provided
-            if guardian_name and guardian_id and guardian_person_id:
-                g_parts = guardian_name.strip().split(" ", 1)
-                g_first = g_parts[0]
-                g_last = g_parts[1] if len(g_parts) > 1 else ""
+        with self.db.transaction():
+            with self.db._get_connection() as conn:
+                # 1. Create Person
                 conn.execute(
                     """
                     INSERT INTO persons (
-                        id, organization_id, first_name, last_name, phone, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?);
+                        id, organization_id, first_name, last_name, email, phone, date_of_birth, gender, address_line1, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
                     """,
-                    (guardian_person_id, organization_id, g_first, g_last, guardian_phone, now, now),
-                )
-                conn.execute(
-                    """
-                    INSERT INTO guardian_profiles (
-                        id, person_id, organization_id, is_legal_guardian, created_at, updated_at
-                    ) VALUES (?, ?, ?, 1, ?, ?);
-                    """,
-                    (guardian_id, guardian_person_id, organization_id, now, now),
-                )
-                conn.execute(
-                    """
-                    INSERT INTO student_guardian_links (
-                        id, organization_id, student_id, guardian_id, relationship, is_primary_contact, is_emergency_contact, is_pickup_authorized, can_access_portal, created_at
-                    ) VALUES (?, ?, ?, ?, ?, 1, 1, 1, 1, ?);
-                    """,
-                    (f"sgl-{uuid.uuid4().hex[:12]}", organization_id, student_id, guardian_id, guardian_relationship, now),
+                    (person_id, organization_id, first_name, last_name, app.email, app.phone, app.date_of_birth, app.gender, app.address, now, now),
                 )
 
-            # 4. Create class enrollment if class provided
-            if class_id and enrollment_id and app.academic_year_id:
+                # 2. Create Student Profile
                 conn.execute(
                     """
-                    INSERT INTO student_class_enrollments (
-                        id, organization_id, student_id, class_id, academic_year_id, roll_number, enrollment_date, status, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?);
+                    INSERT INTO student_profiles (
+                        id, person_id, organization_id, admission_number, roll_number, admission_date, academic_status, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?);
                     """,
-                    (enrollment_id, organization_id, student_id, class_id, app.academic_year_id, roll_number, now, now, now),
+                    (student_id, person_id, organization_id, app.application_number, roll_number, now, now, now),
                 )
 
-            # 5. Update application
-            conn.execute(
-                """
-                UPDATE admission_applications
-                SET status = 'CONVERTED', converted_student_id = ?, updated_at = ?
-                WHERE id = ? AND organization_id = ?;
-                """,
-                (student_id, now, application_id, organization_id),
-            )
+                # 3. Create Guardian if provided
+                if guardian_name and guardian_id and guardian_person_id:
+                    g_parts = guardian_name.strip().split(" ", 1)
+                    g_first = g_parts[0]
+                    g_last = g_parts[1] if len(g_parts) > 1 else ""
+                    conn.execute(
+                        """
+                        INSERT INTO persons (
+                            id, organization_id, first_name, last_name, phone, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?);
+                        """,
+                        (guardian_person_id, organization_id, g_first, g_last, guardian_phone, now, now),
+                    )
+                    conn.execute(
+                        """
+                        INSERT INTO guardian_profiles (
+                            id, person_id, organization_id, is_legal_guardian, created_at, updated_at
+                        ) VALUES (?, ?, ?, 1, ?, ?);
+                        """,
+                        (guardian_id, guardian_person_id, organization_id, now, now),
+                    )
+                    conn.execute(
+                        """
+                        INSERT INTO student_guardian_links (
+                            id, organization_id, student_id, guardian_id, relationship, is_primary_contact, is_emergency_contact, is_pickup_authorized, can_access_portal, created_at
+                        ) VALUES (?, ?, ?, ?, ?, 1, 1, 1, 1, ?);
+                        """,
+                        (f"sgl-{uuid.uuid4().hex[:12]}", organization_id, student_id, guardian_id, guardian_relationship, now),
+                    )
 
-            # 6. Enqueue domain event
-            conn.execute(
-                """
-                INSERT INTO domain_events_outbox (
-                    id, idempotency_key, event_type, aggregate_type, aggregate_id, organization_id, payload_json, created_at
-                ) VALUES (?, ?, 'admission.converted', 'student', ?, ?, ?, ?);
-                """,
-                (
-                    f"evt-{uuid.uuid4().hex[:12]}",
-                    f"conv-{application_id}",
-                    student_id,
-                    organization_id,
-                    f'{{"application_id": "{application_id}", "student_id": "{student_id}", "person_id": "{person_id}"}}',
-                    now,
-                ),
-            )
+                # 4. Create class enrollment if class provided
+                if class_id and enrollment_id and app.academic_year_id:
+                    conn.execute(
+                        """
+                        INSERT INTO student_class_enrollments (
+                            id, organization_id, student_id, class_id, academic_year_id, roll_number, enrollment_date, status, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?);
+                        """,
+                        (enrollment_id, organization_id, student_id, class_id, app.academic_year_id, roll_number, now, now, now),
+                    )
+
+                # 5. Update application
+                conn.execute(
+                    """
+                    UPDATE admission_applications
+                    SET status = 'CONVERTED', converted_student_id = ?, updated_at = ?
+                    WHERE id = ? AND organization_id = ?;
+                    """,
+                    (student_id, now, application_id, organization_id),
+                )
+
+                # 6. Enqueue domain event
+                conn.execute(
+                    """
+                    INSERT INTO domain_events_outbox (
+                        id, idempotency_key, event_type, aggregate_type, aggregate_id, organization_id, payload_json, created_at
+                    ) VALUES (?, ?, 'admission.converted', 'student', ?, ?, ?, ?);
+                    """,
+                    (
+                        f"evt-{uuid.uuid4().hex[:12]}",
+                        f"conv-{application_id}",
+                        student_id,
+                        organization_id,
+                        f'{{"application_id": "{application_id}", "student_id": "{student_id}", "person_id": "{person_id}"}}',
+                        now,
+                    ),
+                )
 
         return {
             "student_id": student_id,

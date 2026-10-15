@@ -1,0 +1,36 @@
+# GAYATRI-ERP — Remediation Feature Traceability Matrix
+
+**Contract Reference:** [`../../GAYATRI_ERP_QA_REMEDIATION_GOAL.md`](../../GAYATRI_ERP_QA_REMEDIATION_GOAL.md)  
+**Status Key:** `IMPLEMENTED_VERIFIED`, `IMPLEMENTED_UNVERIFIED`, `PARTIAL`, `SIMULATED`, `BLOCKED`, `NOT_IMPLEMENTED`.
+
+| Claim / Feature | UI Action | API / Bridge | Domain Service | Persistence | Auth / Tenant Scope | Empirical Test Evidence | Status |
+|---|---|---|---|---|---|---|---|
+| **Identity & Provisioning** | Admin Portal Create User | `/api/v1/admin/users` | `AdminService.create_org_user` | `users` table | `ORG_ADMIN` / `SUPER_ADMIN` | `test_org_admin_user_provisioning_and_isolation` | `IMPLEMENTED_VERIFIED` |
+| **Token Revocation** | User Logout Button | `/api/v1/auth/logout` | `DatabaseRevocationStore.revoke` | `revoked_tokens` table | Bearer JWT required | `test_F004_revoked_token_returns_401` | `IMPLEMENTED_VERIFIED` |
+| **Parent Dashboard Context** | Parent Switch Child | `get_dashboard_context` | `ParentPortalController` | Multi-table read | Parent-to-Student Link | `tests/test_phase02_parent_portal_remediation.py` | `IMPLEMENTED_VERIFIED` |
+| **Parent-Child Privacy Isolation** | View Child Progress | `get_child_progress` | `ParentPortalController` | `learning_records` | Parent-to-Student Link | `tests/test_phase02_parent_portal_remediation.py` | `IMPLEMENTED_VERIFIED` |
+| **Admissions CRM Intake** | Inquire Online / Walkin | `/api/v1/admissions/inquiries` | `AdmissionsService.create_inquiry` | `admissions_inquiries` | Public form / Org Scoped | `test_e2e_student_lifecycle_and_restart_durability` | `IMPLEMENTED_VERIFIED` |
+| **Student Lifecycle SIS** | Convert to Student | `/api/v1/admissions/convert` | `AdmissionsService.convert_to_student` | `students` / `enrollments` | `ORG_ADMIN` | `test_submodule_6b_admissions_lifecycle` | `IMPLEMENTED_VERIFIED` |
+| **Fee Plan & Billing** | Generate Monthly Billing | `/api/v1/fees/billing/generate` | `FeeService.generate_monthly_billing` | `invoices`, `ledger_entries`, `billing_batches` | `ORG_ADMIN` | `tests/test_phase03_fee_admin_remediation.py` | `IMPLEMENTED_VERIFIED` |
+| **Double-Entry Ledger** | Record Payment / Refund | `/api/v1/finance/orders` | `FinanceService.post_journal_entry` | `ledger_accounts`, `journals` | `ORG_ADMIN` / Cashier | `test_submodule_6d_finance_ledger_reconciliation` | `IMPLEMENTED_VERIFIED` |
+| **Payment Webhook Ingestion** | Gateway Callback | `/api/v1/finance/webhooks/{provider}` | `FinanceService.process_payment_webhook` | `payment_orders`, `invoices`, `payment_webhook_events` | Gateway HMAC SHA-256 Signature & Order Binding | `tests/test_phase04_payment_webhook_remediation.py` | `IMPLEMENTED_VERIFIED` |
+| **Attendance Roll Call** | Daily Classroom Register | `/api/v1/attendance/roll-call` | `AttendanceService.submit_roll_call` | `attendance_records` | `TEACHER` | `test_attendance_roll_call_and_correction_audit` | `IMPLEMENTED_VERIFIED` |
+| **Attendance Excuse Request** | Parent Submit Excuse | `/api/v1/attendance/excuse` | `AttendanceService.submit_excuse` | `attendance_excuses` | Student / Guardian | `test_student_excuse_submission_idor_protection` | `IMPLEMENTED_VERIFIED` |
+| **Edge Biometric / RFID** | Terminal Punch | `/api/v1/edge/punches` | `EdgeService.ingest_punches` | `edge_punches` | Registered Device Key | `tests/test_phase05_edge_sync_remediation.py, test_edge_daemon_local_outbox_persistence_and_restart` | `IMPLEMENTED_VERIFIED` |
+| **Physical RFID / Bio Hardware** | Physical Card / Fingerprint | Hardware USB/RS485 | Hardware Driver Adapter | Edge daemon | Physical Device Serial | `BLOCKERS.md` (BLK-003) | `BLOCKED` |
+| **Timetable Generation** | Generate Timetable | `/api/v1/timetable/generate` | `TimetableSolver.generate` | `timetable_slots` | `ORG_ADMIN` / Principal | `test_submodule_6a_timetable_conflict_solver` | `IMPLEMENTED_VERIFIED` |
+| **Teacher Substitution** | Mark Absent & Substitute | `/api/v1/timetable/substitutions` | `TimetableService.assign_substitution` | `timetable_substitutions` | `ORG_ADMIN` | `test_teacher_substitution_assignment` | `IMPLEMENTED_VERIFIED` |
+| **Examinations & Marks** | Enter Marks & Moderate | `/api/v1/examinations/marks` | `ExaminationService.record_marks` | `exam_marks` | `TEACHER` (assigned course) | `test_exam_marks_bounds_and_locking` | `IMPLEMENTED_VERIFIED` |
+| **CBSE Report Cards** | Print Report Card | `/api/v1/grading/report-cards` | `GradingService.generate_report_card` | `report_cards` | `TEACHER` / Student / Parent | `test_submodule_6c_cbse_report_card_generation` | `IMPLEMENTED_VERIFIED` |
+| **HR & Payroll** | Run Monthly Pay Run | `/api/v1/hr/payroll/run` | `HRService.process_payroll` | `payroll_records` | `ORG_ADMIN` | `test_payroll_gross_to_net_calculation` | `IMPLEMENTED_VERIFIED` |
+| **Transport & Fleet** | Map Route & Boarding | `/api/v1/transport/routes` | `TransportService.create_route` | `transport_routes` | `ORG_ADMIN` | `test_submodule_6f_campus_facilities_management` | `IMPLEMENTED_VERIFIED` |
+| **Hostel & Bed Allocation** | Assign Bed | `/api/v1/hostel/allocations` | `HostelService.allocate_bed` | `hostel_allocations` | `ORG_ADMIN` / Warden | `test_submodule_6f_campus_facilities_management` | `IMPLEMENTED_VERIFIED` |
+| **Inventory & POS** | Issue Purchase Order | `/api/v1/inventory/orders` | `InventoryService.create_po` | `inventory_orders` | `ORG_ADMIN` | `test_submodule_6f_campus_facilities_management` | `IMPLEMENTED_VERIFIED` |
+| **Visitor & Gate Passes** | Issue Visitor Pass | `/api/v1/campus/visitors` | `CampusService.register_visitor` | `visitor_logs`, `gate_passes` | Security Guard / Admin | `test_submodule_6f_campus_facilities_management` | `IMPLEMENTED_VERIFIED` |
+| **Document Designer & QR** | Issue TC / Certificate | `/api/v1/academic/certificates` | `AcademicService.issue_certificate` | `certificates` | Registrar / Admin | `test_submodule_6g_certificate_template_and_qr_verification` | `IMPLEMENTED_VERIFIED` |
+| **Public CMS & Forms** | Publish School Page | `/api/v1/cms/pages` | `CampusService.publish_page` | `cms_pages` | `ORG_ADMIN` / Public read | `test_submodule_6h_public_cms_publishing_and_isolation` | `IMPLEMENTED_VERIFIED` |
+| **Local SLM AI Tutoring** | Student Turn / Question | `/api/v1/tutor/turn` | `GenericTutorOrchestrator.step` | `session_turns`, `mastery` | Enrolled `STUDENT` | `test_slm_pedagogical_alignment.py` | `IMPLEMENTED_VERIFIED` |
+| **Teacher AI Copilot** | Request Lesson Briefing | `/api/v1/ai/teacher/briefing` | `TeacherCopilotService.get_briefing` | In-memory telemetry | Assigned `TEACHER` | `test_teacher_copilot_briefing_endpoint` | `IMPLEMENTED_VERIFIED` |
+| **Scoped RAG Retrieval** | Search Course Textbook | `/api/v1/rag/query` | `ScopedRAGRetriever.query` | `rag_chunks`, vector index | Enrolled Student / Teacher | `tests/test_phase06_scoped_rag_authorization.py` | `IMPLEMENTED_VERIFIED` |
+| **Offline Sync Outbox** | Offline Action Replay | `/api/v1/sync/batch` | `SyncService.process_batch` | `sync_operations` | Device / User | `test_canonical_sync_idempotency_and_replay_protection` | `IMPLEMENTED_VERIFIED` |
+| **Backup & Disaster Restore** | Create Online Snapshot | `scripts/backup_db.py` | `PlatformDatabase.backup` | Backup `.db` file | System Operator | `test_backup_restore_and_disaster_recovery` | `IMPLEMENTED_VERIFIED` |

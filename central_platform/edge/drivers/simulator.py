@@ -35,6 +35,14 @@ class SimulatedBiometricDriver(AbstractBiometricDriver):
         self._simulate_corrupt_next: bool = False
         self._sequence_counter: int = 1
 
+    @property
+    def is_simulated(self) -> bool:
+        return True
+
+    @property
+    def driver_name(self) -> str:
+        return "SimulatedBiometricDriver"
+
     def connect(self) -> bool:
         self._connected = True
         return True

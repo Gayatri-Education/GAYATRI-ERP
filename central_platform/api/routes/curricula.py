@@ -42,6 +42,7 @@ from central_platform.curriculum.service import (
     CurriculumStatus,
 )
 from central_platform.models.schema import User, UserRole
+from central_platform.rbac.engine import normalize_role
 
 router = APIRouter(prefix="/curricula", tags=["Curricula"])
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent.parent
@@ -66,11 +67,11 @@ def _enforce_authoring_auth(current_user: Optional[User]) -> User:
             full_name="System Administrator",
             role=UserRole.SUPER_ADMIN,
         )
-    user_role = current_user.role.value if isinstance(current_user.role, UserRole) else str(current_user.role).upper()
-    if user_role in (UserRole.STUDENT.value, "STUDENT"):
+    user_role = normalize_role(current_user.role)
+    if user_role not in (UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN, UserRole.COURSE_ADMIN, UserRole.TEACHER):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Forbidden: Students cannot author, import, or publish curricula",
+            detail="Forbidden: Students and parents cannot author, import, or publish curricula",
         )
     return current_user
 

@@ -553,6 +553,17 @@ def create_app() -> FastAPI:
                 return HTMLResponse(content=f.read(), status_code=200)
         return HTMLResponse(content="<h1>Admin Web Portal</h1>", status_code=200)
 
+    @app.get("/parent", response_class=HTMLResponse, tags=["Dashboard UI"])
+    @app.get("/parent/portal", response_class=HTMLResponse, tags=["Dashboard UI"])
+    async def get_parent_portal_html():
+        """Serve the Parent Monitoring Web Portal browser SPA."""
+        import os
+        parent_path = os.path.join(os.path.dirname(__file__), "..", "..", "app", "ui", "parent_portal.html")
+        if os.path.exists(parent_path):
+            with open(parent_path, "r", encoding="utf-8") as f:
+                return HTMLResponse(content=f.read(), status_code=200)
+        return HTMLResponse(content="<h1>Parent Web Portal</h1>", status_code=200)
+
     @app.get("/student", response_class=HTMLResponse, tags=["Dashboard UI"])
     @app.get("/student/dashboard", response_class=HTMLResponse, tags=["Dashboard UI"])
     async def get_student_dashboard_html():

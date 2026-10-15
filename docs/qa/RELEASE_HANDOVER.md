@@ -3,9 +3,11 @@
 **Version:** 3.0.1  
 **Date:** 2026-10-15  
 **Author:** AI Pair Programmer & Gayatri Core Engineering  
-**Canonical Tracker:** [`docs/qa/PROGRESS_TRACKER.yaml`](PROGRESS_TRACKER.yaml)  
-**Issue Register:** [`docs/qa/ISSUE_REGISTER.md`](ISSUE_REGISTER.md)  
-**Status:** PRODUCTION_READY / APPROVED  
+**Canonical QA Tracker:** [`REMEDIATION_MASTER_TRACKER.md`](REMEDIATION_MASTER_TRACKER.md)  
+**Remediation Issue Register:** [`REMEDIATION_ISSUE_REGISTER.md`](REMEDIATION_ISSUE_REGISTER.md)  
+**Hardware & Integration Disclosures:** [`../operations/HARDWARE_AND_THIRD_PARTY_DISCLOSURES.md`](../operations/HARDWARE_AND_THIRD_PARTY_DISCLOSURES.md)  
+**Legacy Progress Tracker:** [`docs/qa/PROGRESS_TRACKER.yaml`](PROGRESS_TRACKER.yaml)  
+**Status:** QA_REMEDIATION_VERIFIED  
 
 ---
 
@@ -47,7 +49,7 @@ Following a rigorous 17-phase engineering and QA remediation program (`PHASE-00`
 2. **Database & Data Layer (`central_platform/db.py`, `migrations/`)**:
    - SQLite with Write-Ahead Logging (`PRAGMA journal_mode = WAL;`).
    - Concurrency resilience: `PRAGMA busy_timeout = 30000;` and connection `timeout=30.0`.
-   - 8 reversible SQL migrations (`001_initial_schema.sql` through `008_course_versions.sql`).
+   - 16 reversible SQL migrations (`001_initial_schema.sql` through `016_cms_and_public_forms.sql`).
 3. **Tutoring & Adaptation Engine (`central_platform/tutor/`, `core/tutor/`)**:
    - Socratic dialog orchestration with grounded curriculum RAG.
    - Fail-closed deterministic evaluation: offline/degraded states preserve mastery with zero fake-credit inflation.

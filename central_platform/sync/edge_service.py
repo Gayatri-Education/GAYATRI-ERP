@@ -129,20 +129,50 @@ class EdgeSyncService:
 
         return device
 
-    def record_heartbeat(self, device_id: str, ip_address: Optional[str] = None, firmware_version: Optional[str] = None) -> None:
+    def record_heartbeat(self, device_id: str, ip_address: Optional[str] = None, firmware_version: Optional[str] = None) -> bool:
         """Update last heartbeat timestamp of an active edge device."""
         now = _now_iso()
         with self.db._get_connection() as conn:
-            conn.execute(
+            cursor = conn.execute(
                 """
                 UPDATE edge_devices
                 SET last_heartbeat_at = ?,
                     ip_address = COALESCE(?, ip_address),
                     firmware_version = COALESCE(?, firmware_version),
                     updated_at = ?
-                WHERE id = ?;
+                WHERE id = ? AND status != 'REVOKED';
                 """,
                 (now, ip_address, firmware_version, now, device_id),
+            )
+            return cursor.rowcount > 0
+
+    def get_device_unscoped(self, device_id: str) -> Optional[EdgeDevice]:
+        """Retrieve an edge device by ID across all organizations (for device authentication)."""
+        with self.db._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id, organization_id, device_code, device_type, device_name, secret_hash, "
+                "status, last_heartbeat_at, firmware_version, ip_address, metadata_json, created_at, updated_at "
+                "FROM edge_devices WHERE id = ?;",
+                (device_id,),
+            )
+            r = cursor.fetchone()
+            if not r:
+                return None
+            return EdgeDevice(
+                id=r[0],
+                organization_id=r[1],
+                device_code=r[2],
+                device_type=DeviceType(r[3]),
+                device_name=r[4],
+                secret_hash=r[5],
+                status=DeviceStatus(r[6]),
+                last_heartbeat_at=r[7],
+                firmware_version=r[8],
+                ip_address=r[9],
+                metadata_json=r[10],
+                created_at=r[11],
+                updated_at=r[12],
             )
 
     def get_device(self, organization_id: str, device_id: str) -> Optional[EdgeDevice]:
@@ -243,9 +273,18 @@ class EdgeSyncService:
                 punch_time = p.get("punch_time", now_str)
                 verification_type = p.get("verification_type", "FINGERPRINT")
 
-                # 1. Idempotency Check
+                # 1. Idempotency Check (Punches and DLQ)
                 cursor.execute(
                     "SELECT id FROM edge_punches WHERE organization_id = ? AND idempotency_key = ?;",
+                    (organization_id, idempotency_key),
+                )
+                if cursor.fetchone():
+                    item_statuses[idempotency_key] = SyncItemStatus.DUPLICATE.value
+                    dup_count += 1
+                    continue
+
+                cursor.execute(
+                    "SELECT id FROM sync_dead_letter_queue WHERE organization_id = ? AND operation_id = ?;",
                     (organization_id, idempotency_key),
                 )
                 if cursor.fetchone():

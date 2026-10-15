@@ -22,12 +22,14 @@ from central_platform.api.schemas import (
     CohortResponse,
 )
 from central_platform.auth.dependencies import (
+    get_current_user,
     get_current_user_optional,
     get_db,
     is_production_mode,
 )
 from central_platform.db import PlatformDatabase
 from central_platform.models.schema import ClassGroup, Cohort, User, UserRole
+from central_platform.rbac.engine import normalize_role
 
 logger = logging.getLogger("gayatri.api.classes")
 
@@ -39,13 +41,25 @@ async def list_classes(
     organization_id: Optional[str] = Query(None, description="Filter by organization ID"),
     course_id: Optional[str] = Query(None, description="Filter by course ID"),
     db: PlatformDatabase = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """List class groups with optional filters."""
+    """List class groups with tenant isolation."""
+    user_role = normalize_role(current_user.role)
+    if user_role != UserRole.SUPER_ADMIN:
+        if organization_id and organization_id != current_user.organization_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Forbidden: cross-organization access to '{organization_id}' prohibited",
+            )
+        effective_org_id = current_user.organization_id
+    else:
+        effective_org_id = organization_id
+
     query = "SELECT id, organization_id, course_id, name, section, created_at FROM class_groups WHERE 1=1"
     params = []
-    if organization_id:
+    if effective_org_id:
         query += " AND organization_id = ?"
-        params.append(organization_id)
+        params.append(effective_org_id)
     if course_id:
         query += " AND course_id = ?"
         params.append(course_id)
@@ -82,13 +96,13 @@ async def create_class_group(
             headers={"WWW-Authenticate": "Bearer"},
         )
     if current_user:
-        user_role = current_user.role.value if isinstance(current_user.role, UserRole) else str(current_user.role).upper()
-        if user_role in (UserRole.STUDENT.value, "STUDENT"):
+        user_role = normalize_role(current_user.role)
+        if user_role in (UserRole.STUDENT, UserRole.PARENT):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Forbidden: students are not authorized to create class groups",
+                detail="Forbidden: students and parents are not authorized to create class groups",
             )
-        if user_role not in (UserRole.SUPER_ADMIN.value, "SUPER_ADMIN"):
+        if user_role != UserRole.SUPER_ADMIN:
             if current_user.organization_id and current_user.organization_id != req.organization_id:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
@@ -128,8 +142,9 @@ async def create_class_group(
 async def get_class_group(
     class_id: str,
     db: PlatformDatabase = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """Get class group by ID."""
+    """Get class group by ID with tenant scoping."""
     with db._get_connection() as conn:
         cur = conn.cursor()
         cur.execute(
@@ -142,6 +157,13 @@ async def get_class_group(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Class group '{class_id}' not found.",
+        )
+
+    user_role = normalize_role(current_user.role)
+    if user_role != UserRole.SUPER_ADMIN and row[1] != current_user.organization_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Forbidden: cross-organization access to class group '{class_id}' prohibited",
         )
 
     return ApiResponse(
@@ -171,13 +193,13 @@ async def create_cohort_for_class(
             headers={"WWW-Authenticate": "Bearer"},
         )
     if current_user:
-        user_role = current_user.role.value if isinstance(current_user.role, UserRole) else str(current_user.role).upper()
-        if user_role in (UserRole.STUDENT.value, "STUDENT"):
+        user_role = normalize_role(current_user.role)
+        if user_role in (UserRole.STUDENT, UserRole.PARENT):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Forbidden: students are not authorized to create cohorts",
+                detail="Forbidden: students and parents are not authorized to create cohorts",
             )
-        if req.organization_id and user_role not in (UserRole.SUPER_ADMIN.value, "SUPER_ADMIN"):
+        if req.organization_id and user_role != UserRole.SUPER_ADMIN:
             if current_user.organization_id and current_user.organization_id != req.organization_id:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
@@ -211,10 +233,28 @@ async def create_cohort_for_class(
 async def list_cohorts_for_class(
     class_id: str,
     db: PlatformDatabase = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
-    """List cohorts belonging to a class group."""
+    """List cohorts belonging to a class group with tenant verification."""
+    user_role = normalize_role(current_user.role)
     with db._get_connection() as conn:
         cur = conn.cursor()
+        cur.execute(
+            "SELECT organization_id FROM class_groups WHERE id = ?",
+            (class_id,),
+        )
+        cg_row = cur.fetchone()
+        if not cg_row:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Class group '{class_id}' not found.",
+            )
+        if user_role != UserRole.SUPER_ADMIN and cg_row[0] != current_user.organization_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Forbidden: cross-organization access to cohorts of class '{class_id}' prohibited",
+            )
+
         cur.execute(
             "SELECT id, class_group_id, name, academic_year, created_at FROM cohorts WHERE class_group_id = ?",
             (class_id,),

@@ -184,49 +184,51 @@ def test_production_missing_database_path():
 
 # ── 6. Model & Checksum Invariants ────────────────────────────────────────────
 
-def test_production_model_checksum_verification():
+def test_production_model_checksum_verification(tmp_path):
     """Invalid model checksum must fail validation."""
     strong_secret = "a_super_secure_production_secret_key_with_very_high_entropy_32_chars!"
     strong_enc_key = "a_super_secure_production_encryption_key_32_chars!"
-    with tempfile.NamedTemporaryFile(suffix=".gguf", delete=False) as tmp:
-        tmp.write(b"mock gguf model weights content")
-        tmp_path = tmp.name
+    model_file = tmp_path / "model.gguf"
+    model_file.write_bytes(b"mock gguf model weights content")
+    tmp_path_str = str(model_file)
 
-    try:
-        env = {
-            "GAYATRI_ENV": "production",
-            "GAYATRI_JWT_SECRET": strong_secret,
-            "GAYATRI_ENCRYPTION_KEY": strong_enc_key,
-            "GAYATRI_ALLOWED_ORIGINS": "https://gayatri.edu",
-            "GAYATRI_DB_PATH": "gayatri_local.db",
-            "GAYATRI_MODEL_FILE": tmp_path,
-            "GAYATRI_MODEL_CHECKSUM": "0000000000000000000000000000000000000000000000000000000000000000",
-        }
-        with pytest.raises(RuntimeError, match="Model checksum mismatch"):
-            validate_production_config(env)
+    test_db = tmp_path / "valid_model_test.db"
+    test_db.touch()
 
-        # Correct checksum succeeds
-        import hashlib
-        correct_sha = hashlib.sha256(b"mock gguf model weights content").hexdigest()
-        env["GAYATRI_MODEL_CHECKSUM"] = correct_sha
-        res = validate_production_config(env)
-        assert res["production_enforced"] is True
-    finally:
-        if os.path.exists(tmp_path):
-            os.remove(tmp_path)
+    env = {
+        "GAYATRI_ENV": "production",
+        "GAYATRI_JWT_SECRET": strong_secret,
+        "GAYATRI_ENCRYPTION_KEY": strong_enc_key,
+        "GAYATRI_ALLOWED_ORIGINS": "https://gayatri.edu",
+        "GAYATRI_DB_PATH": str(test_db),
+        "GAYATRI_MODEL_FILE": tmp_path_str,
+        "GAYATRI_MODEL_CHECKSUM": "0000000000000000000000000000000000000000000000000000000000000000",
+    }
+    with pytest.raises(RuntimeError, match="Model checksum mismatch"):
+        validate_production_config(env)
+
+    # Correct checksum succeeds
+    import hashlib
+    correct_sha = hashlib.sha256(b"mock gguf model weights content").hexdigest()
+    env["GAYATRI_MODEL_CHECKSUM"] = correct_sha
+    res = validate_production_config(env)
+    assert res["production_enforced"] is True
 
 
 # ── 7. Production Application Factory & Docs Policy ───────────────────────────
 
-def test_create_app_in_production_mode(monkeypatch):
+def test_create_app_in_production_mode(monkeypatch, tmp_path):
     """create_app in production mode enforces strict CORS and disables docs by default."""
     strong_secret = "a_super_secure_production_secret_key_with_very_high_entropy_32_chars!"
     strong_enc_key = "a_super_secure_production_encryption_key_32_chars!"
+    test_db = tmp_path / "prod_app_test.db"
+    test_db.touch()
+
     monkeypatch.setenv("GAYATRI_ENV", "production")
     monkeypatch.setenv("GAYATRI_JWT_SECRET", strong_secret)
     monkeypatch.setenv("GAYATRI_ENCRYPTION_KEY", strong_enc_key)
     monkeypatch.setenv("GAYATRI_ALLOWED_ORIGINS", "https://portal.gayatri.edu,https://app.gayatri.edu")
-    monkeypatch.setenv("GAYATRI_DB_PATH", "gayatri_local.db")
+    monkeypatch.setenv("GAYATRI_DB_PATH", str(test_db))
     monkeypatch.delenv("GAYATRI_ENABLE_DOCS", raising=False)
 
     prod_app = create_app()

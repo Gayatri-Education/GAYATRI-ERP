@@ -210,3 +210,28 @@ class TransportService:
                 created_at=row[7],
                 updated_at=row[8],
             )
+
+    def list_routes(self, organization_id: str) -> List[TransportRoute]:
+        with self.db._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT id, organization_id, name, code, start_point, end_point, is_active, created_at, updated_at "
+                "FROM transport_routes WHERE organization_id = ? AND is_active = 1;",
+                (organization_id,),
+            )
+            rows = cursor.fetchall()
+            return [
+                TransportRoute(
+                    id=row[0],
+                    organization_id=row[1],
+                    name=row[2],
+                    code=row[3],
+                    start_point=row[4],
+                    end_point=row[5],
+                    is_active=bool(row[6]),
+                    created_at=row[7],
+                    updated_at=row[8],
+                )
+                for row in rows
+            ]
+

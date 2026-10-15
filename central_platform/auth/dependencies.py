@@ -196,11 +196,21 @@ def enforce_resource_boundaries(
         return
 
     # 2. Org Isolation: Non-super admin cannot access other orgs
-    if target_org_id and current_user.organization_id:
-        if target_org_id != current_user.organization_id:
+    effective_org_id = target_org_id
+    if not effective_org_id and target_student_id and target_student_id not in ("all", "*"):
+        try:
+            db = get_db()
+            st_user = db.get_user(target_student_id)
+            if st_user and getattr(st_user, "organization_id", None):
+                effective_org_id = st_user.organization_id
+        except Exception:
+            pass
+
+    if effective_org_id and current_user.organization_id:
+        if effective_org_id != current_user.organization_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Forbidden: cross-organization access to '{target_org_id}' prohibited",
+                detail=f"Forbidden: cross-organization access to '{effective_org_id}' prohibited",
             )
 
     # 3. Student Self-Access Isolation:

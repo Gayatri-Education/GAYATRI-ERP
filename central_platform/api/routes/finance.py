@@ -132,12 +132,97 @@ async def ingest_webhook(
             detail="Missing payment gateway signature header",
         )
 
+    # 1. Resolve order reference strictly from payload (Requirement 2 & 3)
+    order_ref = (
+        payload_dict.get("order_id")
+        or payload_dict.get("provider_order_id")
+        or payload_dict.get("payload", {}).get("payment", {}).get("entity", {}).get("order_id")
+        or payload_dict.get("payload", {}).get("order", {}).get("entity", {}).get("id")
+        or payload_dict.get("data", {}).get("object", {}).get("metadata", {}).get("order_id")
+    )
+    if not order_ref:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing payment order reference in webhook payload",
+        )
+
+    # 2. Derive organization and order strictly from persisted payment_orders
+    with service.db._get_connection() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT id, organization_id, invoice_id, student_id, amount, currency, provider,
+                   provider_order_id, status
+            FROM payment_orders
+            WHERE provider_order_id = ? OR id = ?;
+            """,
+            (order_ref, order_ref),
+        )
+        orders = cursor.fetchall()
+
+    if len(orders) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unknown or unmatched payment order: '{order_ref}'",
+        )
+    if len(orders) > 1:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Ambiguous payment order reference: '{order_ref}' matches multiple orders",
+        )
+
+    order_row = orders[0]
+    org_id = order_row[1]  # Strict tenant binding derived from DB
+
+    # 3. Reject caller-supplied tenant if mismatched (Requirement 2)
+    caller_org = (
+        request.headers.get("x-organization-id")
+        or request.query_params.get("org_id")
+        or payload_dict.get("organization_id")
+    )
+    if caller_org and caller_org.strip() and caller_org.strip() != org_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Organization mismatch: payment order belongs to '{org_id}', but caller specified '{caller_org.strip()}'",
+        )
+
+    if current_user:
+        user_org = _get_org_id(current_user)
+        user_role = getattr(current_user, "role", None)
+        user_role_str = user_role.value if hasattr(user_role, "value") else str(user_role or "").lower()
+        if user_role_str != "super_admin" and user_org != org_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Cross-tenant access forbidden: user in '{user_org}' cannot mutate payment for '{org_id}'",
+            )
+
+    # 4. Verify provider matches order (Requirement 4)
+    order_provider = order_row[6]
+    if order_provider and order_provider.strip().lower() != provider_clean:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Provider mismatch: order '{order_ref}' was created for '{order_provider}', but webhook is for '{provider_clean}'",
+        )
+
+    # 5. Verify merchant identity if configured (Requirement 1 & 4)
+    provider_config = service.get_provider_config(org_id, provider_clean)
+    if provider_config and provider_config.get("merchant_id"):
+        payload_merchant = (
+            payload_dict.get("account_id")
+            or payload_dict.get("merchant_id")
+            or payload_dict.get("merchant_vpa")
+            or payload_dict.get("payee_vpa")
+        )
+        if payload_merchant and payload_merchant != provider_config["merchant_id"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Merchant mismatch: event specifies merchant '{payload_merchant}', but organization is configured for '{provider_config['merchant_id']}'",
+            )
+
+    # 6. Retrieve organization-scoped webhook secret and verify signature (Requirement 5)
     webhook_secret = (
         request.headers.get("x-webhook-secret")
-        or os.environ.get(f"{provider_clean.upper()}_WEBHOOK_SECRET")
-        or os.environ.get("PAYMENT_WEBHOOK_SECRET")
-        or os.environ.get("WEBHOOK_SECRET")
-        or service.get_webhook_secret(provider_clean)
+        or service.get_webhook_secret(provider_clean, org_id)
     )
 
     if not service.verify_webhook_signature(raw_payload, signature, webhook_secret):
@@ -146,36 +231,10 @@ async def ingest_webhook(
             detail="Invalid payment gateway webhook signature",
         )
 
-    # Resolve event details
+    # 7. Resolve event details
     event_id = payload_dict.get("event_id") or payload_dict.get("id") or f"evt_{uuid.uuid4().hex[:10]}"
     event_type = payload_dict.get("event_type") or payload_dict.get("event") or "payment.captured"
     idempotency_key = payload_dict.get("idempotency_key") or request.headers.get("x-idempotency-key")
-
-    # Resolve organization scoping
-    org_id = None
-    if current_user:
-        org_id = _get_org_id(current_user)
-    if not org_id:
-        org_id = request.headers.get("x-organization-id") or request.query_params.get("org_id") or payload_dict.get("organization_id")
-    if not org_id:
-        order_ref = payload_dict.get("order_id") or payload_dict.get("payload", {}).get("payment", {}).get("entity", {}).get("order_id")
-        if order_ref:
-            with service.db._get_connection() as conn:
-                r = conn.execute(
-                    "SELECT organization_id FROM payment_orders WHERE provider_order_id = ? OR id = ?;",
-                    (order_ref, order_ref),
-                ).fetchone()
-                if r:
-                    org_id = r[0]
-    if not org_id:
-        inv_ref = payload_dict.get("invoice_id")
-        if inv_ref:
-            with service.db._get_connection() as conn:
-                r = conn.execute("SELECT org_id FROM invoices WHERE id = ?;", (inv_ref,)).fetchone()
-                if r:
-                    org_id = r[0]
-    if not org_id:
-        org_id = "org-default"
 
     try:
         result = service.process_payment_webhook(

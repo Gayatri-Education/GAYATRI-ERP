@@ -43,13 +43,31 @@ if exist .venv\Scripts\python.exe (
 
 REM Install dependencies
 echo.
-echo [3/4] Installing dependencies from requirements.txt...
-.venv\Scripts\pip.exe install -r requirements.txt
+echo [3/6] Installing dependencies...
+if exist requirements.lock (
+    echo [*] Installing dependencies from pinned requirements.lock...
+    .venv\Scripts\pip.exe install -r requirements.lock
+) else (
+    echo [WARN] requirements.lock not found; falling back to requirements.txt...
+    .venv\Scripts\pip.exe install -r requirements.txt
+)
 if errorlevel 1 (
     echo.
-    echo [ERROR] pip install failed. Please check your internet connection or requirements.txt
+    echo [ERROR] pip install failed. Please check your internet connection or package requirements.
     pause
     exit /b 1
+)
+
+REM Verify dependency lock integrity
+if exist scripts\verify_dependency_lock.py (
+    echo.
+    echo [*] Reconciling dependency lock integrity...
+    .venv\Scripts\python.exe scripts\verify_dependency_lock.py
+    if errorlevel 1 (
+        echo [ERROR] Dependency lock validation failed.
+        pause
+        exit /b 1
+    )
 )
 
 REM Verify llama-cpp-python installation
@@ -65,7 +83,7 @@ if errorlevel 1 (
 
 REM Verify model
 echo.
-echo [4/5] Checking model file status...
+echo [4/6] Checking model file status...
 .venv\Scripts\python.exe -c "from core.providers.local import LocalProvider; print('[OK] Model detected at:', LocalProvider.MODEL_PATH); import sys; sys.exit(0 if LocalProvider.MODEL_PATH.exists() else 1)"
 if errorlevel 1 (
     echo.
@@ -77,7 +95,7 @@ if errorlevel 1 (
 
 REM Initialize database schema
 echo.
-echo [5/5] Initializing database schema...
+echo [5/6] Initializing database schema...
 .venv\Scripts\python.exe scripts\migrate_db.py up --db-path gayatri_local.db
 if errorlevel 1 (
     echo [ERROR] Failed to run database schema migrations.
@@ -85,6 +103,17 @@ if errorlevel 1 (
     exit /b 1
 )
 echo [OK] Database schema initialized.
+
+REM Verify bytecode compilation
+echo.
+echo [6/6] Verifying bytecode compilation hygiene...
+.venv\Scripts\python.exe -m compileall app core central_platform scripts -q
+if errorlevel 1 (
+    echo [ERROR] Python bytecode compilation failed.
+    pause
+    exit /b 1
+)
+echo [OK] Bytecode compilation passed.
 
 echo.
 echo ============================================================

@@ -18,7 +18,7 @@ import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Union
 
 logger = logging.getLogger("gayatri.central_platform.db")
 
@@ -266,6 +266,71 @@ class PlatformDatabase:
                 ON rate_limit_events (key, timestamp);
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS billing_batches (
+                    id TEXT PRIMARY KEY,
+                    organization_id TEXT NOT NULL,
+                    month_year TEXT NOT NULL,
+                    invoices_generated INTEGER DEFAULT 0,
+                    total_amount REAL DEFAULT 0.0,
+                    currency TEXT DEFAULT 'INR',
+                    status TEXT DEFAULT 'COMPLETED',
+                    created_at TEXT NOT NULL,
+                    UNIQUE(organization_id, month_year)
+                );
+                """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_billing_batches_org_month
+                ON billing_batches (organization_id, month_year);
+                """
+            )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS organization_payment_providers (
+                    id TEXT PRIMARY KEY,
+                    organization_id TEXT NOT NULL,
+                    provider TEXT NOT NULL,
+                    merchant_id TEXT NOT NULL,
+                    webhook_secret TEXT NOT NULL,
+                    api_key TEXT,
+                    is_active INTEGER NOT NULL DEFAULT 1,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    UNIQUE(organization_id, provider)
+                );
+                """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_org_pay_providers
+                ON organization_payment_providers (organization_id, provider);
+                """
+            )
+            is_prod = os.environ.get("GAYATRI_PRODUCTION_MODE", "").lower() in ("true", "1")
+            if not is_prod:
+                now_iso = datetime.now(timezone.utc).isoformat()
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO organizations (id, name, slug, created_at, updated_at)
+                    VALUES ('org-central', 'Gayatri Central Platform', 'org-central', ?, ?);
+                    """,
+                    (now_iso, now_iso),
+                )
+                count = conn.execute("SELECT COUNT(*) FROM users;").fetchone()[0]
+                if count == 0:
+                    conn.execute(
+                        """
+                        INSERT OR IGNORE INTO users (id, email, full_name, role, organization_id, is_active, created_at, updated_at)
+                        VALUES 
+                        ('usr-admin-01', 'admin@gayatri.ai', 'admin', 'SUPER_ADMIN', 'org-central', 1, ?, ?),
+                        ('usr-teacher-01', 'sharma@gayatri.ai', 'teacher_sharma', 'TEACHER', 'org-central', 1, ?, ?),
+                        ('usr-student-01', 'student01@gayatri.ai', 'student_001', 'STUDENT', 'org-central', 1, ?, ?);
+                        """,
+                        (now_iso, now_iso, now_iso, now_iso, now_iso, now_iso),
+                    )
         self.checkpoint("TRUNCATE")
 
     # ── Token Revocation & Sliding Rate Limiting ────────────────────────────
@@ -600,6 +665,115 @@ class PlatformDatabase:
                 for r in rows
             ]
 
+    def get_guardian_students(
+        self,
+        organization_id: Optional[str],
+        guardian_id: str,
+        can_access_portal_only: bool = True,
+    ) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            query = """
+                SELECT l.*,
+                       sp.admission_number, sp.person_id as student_person_id,
+                       p.first_name, p.last_name, p.email, p.phone
+                FROM student_guardian_links l
+                LEFT JOIN student_profiles sp ON l.student_id = sp.id
+                LEFT JOIN persons p ON sp.person_id = p.id
+                WHERE (
+                    l.guardian_id = ?
+                    OR l.guardian_id IN (
+                        SELECT gp.id FROM guardian_profiles gp
+                        JOIN persons gp_p ON gp.person_id = gp_p.id
+                        WHERE gp.id = ? OR gp.person_id = ? OR gp_p.user_id = ?
+                    )
+                )
+            """
+            params: list[Any] = [guardian_id, guardian_id, guardian_id, guardian_id]
+            if organization_id:
+                query += " AND l.organization_id = ?"
+                params.append(organization_id)
+            if can_access_portal_only:
+                query += " AND l.can_access_portal = 1"
+            cursor.execute(query, tuple(params))
+            rows = cursor.fetchall()
+            results = []
+            for r in rows:
+                first_name = r["first_name"]
+                last_name = r["last_name"]
+                email = r["email"]
+                if not first_name:
+                    cursor.execute("SELECT full_name, email FROM users WHERE id = ?;", (r["student_id"],))
+                    u_row = cursor.fetchone()
+                    if u_row:
+                        first_name = u_row["full_name"] or r["student_id"]
+                        email = u_row["email"]
+                results.append({
+                    "id": r["id"],
+                    "organization_id": r["organization_id"],
+                    "student_id": r["student_id"],
+                    "guardian_id": r["guardian_id"],
+                    "relationship": r["relationship"],
+                    "is_primary_contact": bool(r["is_primary_contact"]),
+                    "is_emergency_contact": bool(r["is_emergency_contact"]),
+                    "is_pickup_authorized": bool(r["is_pickup_authorized"]),
+                    "can_access_portal": bool(r["can_access_portal"]),
+                    "admission_number": r["admission_number"],
+                    "first_name": first_name or "",
+                    "last_name": last_name or "",
+                    "email": email or "",
+                    "phone": r["phone"] or "",
+                })
+            return results
+
+    def is_guardian_linked(
+        self,
+        organization_id: Optional[str],
+        guardian_id: str,
+        student_id: str,
+        check_portal_access: bool = True,
+    ) -> bool:
+        """Check whether a guardian is authorized and linked to a student."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            query = """
+                SELECT 1 FROM student_guardian_links l
+                WHERE (
+                    l.guardian_id = ?
+                    OR l.guardian_id IN (
+                        SELECT gp.id FROM guardian_profiles gp
+                        JOIN persons gp_p ON gp.person_id = gp_p.id
+                        WHERE gp.id = ? OR gp.person_id = ? OR gp_p.user_id = ?
+                    )
+                )
+                AND (
+                    l.student_id = ?
+                    OR l.student_id IN (
+                        SELECT sp.id FROM student_profiles sp
+                        JOIN persons sp_p ON sp.person_id = sp_p.id
+                        WHERE sp.id = ? OR sp.person_id = ? OR sp_p.user_id = ?
+                    )
+                )
+            """
+            params: list[Any] = [
+                guardian_id, guardian_id, guardian_id, guardian_id,
+                student_id, student_id, student_id, student_id,
+            ]
+            if organization_id:
+                query += " AND l.organization_id = ?"
+                params.append(organization_id)
+            if check_portal_access:
+                query += " AND l.can_access_portal = 1"
+            cursor.execute(query, tuple(params))
+            if cursor.fetchone():
+                return True
+
+        from central_platform.privacy.policies import PrivacyRulesEngine
+        if PrivacyRulesEngine.is_parent_linked(guardian_id, student_id):
+            return True
+
+        return False
+
     def create_staff_profile(
         self,
         staff_id: str,
@@ -803,6 +977,45 @@ class PlatformDatabase:
             if not include_deleted:
                 sql += " AND is_deleted = 0"
             sql += " ORDER BY full_name ASC;"
+            rows = conn.execute(sql, tuple(params)).fetchall()
+            return [
+                User(
+                    id=r["id"],
+                    email=r["email"],
+                    full_name=r["full_name"],
+                    role=UserRole(r["role"]),
+                    organization_id=r["organization_id"],
+                    is_active=bool(r["is_active"]),
+                    created_at=r["created_at"],
+                    updated_at=r["updated_at"],
+                    is_deleted=bool(r["is_deleted"]),
+                    deleted_at=r["deleted_at"],
+                )
+                for r in rows
+            ]
+
+    def list_users(
+        self,
+        organization_id: Optional[str] = None,
+        role: Optional[Union[UserRole, str]] = None,
+        limit: int = 50,
+        offset: int = 0,
+        include_deleted: bool = False,
+    ) -> List[User]:
+        role_val = (role.value if hasattr(role, "value") else str(role)) if role else None
+        with self._get_connection() as conn:
+            sql = "SELECT * FROM users WHERE 1=1"
+            params: list[Any] = []
+            if not include_deleted:
+                sql += " AND is_deleted = 0"
+            if organization_id:
+                sql += " AND organization_id = ?"
+                params.append(organization_id)
+            if role_val:
+                sql += " AND (role = ? OR LOWER(role) = LOWER(?))"
+                params.extend([role_val, role_val])
+            sql += " ORDER BY full_name ASC LIMIT ? OFFSET ?;"
+            params.extend([limit, offset])
             rows = conn.execute(sql, tuple(params)).fetchall()
             return [
                 User(
@@ -4002,6 +4215,254 @@ class PlatformDatabase:
                 ),
             )
             return refund
+
+    # ── Fee Administration, Billing Batches & Aging Reports ───────────
+
+    def get_students_by_organization(self, organization_id: str) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT sp.id as student_id, sp.admission_number, sp.academic_status,
+                       p.first_name, p.last_name, p.email
+                FROM student_profiles sp
+                LEFT JOIN persons p ON sp.person_id = p.id
+                WHERE sp.organization_id = ?;
+            """, (organization_id,))
+            rows = cursor.fetchall()
+            if rows:
+                return [
+                    {
+                        "student_id": r["student_id"],
+                        "admission_number": r["admission_number"] or "",
+                        "academic_status": r["academic_status"] or "active",
+                        "full_name": f"{r['first_name'] or ''} {r['last_name'] or ''}".strip() or r["student_id"],
+                        "email": r["email"] or "",
+                    }
+                    for r in rows
+                ]
+            cursor.execute("""
+                SELECT id as student_id, full_name, email
+                FROM users
+                WHERE organization_id = ? AND role = 'student' AND is_active = 1;
+            """, (organization_id,))
+            u_rows = cursor.fetchall()
+            return [
+                {
+                    "student_id": r["student_id"],
+                    "admission_number": "",
+                    "academic_status": "active",
+                    "full_name": r["full_name"] or r["student_id"],
+                    "email": r["email"] or "",
+                }
+                for r in u_rows
+            ]
+
+    def create_billing_batch(self, batch: Dict[str, Any]) -> Dict[str, Any]:
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO billing_batches (
+                    id, organization_id, month_year, invoices_generated, total_amount, currency, status, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                """,
+                (
+                    batch["batch_id"],
+                    batch["organization_id"],
+                    batch["month_year"],
+                    batch["invoices_generated"],
+                    batch["total_amount"],
+                    batch.get("currency", "INR"),
+                    batch.get("status", "COMPLETED"),
+                    batch.get("created_at", datetime.now(timezone.utc).isoformat()),
+                ),
+            )
+            return batch
+
+    def get_billing_batch(self, organization_id: str, month_year: str) -> Optional[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM billing_batches WHERE organization_id = ? AND month_year = ?;",
+                (organization_id, month_year),
+            )
+            row = cursor.fetchone()
+            if not row:
+                return None
+            return {
+                "batch_id": row["id"],
+                "organization_id": row["organization_id"],
+                "month_year": row["month_year"],
+                "invoices_generated": row["invoices_generated"],
+                "total_amount": float(row["total_amount"]),
+                "currency": row["currency"],
+                "status": row["status"],
+                "created_at": row["created_at"],
+            }
+
+    def get_fee_admin_summary(self, organization_id: str) -> Dict[str, Any]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            # 1. Total collected from completed payments
+            cursor.execute(
+                "SELECT coalesce(SUM(amount), 0.0) FROM payments WHERE org_id = ? AND status = 'completed' AND is_deleted = 0;",
+                (organization_id,),
+            )
+            total_collected = float(cursor.fetchone()[0])
+
+            # 2. Total pending from issued / partially_paid invoices
+            cursor.execute(
+                "SELECT coalesce(SUM(amount_due - amount_paid), 0.0) FROM invoices WHERE org_id = ? AND status IN ('issued', 'partially_paid') AND is_deleted = 0;",
+                (organization_id,),
+            )
+            total_pending = float(cursor.fetchone()[0])
+
+            # 3. Total overdue
+            now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            cursor.execute(
+                "SELECT coalesce(SUM(amount_due - amount_paid), 0.0) FROM invoices WHERE org_id = ? AND status IN ('issued', 'partially_paid', 'overdue') AND due_date < ? AND is_deleted = 0;",
+                (organization_id, now_iso),
+            )
+            total_overdue = float(cursor.fetchone()[0])
+
+            # 4. Total discounts applied
+            cursor.execute(
+                """
+                SELECT coalesce(SUM(d.applied_amount), 0.0)
+                FROM discounts d
+                JOIN fee_accounts fa ON d.fee_account_id = fa.id
+                WHERE fa.org_id = ? AND d.is_deleted = 0;
+                """,
+                (organization_id,),
+            )
+            total_discounts = float(cursor.fetchone()[0])
+
+            # 5. Accounts count
+            cursor.execute(
+                "SELECT count(*) FROM fee_accounts WHERE org_id = ? AND is_deleted = 0;",
+                (organization_id,),
+            )
+            accounts_count = int(cursor.fetchone()[0])
+
+            return {
+                "org_id": organization_id,
+                "total_collected": total_collected,
+                "total_pending": total_pending,
+                "total_overdue": total_overdue,
+                "total_discounts": total_discounts,
+                "accounts_count": accounts_count,
+                "currency": "INR",
+            }
+
+    def get_outstanding_invoices(self, organization_id: str) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT i.id, i.student_id, i.amount_due, i.amount_paid, i.due_date, i.status,
+                       u.full_name, u.email
+                FROM invoices i
+                LEFT JOIN users u ON i.student_id = u.id
+                WHERE i.org_id = ? AND i.is_deleted = 0 AND (i.amount_due - i.amount_paid) > 0.001
+                ORDER BY i.due_date ASC;
+                """,
+                (organization_id,),
+            )
+            rows = cursor.fetchall()
+            results = []
+            now_dt = datetime.now(timezone.utc)
+            for r in rows:
+                due_amt = float(r["amount_due"]) - float(r["amount_paid"])
+                due_date_str = r["due_date"]
+                overdue_days = 0
+                try:
+                    due_dt = datetime.fromisoformat(due_date_str.replace("Z", "+00:00"))
+                    if due_dt.tzinfo is None:
+                        due_dt = due_dt.replace(tzinfo=timezone.utc)
+                    delta = (now_dt - due_dt).days
+                    overdue_days = max(0, delta)
+                except Exception:
+                    pass
+
+                inv_status = r["status"]
+                if overdue_days > 0 and inv_status != "paid":
+                    inv_status = "overdue"
+
+                results.append({
+                    "invoice_id": r["id"],
+                    "student_id": r["student_id"],
+                    "student_name": r["full_name"] or r["student_id"],
+                    "grade": "Grade 10",
+                    "amount_due": due_amt,
+                    "overdue_days": overdue_days,
+                    "status": inv_status,
+                })
+            return results
+
+    # ── Organization Payment Provider Configurations (Phase 04) ──────
+
+    def save_payment_provider_config(
+        self,
+        organization_id: str,
+        provider: str,
+        merchant_id: str,
+        webhook_secret: str,
+        api_key: Optional[str] = None,
+        is_active: bool = True,
+        config_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        now_ts = datetime.now(timezone.utc).isoformat()
+        cid = config_id or f"opp_{uuid.uuid4().hex[:12]}"
+        provider_clean = (provider or "").strip().lower()
+
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO organization_payment_providers (
+                    id, organization_id, provider, merchant_id, webhook_secret, api_key, is_active, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(organization_id, provider) DO UPDATE SET
+                    merchant_id = excluded.merchant_id,
+                    webhook_secret = excluded.webhook_secret,
+                    api_key = excluded.api_key,
+                    is_active = excluded.is_active,
+                    updated_at = excluded.updated_at;
+                """,
+                (cid, organization_id, provider_clean, merchant_id, webhook_secret, api_key, 1 if is_active else 0, now_ts, now_ts),
+            )
+        return {
+            "id": cid,
+            "organization_id": organization_id,
+            "provider": provider_clean,
+            "merchant_id": merchant_id,
+            "webhook_secret": webhook_secret,
+            "api_key": api_key,
+            "is_active": is_active,
+            "created_at": now_ts,
+            "updated_at": now_ts,
+        }
+
+    def get_payment_provider_config(self, organization_id: str, provider: str) -> Optional[Dict[str, Any]]:
+        provider_clean = (provider or "").strip().lower()
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM organization_payment_providers WHERE organization_id = ? AND provider = ?;",
+                (organization_id, provider_clean),
+            )
+            row = cursor.fetchone()
+            if not row:
+                return None
+            return {
+                "id": row["id"],
+                "organization_id": row["organization_id"],
+                "provider": row["provider"],
+                "merchant_id": row["merchant_id"],
+                "webhook_secret": row["webhook_secret"],
+                "api_key": row["api_key"],
+                "is_active": bool(row["is_active"]),
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+            }
 
     # ── Phase 14 Sync Operations & Idempotency ───────────────────────
 

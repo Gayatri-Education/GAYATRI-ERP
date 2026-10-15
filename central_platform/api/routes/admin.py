@@ -53,6 +53,7 @@ from central_platform.auth.dependencies import (
     is_production_mode,
 )
 from central_platform.models.schema import User, UserRole
+from central_platform.rbac.engine import normalize_role
 
 router = APIRouter(prefix="/admin", tags=["Administration"])
 
@@ -83,7 +84,8 @@ def _enforce_admin_auth(current_user: Optional[User]) -> User:
             full_name="System Administrator",
             role=UserRole.SUPER_ADMIN,
         )
-    if current_user.role in (UserRole.STUDENT, UserRole.TEACHER):
+    user_role = normalize_role(current_user.role)
+    if user_role not in (UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Forbidden: administrative privileges required",
@@ -114,12 +116,13 @@ async def list_organizations(
 ):
     """List registered educational organizations with tenant scoping."""
     if current_user:
-        if current_user.role in (UserRole.STUDENT, UserRole.TEACHER):
+        user_role = normalize_role(current_user.role)
+        if user_role not in (UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Forbidden: administrative privileges required",
             )
-        if current_user.role == UserRole.ORG_ADMIN:
+        if user_role == UserRole.ORG_ADMIN:
             if organization_id and organization_id != current_user.organization_id:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
@@ -879,11 +882,13 @@ async def get_system_health(
             detail="Authentication required for administrative resources",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    if current_user and current_user.role in (UserRole.STUDENT, UserRole.TEACHER):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Forbidden: administrative privileges required",
-        )
+    if current_user:
+        user_role = normalize_role(current_user.role)
+        if user_role not in (UserRole.SUPER_ADMIN, UserRole.ORG_ADMIN):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Forbidden: administrative privileges required",
+            )
     service = get_admin_service()
     data = service.get_system_health()
     return ApiResponse(ok=True, data=data)
@@ -902,11 +907,13 @@ async def toggle_kill_switch(
             detail="Authentication required for administrative resources",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    if current_user and current_user.role != UserRole.SUPER_ADMIN:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Forbidden: only Super Admin can toggle emergency kill switch",
-        )
+    if current_user:
+        user_role = normalize_role(current_user.role)
+        if user_role != UserRole.SUPER_ADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Forbidden: only Super Admin can toggle emergency kill switch",
+            )
     service = get_admin_service()
     admin = current_user or User(id="super-admin", email="super@gayatri.edu", full_name="Super Admin", role=UserRole.SUPER_ADMIN)
     result = service.toggle_kill_switch(admin, active, reason)

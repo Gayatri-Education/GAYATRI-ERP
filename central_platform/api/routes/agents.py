@@ -18,6 +18,7 @@ from central_platform.ai.agents.registry import agent_registry
 from central_platform.auth.dependencies import (
     get_current_user_optional,
     is_production_mode,
+    normalize_role,
 )
 from central_platform.models.schema import User
 
@@ -91,7 +92,7 @@ async def execute_agent(
         )
 
     user_id = current_user.id if current_user else "anonymous"
-    user_role = str(current_user.role.value if hasattr(current_user.role, "value") else current_user.role) if current_user else "student"
+    user_role = normalize_role(current_user.role).value if current_user else "student"
     org_id = getattr(current_user, "organization_id", "org-default") if current_user else "org-default"
 
     # Lookup agent from canonical registry
@@ -153,7 +154,7 @@ async def list_agents(
     current_user: Optional[User] = Depends(get_current_user_optional),
 ) -> List[AgentSummaryResponse]:
     """List all registered agents, filtered by caller's role visibility."""
-    user_role = str(current_user.role.value if hasattr(current_user.role, "value") else current_user.role) if current_user else "student"
+    user_role = normalize_role(current_user.role).value if current_user else "student"
     agents = agent_registry.list_agents(cluster=cluster, user_role=user_role)
     return [AgentSummaryResponse(**a) for a in agents]
 

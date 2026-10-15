@@ -1048,6 +1048,27 @@ class AIExecutionApiRequest(BaseModel):
     teacher_directives: List[str] = Field(default_factory=list)
     rag_context: Optional[str] = None
 
+    @field_validator("task_type")
+    @classmethod
+    def validate_task_type(cls, v: Optional[str]) -> str:
+        if v is None:
+            return "general"
+        val = str(v).lower().strip()
+        allowed = {
+            "tutoring",
+            "assessment_grading",
+            "copilot_summary",
+            "intervention_recommendation",
+            "intent_classification",
+            "embedding",
+            "general",
+        }
+        if val not in allowed:
+            raise ValueError(
+                f"Invalid task_type: '{v}'. Must be one of: {sorted(list(allowed))}"
+            )
+        return val
+
 
 class AIExecutionApiResponse(BaseModel):
     request_id: str
@@ -1103,6 +1124,27 @@ class AIRoutePreviewRequest(BaseModel):
     task_type: str = "general"
     preferred_provider: Optional[str] = None
     preferred_model: Optional[str] = None
+
+    @field_validator("task_type")
+    @classmethod
+    def validate_task_type(cls, v: Optional[str]) -> str:
+        if v is None:
+            return "general"
+        val = str(v).lower().strip()
+        allowed = {
+            "tutoring",
+            "assessment_grading",
+            "copilot_summary",
+            "intervention_recommendation",
+            "intent_classification",
+            "embedding",
+            "general",
+        }
+        if val not in allowed:
+            raise ValueError(
+                f"Invalid task_type: '{v}'. Must be one of: {sorted(list(allowed))}"
+            )
+        return val
 
 
 class AIRoutePreviewResponse(BaseModel):
