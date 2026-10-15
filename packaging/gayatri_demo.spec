@@ -34,7 +34,7 @@ datas = [
     # Authoritative Model Manifest (needed for model artifact integrity verification)
     (str(PROJECT_ROOT / 'model_manifest.json'), '.'),
     # SLM system prompt contracts (needed by PromptContractLoader at runtime)
-    (str(PROJECT_ROOT / 'training' / 'prompts'), 'training/prompts'),
+    (str(PROJECT_ROOT / 'data' / 'prompts'), 'data/prompts'),
 ]
 
 # NOTE: PRIVATE_WORK is intentionally excluded (private IP, not for distribution)

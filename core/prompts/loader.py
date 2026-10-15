@@ -9,7 +9,7 @@ from pathlib import Path
 
 logger = logging.getLogger("gayatri.prompts.loader")
 
-_PROMPTS_DIR = Path(__file__).parent.parent.parent / "training" / "prompts"
+_PROMPTS_DIR = Path(__file__).parent.parent.parent / "data" / "prompts"
 
 
 class PromptContractLoader:

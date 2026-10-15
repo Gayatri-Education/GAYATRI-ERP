@@ -1,42 +1,25 @@
 @echo off
-setlocal
+title Gayatri School OS - Institutional Demo Platform
 cd /d "%~dp0"
 
-REM Suppress console logs and launch Gayatri AI in pure GUI mode (no background command prompt)
-set GAYATRI_LOG_LEVEL=WARNING
+set "PYTHON=python"
+if exist .venv\Scripts\python.exe set "PYTHON=.venv\Scripts\python.exe"
 
-REM 1. Prefer virtual environment pythonw (pure silent GUI)
-if exist "%~dp0.venv\Scripts\pythonw.exe" (
-    start "" "%~dp0.venv\Scripts\pythonw.exe" -m app.main
-    exit /b 0
-)
+echo =====================================================================
+echo   GAYATRI SCHOOL OS - INSTITUTIONAL DEMO & EVALUATION PLATFORM
+echo =====================================================================
+echo.
+echo [*] Launching Gayatri Central Platform on http://127.0.0.1:8000...
+echo.
+echo Evaluation Portals:
+echo   [1] Executive Admin Command Center : http://127.0.0.1:8000/admin
+echo   [2] Teacher Academic Portal        : http://127.0.0.1:8000/teacher
+echo   [3] Student Learning & AI Tutor    : http://127.0.0.1:8000/student
+echo   [4] Parent Oversight Portal        : http://127.0.0.1:8000/parent
+echo   [5] Interactive API Documentation  : http://127.0.0.1:8000/docs
+echo.
+echo Press Ctrl+C in this window to stop the server when done.
+echo.
 
-REM 2. Check standalone compiled executable if present
-if exist "%~dp0Gayatri_Chemistry_Tutor.exe" (
-    start "" "%~dp0Gayatri_Chemistry_Tutor.exe"
-    exit /b 0
-)
-
-REM 3. Check virtual environment python.exe
-if exist "%~dp0.venv\Scripts\python.exe" (
-    start "" "%~dp0.venv\Scripts\python.exe" -m app.main
-    exit /b 0
-)
-
-REM 4. Check system pythonw.exe
-where pythonw.exe >nul 2>&1
-if %errorlevel% equ 0 (
-    start "" pythonw.exe -m app.main
-    exit /b 0
-)
-
-REM 5. Fallback to system python.exe
-where python.exe >nul 2>&1
-if %errorlevel% equ 0 (
-    start "" python.exe -m app.main
-    exit /b 0
-)
-
-echo [ERROR] Could not find Python environment or executable.
-pause
-exit /b 1
+start "" "http://127.0.0.1:8000/admin"
+%PYTHON% -m central_platform.api.app

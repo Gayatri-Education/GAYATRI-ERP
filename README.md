@@ -9,7 +9,7 @@
 
 [![CI](https://github.com/Gayatri-Education/GAYATRI-ERP/actions/workflows/ci.yml/badge.svg)](https://github.com/Gayatri-Education/GAYATRI-ERP/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE.md)
+[![License: Proprietary / Evaluation](https://img.shields.io/badge/license-Proprietary%20%2F%20Evaluation-blueviolet.svg)](LICENSE.md)
 [![Version](https://img.shields.io/badge/version-3.0.1-orange.svg)](VERSION)
 [![Built at DBERT](https://img.shields.io/badge/Built%20at-DBERT%20Internship%20Program-blueviolet)](https://dbert.online/startups/portfolio/gayatri-ai)
 
@@ -293,17 +293,13 @@ run.bat
 
 ---
 
-## 📖 Institutional Governance & Verification
+## 🛡️ Intellectual Property Protection & Evaluation Terms
 
-Gayatri School OS is governed and hardened under a strict 14-phase QA remediation program with **100% automated regression test pass rates** across all domains:
+Gayatri School OS is enterprise software protected by copyright, trade secret, and international intellectual property laws:
 
-- 📋 **Canonical QA Remediation Tracker**: [`docs/qa/REMEDIATION_MASTER_TRACKER.md`](docs/qa/REMEDIATION_MASTER_TRACKER.md)
-- 🐞 **Canonical Remediation Issue Register (QA-001 through QA-015)**: [`docs/qa/REMEDIATION_ISSUE_REGISTER.md`](docs/qa/REMEDIATION_ISSUE_REGISTER.md)
-- 🔌 **Hardware & Cloud Gateway Disclosures**: [`docs/operations/HARDWARE_AND_THIRD_PARTY_DISCLOSURES.md`](docs/operations/HARDWARE_AND_THIRD_PARTY_DISCLOSURES.md)
-- 🛡️ **Route Authorization & Tenant Audit Matrix**: [`docs/qa/REMEDIATION_ROUTE_AUTHORIZATION_MATRIX.md`](docs/qa/REMEDIATION_ROUTE_AUTHORIZATION_MATRIX.md)
-- 📦 **Authoritative Release Handover**: [`docs/qa/RELEASE_HANDOVER.md`](docs/qa/RELEASE_HANDOVER.md)
-- 🗺️ **Full Architecture & Subsystem Map**: [`docs/erp_agent/REPOSITORY_MAP.md`](docs/erp_agent/REPOSITORY_MAP.md)
-- 🔍 **Remediation Contract**: [`GAYATRI_ERP_QA_REMEDIATION_GOAL.md`](GAYATRI_ERP_QA_REMEDIATION_GOAL.md)
+- 🔒 **Proprietary Architecture**: The underlying Socratic AI cognitive models, memory retention curves, automated timetable constraint solvers, and double-entry institutional accounting engines are proprietary assets of Gayatri Education & DBERT.
+- 🚫 **Anti-Reverse Engineering**: Reverse engineering, decompilation, disassembly, model prompt extraction, and competitive benchmarking are strictly prohibited under the evaluation agreement.
+- 🏫 **Campus Demonstration License**: Educational institutions, trustees, and authorized evaluators are granted permission to run the platform locally for demonstration and trial purposes. For enterprise licensing, multi-branch deployments, or source access, contact `partnerships@dbert.online`.
 
 ---
 
@@ -320,9 +316,9 @@ Gayatri School OS was architected and built by the engineering squad at **[DBERT
 
 ---
 
-## 📄 License
+## 📄 License & Legal Notice
 
-Released under the permissive **MIT License** — See [`LICENSE.md`](LICENSE.md) for details.
+Distributed under the **Gayatri Education & DBERT Educational Source-Available & Demonstration License** — See [`LICENSE.md`](LICENSE.md) for details. All commercial rights, proprietary algorithms, and trade secrets strictly reserved.
 
 <div align="center">
 <sub>
