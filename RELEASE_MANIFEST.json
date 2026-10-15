@@ -1,11 +1,11 @@
 {
   "release_candidate": "1.0.0-rc1",
-  "generated_at": "2026-10-14T19:56:50.462972+00:00",
+  "generated_at": "2026-10-15T18:06:37.548805+00:00",
   "platform": "Gayatri School OS",
   "governing_contract": "DEVELOPMENT.md",
   "git": {
-    "commit_sha": "081a1c9a0eb8ee67babdcfe34d7b214a82b3db9c",
-    "branch": "main",
+    "commit_sha": "4846ed82489d04a4b4ec12925a15445a70140f6b",
+    "branch": "qa/production-readiness-remediation",
     "clean_working_tree": false
   },
   "schema": {
@@ -144,16 +144,16 @@
   },
   "core_artifacts": {
     "central_platform/db.py": {
-      "bytes": 198101,
-      "sha256": "c9df2c55711342d49cf0cab99b3d6e8e5cab6e575ccded07d07269e0db24ad54"
+      "bytes": 218589,
+      "sha256": "c0407553d7c88aaee4bde5e1d91aa147a5ae82982e3e298459e12e59c04c5659"
     },
     "central_platform/config.py": {
       "bytes": 12315,
-      "sha256": "62e017323e6693165c42adb2859381f06c5008063bea919d770fb528af489455"
+      "sha256": "c6104c7c4d138ac353b131baf4bdb0901fad0199bbd58df14e43c634561dfd1b"
     },
     "central_platform/api/app.py": {
-      "bytes": 21485,
-      "sha256": "561e9868621ae86e1506eb28a7fa01a34d136b8ad540472b060a2c4672c2aa36"
+      "bytes": 29093,
+      "sha256": "dfc17cef2f062cedf9b470ee233f7452d41851ad4db67d6ae210029287077775"
     },
     "central_platform/ops/release_gate.py": {
       "bytes": 7950,
@@ -172,5 +172,5 @@
       "sha256": "c49750abecaac0d3b3120e6c6cd28a51af9262004c854cdce1210965db6fd84b"
     }
   },
-  "manifest_sha256": "187e794fe38ace7926a3c2376502854e4d10c0f799c7d1ade1df2dc205e351ec"
+  "manifest_sha256": "8cbcbff0e9e7487337d1eb1727a84340c518b91c206c9f6793471a758a05c1b6"
 }
