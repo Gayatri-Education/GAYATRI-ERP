@@ -48,19 +48,19 @@ window.GayatriStudent = (function () {
 
     container.innerHTML = `
       <div class="stat-card">
-        <div class="stat-value">${stats.mastery_pct || 0}%</div>
+        <div class="stat-value">${parseInt(stats.mastery_pct, 10) || 0}%</div>
         <div class="stat-label">Overall Concept Mastery</div>
       </div>
       <div class="stat-card">
-        <div class="stat-value">${stats.review_due_count || 0}</div>
+        <div class="stat-value">${parseInt(stats.review_due_count, 10) || 0}</div>
         <div class="stat-label">Review Items Due</div>
       </div>
       <div class="stat-card">
-        <div class="stat-value">${stats.assignments_pending || 0}</div>
+        <div class="stat-value">${parseInt(stats.assignments_pending, 10) || 0}</div>
         <div class="stat-label">Pending Assignments</div>
       </div>
       <div class="stat-card">
-        <div class="stat-value">${stats.streak_days || 0} Days</div>
+        <div class="stat-value">${parseInt(stats.streak_days, 10) || 0} Days</div>
         <div class="stat-label">Learning Streak</div>
       </div>
     `;
@@ -75,20 +75,65 @@ window.GayatriStudent = (function () {
       return;
     }
 
-    list.innerHTML = items.map(item => `
-      <div class="review-item-card">
-        <div>
-          <strong>${window.GayatriUI ? window.GayatriUI.escapeHtml(item.concept_name) : item.concept_name}</strong>
-          <div class="caption">Retainability: ${Math.round(item.retainability * 100)}%</div>
+    list.innerHTML = items.map(item => {
+      const safeName = window.GayatriUI ? window.GayatriUI.escapeHtml(item.concept_name) : item.concept_name;
+      const safeId = window.GayatriUI ? window.GayatriUI.escapeHtml(item.concept_id) : item.concept_id;
+      const retainPct = Math.round((Number(item.retainability) || 0) * 100);
+      return `
+        <div class="review-item-card">
+          <div>
+            <strong>${safeName}</strong>
+            <div class="caption">Retainability: ${retainPct}%</div>
+          </div>
+          <button class="btn btn-primary btn-sm review-now-btn" data-concept-id="${safeId}">Review Now</button>
         </div>
-        <button class="btn btn-primary btn-sm" onclick="window.GayatriStudent.startReview('${item.concept_id}')">Review Now</button>
-      </div>
-    `).join('');
+      `;
+    }).join('');
+
+    // Attach safe event listener via querySelectorAll
+    list.querySelectorAll('.review-now-btn').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        const conceptId = e.currentTarget.getAttribute('data-concept-id');
+        startReview(conceptId);
+      });
+    });
   }
 
-  function startReview(conceptId) {
+  async function startReview(conceptId, studentId, courseId) {
+    if (!conceptId) return;
     if (window.GayatriUI) {
-      window.GayatriUI.showToast(`Starting review for ${conceptId}`, 'info');
+      window.GayatriUI.showToast(`Starting review session for ${conceptId}...`, 'info');
+    }
+    const resolvedStudentId = studentId || 'current';
+    try {
+      const resp = await fetch(`/api/v1/students/${encodeURIComponent(resolvedStudentId)}/action`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({
+          action_type: 'review_start',
+          concept_id: conceptId,
+          course_id: courseId || 'crs-chem-101'
+        })
+      });
+      if (!resp.ok) {
+        if (window.GayatriUI) {
+          window.GayatriUI.showToast(`Unable to record review session on server (${resp.status})`, 'error');
+        }
+        return null;
+      }
+      const data = await resp.json();
+      if (window.GayatriUI) {
+        window.GayatriUI.showToast(`Review session started for ${conceptId}`, 'success');
+      }
+      return data;
+    } catch (e) {
+      if (window.GayatriUI) {
+        window.GayatriUI.showToast(`Network error starting review: ${e.message}`, 'error');
+      }
+      return null;
     }
   }
 

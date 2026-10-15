@@ -45,16 +45,73 @@ window.GayatriFeeAdmin = (function () {
   }
 
   // 2. Trigger Batch Monthly Billing
-  function generateMonthlyBilling(monthYear) {
+  async function generateMonthlyBilling(monthYear) {
     if (window.GayatriUI) {
-      window.GayatriUI.showToast(`Batch monthly billing initiated for ${monthYear}`, 'success');
+      window.GayatriUI.showToast(`Initiating batch monthly billing for ${monthYear}...`, 'info');
+    }
+    try {
+      const resp = await fetch('/api/v1/finance/billing/generate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        body: JSON.stringify({ month_year: monthYear })
+      });
+      if (!resp.ok) {
+        const err = await resp.json().catch(() => ({ detail: 'Batch billing request failed' }));
+        if (window.GayatriUI) {
+          window.GayatriUI.showToast(`Batch billing failed: ${err.detail || resp.statusText}`, 'error');
+        }
+        return null;
+      }
+      const data = await resp.json();
+      if (window.GayatriUI) {
+        window.GayatriUI.showToast(
+          `Batch monthly billing completed for ${monthYear}: ${data.invoices_generated || 0} invoices generated.`,
+          'success'
+        );
+      }
+      return data;
+    } catch (e) {
+      if (window.GayatriUI) {
+        window.GayatriUI.showToast(`Network error initiating monthly billing: ${e.message}`, 'error');
+      }
+      return null;
     }
   }
 
   // 3. Export Outstanding Report CSV
-  function exportOutstandingReport() {
+  async function exportOutstandingReport() {
     if (window.GayatriUI) {
       window.GayatriUI.showToast('Exporting Outstanding Fee Report (CSV)...', 'info');
+    }
+    try {
+      const resp = await fetch('/api/v1/finance/reports/outstanding/export', {
+        headers: { 'Accept': 'text/csv' }
+      });
+      if (!resp.ok) {
+        if (window.GayatriUI) {
+          window.GayatriUI.showToast('Failed to export outstanding fee report.', 'error');
+        }
+        return;
+      }
+      const csvBlob = await resp.blob();
+      const downloadUrl = window.URL.createObjectURL(csvBlob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = 'outstanding_fee_report.csv';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(downloadUrl);
+      if (window.GayatriUI) {
+        window.GayatriUI.showToast('Outstanding Fee Report exported successfully.', 'success');
+      }
+    } catch (e) {
+      if (window.GayatriUI) {
+        window.GayatriUI.showToast(`Export error: ${e.message}`, 'error');
+      }
     }
   }
 

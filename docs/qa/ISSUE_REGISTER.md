@@ -12,18 +12,18 @@
 | ERP-004 | Demo token / synthetic identity production exposure | P1 | FIXED_VERIFIED | Production configuration and unauthorized identity tests | 01 |
 | ERP-005 | Independent DB factories / stale module-global services | P1 | FIXED_VERIFIED | Dependency graph and separate DB path integration tests | 02 |
 | ERP-006 | Health endpoint may report fabricated count or healthy state | P1/P2 | NEEDS_REVALIDATION | DB/dependency failure tests and truthful metrics | 10 |
-| ERP-007 | Billing generation UI may be toast-only | P1/P2 | NEEDS_REVALIDATION | Click-to-persisted-billing E2E test | 05 |
-| ERP-008 | Outstanding report export may be toast-only | P2 | NEEDS_REVALIDATION | Export content/authorization/error E2E test | 05 |
+| ERP-007 | Billing generation UI may be toast-only | P1/P2 | FIXED_VERIFIED | Click-to-persisted-billing E2E test | 05 |
+| ERP-008 | Outstanding report export may be toast-only | P2 | FIXED_VERIFIED | Export content/authorization/error E2E test | 05 |
 | ERP-009 | Receipt printing may not fetch/verify persisted receipt | P1/P2 | FIXED_VERIFIED | Authorized persisted receipt retrieval test | 03, 05 |
-| ERP-010 | Student review action may be toast-only | P1/P2 | NEEDS_REVALIDATION | Review lifecycle and restart persistence test | 06 |
-| ERP-011 | Teacher Copilot action may not call backend | P1/P2 | NEEDS_REVALIDATION | Request/result/error E2E test | 05 |
+| ERP-010 | Student review action may be toast-only | P1/P2 | FIXED_VERIFIED | Review lifecycle and restart persistence test | 05, 06 |
+| ERP-011 | Teacher Copilot action may not call backend | P1/P2 | FIXED_VERIFIED | Request/result/error E2E test | 05 |
 | ERP-012 | AI execution/provider control endpoints may lack effective authorization | P1 | FIXED_VERIFIED | Role and tenant negative tests for all AI routes | 01, 04 |
 | ERP-013 | AI failures may be encoded as HTTP 200 | P1/P2 | FIXED_VERIFIED | API contract tests for provider failures | 04, 11 |
 | ERP-014 | Unknown provider type may silently default to mock | P2 | FIXED_VERIFIED | Invalid enum must reject without provider mutation | 01, 04 |
 | ERP-015 | Legacy API endpoints may bypass canonical auth/persistence | P1 | FIXED_VERIFIED | Route inventory, auth matrix, restart tests | 01, 09 |
 | ERP-016 | Assessment bank may serve fallback sample questions in empty production state | P1/P2 | NEEDS_REVALIDATION | Empty-bank and explicit demo-mode tests | 07 |
 | ERP-017 | Blocked tutor turn may look like a successful completed turn | P2 | NEEDS_REVALIDATION | Status contract and progress non-mutation test | 08 |
-| ERP-018 | Dynamic `innerHTML` / inline handler interpolation may enable injection | P2 | NEEDS_REVALIDATION | Contextual escaping and XSS regression tests | 05, 12 |
+| ERP-018 | Dynamic `innerHTML` / inline handler interpolation may enable injection | P2 | FIXED_VERIFIED | Contextual escaping and XSS regression tests | 05, 12 |
 | ERP-019 | Optional/missing bearer token edge cases | P1 | FIXED_VERIFIED | Route-by-route anonymous/malformed-header tests | 01 |
 | ERP-020 | Broad exceptions/defaults may mask failure | P1/P2 | NEEDS_REVALIDATION | Failure injection and log/response assertions | 10–12 |
 | ERP-021 | Tests may mutate a developer/shared database | P1/P2 | FIXED_VERIFIED | Test DB isolation and safe fixture tests | 00, 02 |

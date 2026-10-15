@@ -7,13 +7,14 @@ import logging
 import os
 import uuid
 from typing import Any, List, Optional, Dict
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from pydantic import BaseModel, Field
 
 from central_platform.auth.dependencies import get_current_user, get_current_user_optional, get_db
 from central_platform.db import PlatformDatabase
 from central_platform.finance.service import FinanceService
 from central_platform.api.routes.identity import _get_org_id
+from central_platform.portals.fee_admin import FeeAdminController
 
 ALLOWED_WEBHOOK_PROVIDERS = {"razorpay", "mock", "upi", "stripe"}
 
@@ -307,3 +308,61 @@ def approve_concession(
         return conc.__dict__
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+
+
+class GenerateMonthlyBillingRequest(BaseModel):
+    month_year: str = Field(..., description="Target month in YYYY-MM format")
+
+
+@router.post("/billing/generate", status_code=status.HTTP_201_CREATED)
+def generate_monthly_billing(
+    req: GenerateMonthlyBillingRequest,
+    current_user: Any = Depends(get_current_user),
+    db: PlatformDatabase = Depends(get_db),
+):
+    caller_role = getattr(current_user, "role", None)
+    caller_role_str = caller_role.value if hasattr(caller_role, "value") else str(caller_role or "").lower()
+    if caller_role_str not in {"super_admin", "org_admin", "bursar", "admin"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: insufficient permissions to trigger monthly billing",
+        )
+    org_id = _get_org_id(current_user)
+    return FeeAdminController.generate_monthly_billing(org_id=org_id, month_year=req.month_year, db=db)
+
+
+@router.get("/reports/outstanding")
+def get_outstanding_reports(
+    current_user: Any = Depends(get_current_user),
+):
+    caller_role = getattr(current_user, "role", None)
+    caller_role_str = caller_role.value if hasattr(caller_role, "value") else str(caller_role or "").lower()
+    if caller_role_str not in {"super_admin", "org_admin", "bursar", "admin", "teacher"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: insufficient permissions to view outstanding fee reports",
+        )
+    org_id = _get_org_id(current_user)
+    items = FeeAdminController.get_outstanding_reports(org_id)
+    return [item.to_dict() for item in items]
+
+
+@router.get("/reports/outstanding/export")
+def export_outstanding_reports_csv(
+    current_user: Any = Depends(get_current_user),
+):
+    caller_role = getattr(current_user, "role", None)
+    caller_role_str = caller_role.value if hasattr(caller_role, "value") else str(caller_role or "").lower()
+    if caller_role_str not in {"super_admin", "org_admin", "bursar", "admin"}:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: insufficient permissions to export outstanding fee reports",
+        )
+    org_id = _get_org_id(current_user)
+    csv_content = FeeAdminController.export_outstanding_report_csv(org_id)
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": 'attachment; filename="outstanding_fee_report.csv"'},
+    )
+

@@ -2,12 +2,12 @@ project: GAYATRI-ERP
 repository: https://github.com/Gayatri-Education/GAYATRI-ERP
 default_branch: main
 overall_status: IN_PROGRESS
-current_phase: PHASE-05
+current_phase: PHASE-06
 baseline:
   commit: becd081b295cbad6c0920a352f493d57671bb0e8
   inspected_at_utc: "2026-10-15T07:15:00Z"
   working_tree_clean: false
-last_updated_utc: "2026-10-15T10:45:00Z"
+last_updated_utc: "2026-10-15T11:00:00Z"
 notes:
   - "Statuses and test results must be based on actual evidence; do not invent counts, timestamps, commits, or URLs."
   - "Each phase must plan, reproduce, implement, test, debug, verify, document, and publish before the next phase."
@@ -119,14 +119,26 @@ phases:
     blockers: []
   - id: PHASE-05
     title: Student, teacher, admin, and fee UI-to-API wiring
-    status: NOT_STARTED
-    branch: null
+    status: DONE
+    branch: dev/phase-00-baseline
     issue_url: null
     pull_request_url: null
     commit_shas: []
-    findings: [ERP-007, ERP-008, ERP-009, ERP-011, ERP-018]
-    files_changed: []
-    test_evidence: []
+    findings: [ERP-007, ERP-008, ERP-009, ERP-010, ERP-011, ERP-018]
+    files_changed:
+      - "central_platform/portals/fee_admin.py"
+      - "central_platform/api/routes/finance.py"
+      - "app/ui/design_system/components.js"
+      - "app/ui/design_system/fee_admin.js"
+      - "app/ui/design_system/teacher.js"
+      - "app/ui/design_system/student.js"
+      - "tests/test_qa_phase05_ui_bridges_contracts.py"
+      - "docs/qa/phase-logs/PHASE_05_PLAN.md"
+      - "docs/qa/phase-logs/PHASE_05_LOG.md"
+    test_evidence:
+      - "9/9 passed in tests/test_qa_phase05_ui_bridges_contracts.py in 2.90s"
+      - "22/22 passed across related UI portal suites in 0.78s"
+      - "1691/1691 passed in full automated regression suite in 199.61s (0 failures, 0 skipped)"
     blockers: []
   - id: PHASE-06
     title: Student learning, review lifecycle, and persistence
