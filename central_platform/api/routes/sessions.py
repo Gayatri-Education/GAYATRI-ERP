@@ -19,13 +19,12 @@ from central_platform.auth.dependencies import (
     get_db,
     is_production_mode,
 )
+from central_platform.db import PlatformDatabase
 from central_platform.models.schema import Session as DbSession, SessionStatus, User, UserRole
 
 logger = logging.getLogger("gayatri.api.routes.sessions")
 
 router = APIRouter(prefix="/sessions", tags=["Sessions"])
-
-_ACTIVE_SESSIONS = {}
 
 
 @router.post("", response_model=ApiResponse[SessionResponse], status_code=status.HTTP_201_CREATED)
@@ -33,6 +32,7 @@ _ACTIVE_SESSIONS = {}
 async def start_session(
     req: SessionStartRequest,
     current_user: Optional[User] = Depends(get_current_user_optional),
+    db: PlatformDatabase = Depends(get_db),
 ):
     """Start an interactive adaptive tutoring session for a student."""
     if is_production_mode() and not current_user:
@@ -49,30 +49,38 @@ async def start_session(
             )
 
     sess_id = f"sess-{uuid.uuid4().hex[:8]}"
-    resp = SessionResponse(
-        session_id=sess_id,
+    db_sess = DbSession(
+        id=sess_id,
         student_id=req.student_id,
         course_id=req.course_id,
-        active_concept=req.initial_concept or "chem_thermo_first_law",
+        concept_id=req.initial_concept or "chem_thermo_first_law",
+        status=SessionStatus.ACTIVE,
+        started_at=datetime.now(timezone.utc),
+    )
+    if not is_production_mode():
+        try:
+            with db.transaction():
+                if not db.get_organization("org-central"):
+                    from central_platform.models.schema import Organization
+                    db.create_organization(Organization(id="org-central", name="Gayatri Central Platform", slug="org-central"))
+                if not db.get_course(req.course_id):
+                    from central_platform.models.schema import Course
+                    db.create_course(Course(id=req.course_id, organization_id="org-central", code=req.course_id, title=req.course_id))
+                if not db.get_user(req.student_id):
+                    db.create_user(User(id=req.student_id, email=f"{req.student_id}@platform.local", full_name=req.student_id, role=UserRole.STUDENT, organization_id="org-central"))
+        except Exception:
+            pass
+
+    with db.transaction():
+        db.create_session(db_sess)
+
+    resp = SessionResponse(
+        session_id=db_sess.id,
+        student_id=db_sess.student_id,
+        course_id=db_sess.course_id,
+        active_concept=db_sess.concept_id or "foundations",
         status="ACTIVE",
     )
-    _ACTIVE_SESSIONS[sess_id] = resp
-
-    try:
-        db = get_db()
-        db.create_session(
-            DbSession(
-                id=sess_id,
-                student_id=req.student_id,
-                course_id=req.course_id,
-                concept_id=req.initial_concept or "foundations",
-                status=SessionStatus.ACTIVE,
-                started_at=datetime.now(timezone.utc),
-            )
-        )
-    except Exception as exc:
-        logger.debug("Failed to record session in DB: %s", exc)
-
     return ApiResponse(ok=True, data=resp)
 
 
@@ -80,6 +88,7 @@ async def start_session(
 async def get_session(
     session_id: str,
     current_user: Optional[User] = Depends(get_current_user_optional),
+    db: PlatformDatabase = Depends(get_db),
 ):
     """Get active session details."""
     if is_production_mode() and not current_user:
@@ -88,28 +97,20 @@ async def get_session(
             detail="Authentication required to view session",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    sess = _ACTIVE_SESSIONS.get(session_id)
-    if not sess:
-        try:
-            db = get_db()
-            db_sess = db.get_session(session_id)
-            if db_sess:
-                sess = SessionResponse(
-                    session_id=db_sess.id,
-                    student_id=db_sess.student_id,
-                    course_id=db_sess.course_id,
-                    active_concept=db_sess.concept_id or "foundations",
-                    status=db_sess.status.value if hasattr(db_sess.status, "value") else str(db_sess.status),
-                )
-                _ACTIVE_SESSIONS[session_id] = sess
-        except Exception as exc:
-            logger.debug("Failed to fetch session from DB: %s", exc)
-
-    if not sess:
+    db_sess = db.get_session(session_id)
+    if not db_sess:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Session not found")
 
     if current_user:
-        enforce_resource_boundaries(current_user, target_session_student_id=sess.student_id)
+        enforce_resource_boundaries(current_user, target_session_student_id=db_sess.student_id)
 
-    return ApiResponse(ok=True, data=sess)
+    status_str = db_sess.status.value if hasattr(db_sess.status, "value") else str(db_sess.status)
+    resp = SessionResponse(
+        session_id=db_sess.id,
+        student_id=db_sess.student_id,
+        course_id=db_sess.course_id,
+        active_concept=db_sess.concept_id or "foundations",
+        status=status_str.upper(),
+    )
+    return ApiResponse(ok=True, data=resp)
 

@@ -18,39 +18,13 @@ from central_platform.auth.dependencies import (
     get_db,
     is_production_mode,
 )
+from central_platform.db import PlatformDatabase
 from central_platform.models.schema import User, UserRole
 from central_platform.rbac.engine import normalize_role
 
 logger = logging.getLogger("gayatri.central_platform.api.routes.users")
 
 router = APIRouter(prefix="/users", tags=["Users"])
-
-_USERS_STORE = [
-    UserResponse(
-        user_id="usr-admin-01",
-        username="admin",
-        email="admin@gayatri.ai",
-        role="SUPER_ADMIN",
-        organization_id="org-central",
-        is_active=True,
-    ),
-    UserResponse(
-        user_id="usr-teacher-01",
-        username="teacher_sharma",
-        email="sharma@gayatri.ai",
-        role="TEACHER",
-        organization_id="org-central",
-        is_active=True,
-    ),
-    UserResponse(
-        user_id="usr-student-01",
-        username="student_001",
-        email="student01@gayatri.ai",
-        role="STUDENT",
-        organization_id="org-central",
-        is_active=True,
-    ),
-]
 
 
 @router.get("", response_model=ApiResponse[List[UserResponse]])
@@ -60,6 +34,7 @@ async def list_users(
     limit: int = Query(default=50, ge=1, le=500, description="Max users to return"),
     offset: int = Query(default=0, ge=0, description="Offset for pagination"),
     current_user: Optional[User] = Depends(get_current_user_optional),
+    db: PlatformDatabase = Depends(get_db),
 ):
     """List platform users with optional role or org filtering."""
     if is_production_mode() and not current_user:
@@ -83,19 +58,27 @@ async def list_users(
                 )
             organization_id = current_user.organization_id
 
-    results = _USERS_STORE
-    if role:
-        results = [u for u in results if u.role.upper() == role.upper()]
-    if organization_id:
-        results = [u for u in results if u.organization_id == organization_id]
-    paginated_results = results[offset : offset + limit]
-    return ApiResponse(ok=True, data=paginated_results)
+    db_users = db.list_users(organization_id=organization_id, role=role, limit=limit, offset=offset)
+    results = [
+        UserResponse(
+            user_id=u.id,
+            username=u.full_name,
+            email=u.email,
+            role=(u.role.name if hasattr(u.role, "name") else str(u.role)).upper(),
+            organization_id=u.organization_id or "",
+            is_active=u.is_active,
+            created_at=u.created_at,
+        )
+        for u in db_users
+    ]
+    return ApiResponse(ok=True, data=results)
 
 
 @router.post("", response_model=ApiResponse[UserResponse], status_code=status.HTTP_201_CREATED)
 async def create_user(
     req: UserCreateRequest,
     current_user: Optional[User] = Depends(get_current_user_optional),
+    db: PlatformDatabase = Depends(get_db),
 ):
     """Create a new platform user."""
     if is_production_mode() and not current_user:
@@ -124,40 +107,42 @@ async def create_user(
                     detail="Forbidden: org admin cannot provision super admin or org admin accounts",
                 )
 
-    new_user = UserResponse(
-        user_id=f"usr-{uuid.uuid4().hex[:8]}",
-        username=req.username,
+    new_id = f"usr-{uuid.uuid4().hex[:8]}"
+    db_user = User(
+        id=new_id,
         email=req.email,
-        role=req.role.upper(),
+        full_name=req.username,
+        role=normalize_role(req.role),
         organization_id=req.organization_id,
         is_active=True,
     )
-    _USERS_STORE.append(new_user)
+    if not is_production_mode() and req.organization_id:
+        if not db.get_organization(req.organization_id):
+            from central_platform.models.schema import Organization
+            db.create_organization(Organization(id=req.organization_id, name=req.organization_id, slug=req.organization_id.lower()))
 
-    # Also persist to DB if DB is active
-    try:
-        db = get_db()
-        db_user = User(
-            id=new_user.user_id,
-            email=new_user.email,
-            full_name=new_user.username,
-            role=normalize_role(new_user.role),
-            organization_id=new_user.organization_id,
-            is_active=True,
-        )
+    with db.transaction():
         db.create_user(db_user)
         if req.password:
             db.set_user_password(db_user.id, req.password)
-    except Exception as exc:
-        logger.warning("Failed to persist user %s into database: %s", new_user.user_id, exc)
 
-    return ApiResponse(ok=True, data=new_user)
+    resp_user = UserResponse(
+        user_id=db_user.id,
+        username=db_user.full_name,
+        email=db_user.email,
+        role=(db_user.role.name if hasattr(db_user.role, "name") else str(db_user.role)).upper(),
+        organization_id=db_user.organization_id or "",
+        is_active=db_user.is_active,
+        created_at=db_user.created_at,
+    )
+    return ApiResponse(ok=True, data=resp_user)
 
 
 @router.get("/{user_id}", response_model=ApiResponse[UserResponse])
 async def get_user_by_id(
     user_id: str,
     current_user: Optional[User] = Depends(get_current_user_optional),
+    db: PlatformDatabase = Depends(get_db),
 ):
     """Get user by unique ID."""
     if is_production_mode() and not current_user:
@@ -175,7 +160,17 @@ async def get_user_by_id(
             )
         enforce_resource_boundaries(current_user, target_student_id=user_id)
 
-    for u in _USERS_STORE:
-        if u.user_id == user_id:
-            return ApiResponse(ok=True, data=u)
-    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User {user_id} not found")
+    u = db.get_user(user_id)
+    if not u:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"User {user_id} not found")
+
+    resp_user = UserResponse(
+        user_id=u.id,
+        username=u.full_name,
+        email=u.email,
+        role=(u.role.name if hasattr(u.role, "name") else str(u.role)).upper(),
+        organization_id=u.organization_id or "",
+        is_active=u.is_active,
+        created_at=u.created_at,
+    )
+    return ApiResponse(ok=True, data=resp_user)

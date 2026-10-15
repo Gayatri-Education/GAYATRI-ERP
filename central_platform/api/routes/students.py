@@ -44,8 +44,12 @@ from central_platform.portals.student import StudentPortalController
 router = APIRouter(prefix="/students", tags=["Students"])
 
 
-_db = get_db()
-_curriculum_service = CurriculumService(_db)
+def _get_db() -> PlatformDatabase:
+    return get_db()
+
+
+def _get_curriculum_service() -> CurriculumService:
+    return CurriculumService(_get_db())
 _slr_service = SLRService()
 _engine_bridge = LearningEngineBridge()
 _progress_service = StudentProgressService()
@@ -277,13 +281,13 @@ async def get_student_enrolled_courses(
     """List all enrolled courses for the student with live mastery and current active concept."""
     _enforce_student_access(current_user, target_student_id=student_id)
 
-    enrollments = _db.get_enrollments_for_student(student_id)
+    enrollments = _get_db().get_enrollments_for_student(student_id)
     courses_response: List[StudentEnrolledCourseResponse] = []
 
     for enr in enrollments:
         if not enr.is_active:
             continue
-        course = _db.get_course(enr.course_id)
+        course = _get_db().get_course(enr.course_id)
         if not course:
             continue
 
@@ -292,16 +296,16 @@ async def get_student_enrolled_courses(
         class_group_id = None
 
         if enr.cohort_id:
-            cohort = _db.get_cohort(enr.cohort_id)
+            cohort = _get_db().get_cohort(enr.cohort_id)
             if cohort:
                 cohort_name = cohort.name
                 class_group_id = cohort.class_group_id
                 if cohort.class_group_id:
-                    cg = _db.get_class_group(cohort.class_group_id)
+                    cg = _get_db().get_class_group(cohort.class_group_id)
                     if cg:
                         class_name = cg.name
 
-        mastery_states = _db.get_mastery_states(student_id, course_id=course.id)
+        mastery_states = _get_db().get_mastery_states(student_id, course_id=course.id)
         if mastery_states:
             overall_mastery = sum(m.score for m in mastery_states) / len(mastery_states)
             active_concept = mastery_states[0].concept_id
@@ -311,7 +315,7 @@ async def get_student_enrolled_courses(
 
         if not active_concept:
             try:
-                hier = _curriculum_service.get_curriculum_hierarchy(course.id)
+                hier = _get_curriculum_service().get_curriculum_hierarchy(course.id)
                 for mod in hier.get("modules", []):
                     for top in mod.get("topics", []):
                         concepts = top.get("concepts", [])
@@ -354,7 +358,7 @@ async def get_student_course_curriculum(
     """Retrieve curriculum hierarchy for an enrolled course with student mastery overlaid."""
     _enforce_student_access(current_user, target_student_id=student_id)
 
-    enrollments = _db.get_enrollments_for_student(student_id)
+    enrollments = _get_db().get_enrollments_for_student(student_id)
     if not any(e.course_id == course_id and e.is_active for e in enrollments):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
@@ -362,11 +366,11 @@ async def get_student_course_curriculum(
         )
 
     try:
-        hierarchy = _curriculum_service.get_curriculum_hierarchy(course_id)
+        hierarchy = _get_curriculum_service().get_curriculum_hierarchy(course_id)
     except Exception as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
 
-    mastery_map = {m.concept_id: m.score for m in _db.get_mastery_states(student_id, course_id=course_id)}
+    mastery_map = {m.concept_id: m.score for m in _get_db().get_mastery_states(student_id, course_id=course_id)}
     for mod in hierarchy.get("modules", []):
         for top in mod.get("topics", []):
             for c in top.get("concepts", []):
@@ -385,14 +389,14 @@ async def get_student_course_assignments(
     """Retrieve assignments strictly scoped to this student, their class/cohort, and the active course."""
     _enforce_student_access(current_user, target_student_id=student_id)
 
-    enrollments = _db.get_enrollments_for_student(student_id)
+    enrollments = _get_db().get_enrollments_for_student(student_id)
     if not any(e.course_id == course_id and e.is_active for e in enrollments):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Student '{student_id}' is not enrolled in course '{course_id}'.",
         )
 
-    assignments = _db.get_assignments_for_student(student_id, course_id)
+    assignments = _get_db().get_assignments_for_student(student_id, course_id)
     return ApiResponse(ok=True, data=[a.to_dict() if hasattr(a, "to_dict") else dict(a) for a in assignments])
 
 
@@ -405,14 +409,14 @@ async def get_student_course_knowledge(
     """Retrieve published knowledge sources authorized for this student in this course."""
     _enforce_student_access(current_user, target_student_id=student_id)
 
-    enrollments = _db.get_enrollments_for_student(student_id)
+    enrollments = _get_db().get_enrollments_for_student(student_id)
     if not any(e.course_id == course_id and e.is_active for e in enrollments):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Student '{student_id}' is not enrolled in course '{course_id}'.",
         )
 
-    sources = _db.get_knowledge_sources_for_student(student_id, course_id)
+    sources = _get_db().get_knowledge_sources_for_student(student_id, course_id)
     return ApiResponse(ok=True, data=[s.to_dict() if hasattr(s, "to_dict") else dict(s) for s in sources])
 
 
@@ -431,7 +435,7 @@ async def switch_student_course(
             detail="Cannot switch course while an AI turn is actively generating. Complete or cancel the active turn first.",
         )
 
-    enrollments = _db.get_enrollments_for_student(student_id)
+    enrollments = _get_db().get_enrollments_for_student(student_id)
     target_enr = next((e for e in enrollments if e.course_id == req.target_course_id and e.is_active), None)
     if not target_enr:
         raise HTTPException(
@@ -439,14 +443,14 @@ async def switch_student_course(
             detail=f"Student '{student_id}' is not enrolled in course '{req.target_course_id}'.",
         )
 
-    course = _db.get_course(req.target_course_id)
+    course = _get_db().get_course(req.target_course_id)
     if not course:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Course '{req.target_course_id}' not found.",
         )
 
-    mastery_states = _db.get_mastery_states(student_id, course_id=course.id)
+    mastery_states = _get_db().get_mastery_states(student_id, course_id=course.id)
     if mastery_states:
         overall = sum(m.score for m in mastery_states) / len(mastery_states)
         active_concept = mastery_states[0].concept_id
@@ -456,7 +460,7 @@ async def switch_student_course(
 
     if not active_concept:
         try:
-            hier = _curriculum_service.get_curriculum_hierarchy(course.id)
+            hier = _get_curriculum_service().get_curriculum_hierarchy(course.id)
             for mod in hier.get("modules", []):
                 for top in mod.get("topics", []):
                     concepts = top.get("concepts", [])
@@ -490,7 +494,7 @@ async def get_student_course_offline_status(
     """Retrieve offline caching and synchronization status for the course."""
     _enforce_student_access(current_user, target_student_id=student_id)
 
-    enrollments = _db.get_enrollments_for_student(student_id)
+    enrollments = _get_db().get_enrollments_for_student(student_id)
     if not any(e.course_id == course_id and e.is_active for e in enrollments):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

@@ -8,6 +8,7 @@ Master Plan Section 19:
 from __future__ import annotations
 
 import logging
+import os
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -403,6 +404,10 @@ from central_platform.teacher.views import render_teacher_dashboard_html  # noqa
 
 def seed_demo_teacher_roster(portal_service: TeacherPortalService, course_id: str = "crs-chem-101") -> None:
     """Explicitly seed demo cohort roster for interactive teacher command center and backwards compatibility."""
+    if os.environ.get("GAYATRI_PRODUCTION_MODE", "").lower() in ("true", "1"):
+        logger.warning("seed_demo_teacher_roster called in production mode; skipping seeding.")
+        return
+
     default_cohort = [
         ("stu-202", "Rahul Kumar", 0.85, False, [], 2, 0.90, "Solved Hess's Law formation enthalpy"),
         ("stu-203", "Priya Sharma", 0.94, False, [], 0, 0.96, "Calculated Gibbs free energy at non-standard T"),
@@ -433,5 +438,6 @@ def get_shared_portal_service() -> TeacherPortalService:
     global _shared_portal_service
     if _shared_portal_service is None:
         _shared_portal_service = TeacherPortalService()
-        seed_demo_teacher_roster(_shared_portal_service)
+        if not (os.environ.get("GAYATRI_PRODUCTION_MODE", "").lower() in ("true", "1")):
+            seed_demo_teacher_roster(_shared_portal_service)
     return _shared_portal_service

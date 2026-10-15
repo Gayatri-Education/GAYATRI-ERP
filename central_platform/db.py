@@ -18,7 +18,7 @@ import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set, Union
 
 logger = logging.getLogger("gayatri.central_platform.db")
 
@@ -309,6 +309,28 @@ class PlatformDatabase:
                 ON organization_payment_providers (organization_id, provider);
                 """
             )
+            is_prod = os.environ.get("GAYATRI_PRODUCTION_MODE", "").lower() in ("true", "1")
+            if not is_prod:
+                now_iso = datetime.now(timezone.utc).isoformat()
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO organizations (id, name, slug, created_at, updated_at)
+                    VALUES ('org-central', 'Gayatri Central Platform', 'org-central', ?, ?);
+                    """,
+                    (now_iso, now_iso),
+                )
+                count = conn.execute("SELECT COUNT(*) FROM users;").fetchone()[0]
+                if count == 0:
+                    conn.execute(
+                        """
+                        INSERT OR IGNORE INTO users (id, email, full_name, role, organization_id, is_active, created_at, updated_at)
+                        VALUES 
+                        ('usr-admin-01', 'admin@gayatri.ai', 'admin', 'SUPER_ADMIN', 'org-central', 1, ?, ?),
+                        ('usr-teacher-01', 'sharma@gayatri.ai', 'teacher_sharma', 'TEACHER', 'org-central', 1, ?, ?),
+                        ('usr-student-01', 'student01@gayatri.ai', 'student_001', 'STUDENT', 'org-central', 1, ?, ?);
+                        """,
+                        (now_iso, now_iso, now_iso, now_iso, now_iso, now_iso),
+                    )
         self.checkpoint("TRUNCATE")
 
     # ── Token Revocation & Sliding Rate Limiting ────────────────────────────
@@ -955,6 +977,45 @@ class PlatformDatabase:
             if not include_deleted:
                 sql += " AND is_deleted = 0"
             sql += " ORDER BY full_name ASC;"
+            rows = conn.execute(sql, tuple(params)).fetchall()
+            return [
+                User(
+                    id=r["id"],
+                    email=r["email"],
+                    full_name=r["full_name"],
+                    role=UserRole(r["role"]),
+                    organization_id=r["organization_id"],
+                    is_active=bool(r["is_active"]),
+                    created_at=r["created_at"],
+                    updated_at=r["updated_at"],
+                    is_deleted=bool(r["is_deleted"]),
+                    deleted_at=r["deleted_at"],
+                )
+                for r in rows
+            ]
+
+    def list_users(
+        self,
+        organization_id: Optional[str] = None,
+        role: Optional[Union[UserRole, str]] = None,
+        limit: int = 50,
+        offset: int = 0,
+        include_deleted: bool = False,
+    ) -> List[User]:
+        role_val = (role.value if hasattr(role, "value") else str(role)) if role else None
+        with self._get_connection() as conn:
+            sql = "SELECT * FROM users WHERE 1=1"
+            params: list[Any] = []
+            if not include_deleted:
+                sql += " AND is_deleted = 0"
+            if organization_id:
+                sql += " AND organization_id = ?"
+                params.append(organization_id)
+            if role_val:
+                sql += " AND (role = ? OR LOWER(role) = LOWER(?))"
+                params.extend([role_val, role_val])
+            sql += " ORDER BY full_name ASC LIMIT ? OFFSET ?;"
+            params.extend([limit, offset])
             rows = conn.execute(sql, tuple(params)).fetchall()
             return [
                 User(
