@@ -123,7 +123,7 @@ phases:
     branch: dev/phase-00-baseline
     issue_url: null
     pull_request_url: null
-    commit_shas: []
+    commit_shas: ["a919efb"]
     findings: [ERP-007, ERP-008, ERP-009, ERP-010, ERP-011, ERP-018]
     files_changed:
       - "central_platform/portals/fee_admin.py"
