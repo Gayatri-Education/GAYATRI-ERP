@@ -17,7 +17,7 @@ from central_platform.auth.dependencies import (
 )
 from central_platform.courses.service import CourseNotFoundError
 from central_platform.db import PlatformDatabase
-from central_platform.models.schema import User
+from central_platform.models.schema import LearningEvent, Session, SessionStatus, User
 from central_platform.security.auditor import SecurityAuditor
 from central_platform.tutor.orchestrator import (
     EnrollmentError,
@@ -73,6 +73,10 @@ class TutorTurnApiResponse(BaseModel):
     provenance_records: List[Dict[str, Any]] = Field(default_factory=list)
     ok: bool = True
     assistant_text: Optional[str] = None
+    is_blocked: bool = Field(False, description="True if turn was blocked by safety/security policies")
+    is_completed: bool = Field(True, description="True only if turn was successfully completed")
+    is_grounded: bool = Field(False, description="True only if response is grounded in authoritative sources")
+    turn_type: str = Field("COMPLETED", description="Turn category: COMPLETED, BLOCKED, VALIDATION_FAILED, ERROR")
 
 
 @router.post("/turn", response_model=TutorTurnApiResponse)
@@ -100,6 +104,37 @@ async def submit_tutor_turn(
             req.student_id,
             audit_result.violations,
         )
+        # Record blocked learning event in DB for auditability without mutating student mastery
+        try:
+            if req.session_id and not db.get_session(req.session_id):
+                db.create_session(Session(
+                    id=req.session_id,
+                    student_id=req.student_id,
+                    course_id=req.course_id,
+                    concept_id=req.concept_id or f"{req.course_id}_foundations",
+                    status=SessionStatus.ACTIVE,
+                    course_version_id=req.course_version_id,
+                ))
+            db.record_learning_event(LearningEvent(
+                id=f"evt-block-{uuid.uuid4().hex[:8]}",
+                session_id=req.session_id,
+                student_id=req.student_id,
+                event_type="TUTOR_TURN_BLOCKED",
+                concept_id=req.concept_id or f"{req.course_id}_foundations",
+                course_id=req.course_id,
+                course_version_id=req.course_version_id,
+                payload={
+                    "student_message": query_text,
+                    "query": query_text,
+                    "violations": audit_result.violations,
+                    "status": "BLOCKED_INJECTION",
+                    "is_blocked": True,
+                    "is_completed": False,
+                },
+            ))
+        except Exception as ev_exc:
+            logger.warning(f"Could not record blocked turn telemetry event: {ev_exc}")
+
         # Return a safe pedagogical response — do NOT forward to LLM
         return TutorTurnApiResponse(
             turn_id=f"turn-blocked-{uuid.uuid4().hex[:8]}",
@@ -117,6 +152,10 @@ async def submit_tutor_turn(
             status="BLOCKED_INJECTION",
             ok=False,
             assistant_text=None,
+            is_blocked=True,
+            is_completed=False,
+            is_grounded=False,
+            turn_type="BLOCKED",
         )
 
     try:
@@ -139,6 +178,10 @@ async def submit_tutor_turn(
         turn_dict = res.to_dict()
         turn_dict["ok"] = (res.status == "SUCCESS")
         turn_dict["assistant_text"] = res.response_text
+        turn_dict["is_blocked"] = getattr(res, "is_blocked", False)
+        turn_dict["is_completed"] = getattr(res, "is_completed", res.status == "SUCCESS")
+        turn_dict["is_grounded"] = getattr(res, "is_grounded", bool(res.rag_sources_used))
+        turn_dict["turn_type"] = getattr(res, "turn_type", "COMPLETED" if res.status == "SUCCESS" else res.status)
         return TutorTurnApiResponse(**turn_dict)
 
     except CourseNotFoundError as exc:

@@ -54,6 +54,7 @@ from central_platform.models.schema import (
 )
 from central_platform.rag.service import RAGService
 from central_platform.recovery.manager import FailureRecoveryManager
+from central_platform.security.auditor import SecurityAuditor
 from central_platform.teacher.instruction import TeacherInstructionEngine
 from central_platform.tools.registry import ToolRegistry
 
@@ -116,6 +117,10 @@ class TutorTurnResult:
     contributed_chunk_ids: List[str] = field(default_factory=list)
     provenance_records: List[Dict[str, Any]] = field(default_factory=list)
     model_provenance: Dict[str, Any] = field(default_factory=dict)
+    is_blocked: bool = False
+    is_completed: bool = True
+    is_grounded: bool = False
+    turn_type: str = "COMPLETED"
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -145,6 +150,8 @@ class GenericTutorOrchestrator:
         self.tool_registry = tool_registry or ToolRegistry()
         self._processed_turns: set[str] = set()
 
+    _GLOBAL_PROCESSED_TURNS: set[str] = set()
+
     def execute_turn(self, req: TutorTurnRequest) -> TutorTurnResult:
         """Execute a complete course-scoped tutoring turn through the 16-step lifecycle."""
         t0 = time.perf_counter()
@@ -164,9 +171,23 @@ class GenericTutorOrchestrator:
 
         # Deduplication check (Audit invariant)
         turn_fingerprint = f"{req.student_id}:{req.session_id}:{clean_message}"
-        if turn_fingerprint in self._processed_turns:
+        is_dup = turn_fingerprint in self._processed_turns or turn_fingerprint in self._GLOBAL_PROCESSED_TURNS
+        if not is_dup and req.session_id:
+            try:
+                past_events = self.db.get_learning_events_for_session(req.session_id)
+                for ev in past_events:
+                    if ev.event_type == "TUTOR_TURN_COMPLETED" and isinstance(ev.payload, dict):
+                        past_msg = ev.payload.get("student_message") or ev.payload.get("query")
+                        if past_msg == clean_message:
+                            is_dup = True
+                            break
+            except Exception:
+                pass
+
+        if is_dup:
             logger.info(f"Duplicate turn detected for {turn_fingerprint}; returning idempotent replay.")
-            # Return idempotent turn result
+            self._processed_turns.add(turn_fingerprint)
+            self._GLOBAL_PROCESSED_TURNS.add(turn_fingerprint)
             return TutorTurnResult(
                 turn_id=turn_id,
                 session_id=req.session_id,
@@ -179,6 +200,77 @@ class GenericTutorOrchestrator:
                 state_committed=False,
                 latency_ms=round((time.perf_counter() - t0) * 1000.0, 2),
                 status="SUCCESS",
+                is_blocked=False,
+                is_completed=True,
+                is_grounded=False,
+                turn_type="COMPLETED",
+            )
+
+        # ── 1b. Prompt Injection & Hazardous Content Guard (Server-Side Invariant) ──
+        _auditor = SecurityAuditor()
+        audit_result = _auditor.sanitize_prompt(clean_message)
+        if not audit_result.is_safe:
+            logger.warning(
+                "Prompt injection/hazardous pattern blocked for student %s: %s",
+                req.student_id,
+                audit_result.violations,
+            )
+            # Record audit / telemetry event without mutating student mastery
+            try:
+                if req.session_id and not self.db.get_session(req.session_id):
+                    self.db.create_session(Session(
+                        id=req.session_id,
+                        student_id=req.student_id,
+                        course_id=req.course_id,
+                        concept_id=req.concept_id or f"{req.course_id}_foundations",
+                        status=SessionStatus.ACTIVE,
+                        course_version_id=req.course_version_id,
+                    ))
+                self.db.record_learning_event(LearningEvent(
+                    id=f"evt-block-{uuid.uuid4().hex[:8]}",
+                    session_id=req.session_id,
+                    student_id=req.student_id,
+                    event_type="TUTOR_TURN_BLOCKED",
+                    concept_id=req.concept_id or f"{req.course_id}_foundations",
+                    course_id=req.course_id,
+                    course_version_id=req.course_version_id,
+                    payload={
+                        "student_message": clean_message,
+                        "query": clean_message,
+                        "violations": audit_result.violations,
+                        "status": "BLOCKED_INJECTION",
+                        "is_blocked": True,
+                        "is_completed": False,
+                    },
+                ))
+            except Exception as ev_exc:
+                logger.warning(f"Could not record blocked turn telemetry event: {ev_exc}")
+
+            return TutorTurnResult(
+                turn_id=f"turn-blocked-{uuid.uuid4().hex[:8]}",
+                session_id=req.session_id,
+                student_id=req.student_id,
+                course_id=req.course_id,
+                concept_id=req.concept_id or "foundations",
+                response_text=(
+                    "I noticed your message contains content I can't process in this learning context. "
+                    "Please ask a genuine question about your coursework — I'm here to help you learn!"
+                ),
+                pedagogical_action="SAFE_REDIRECT",
+                validation_passed=False,
+                state_committed=False,
+                latency_ms=round((time.perf_counter() - t0) * 1000.0, 2),
+                status="BLOCKED_INJECTION",
+                validation_issues=[{
+                    "category": "safety",
+                    "code": "PROMPT_INJECTION_DETECTED",
+                    "message": "Prompt injection or hazardous pattern blocked",
+                    "severity": "ERROR",
+                }],
+                is_blocked=True,
+                is_completed=False,
+                is_grounded=False,
+                turn_type="BLOCKED",
             )
 
         # ── 2. Enrollment Validation ───────────────────────────────────────
@@ -324,10 +416,18 @@ class GenericTutorOrchestrator:
                 if sid and sid not in contributed_source_ids:
                     contributed_source_ids.append(sid)
 
+                src_title = r.get("source_title")
+                if not src_title and sid:
+                    src_obj = self.db.get_rag_source(sid)
+                    if src_obj and src_obj.title:
+                        src_title = src_obj.title
+                if not src_title:
+                    src_title = r.get("chapter", "Course Material")
+
                 provenance_records.append({
                     "source_id": sid or "src-unknown",
                     "chunk_id": cid or "chk-unknown",
-                    "source_title": r.get("source_title", r.get("chapter", "Course Material")),
+                    "source_title": src_title,
                     "authority": r.get("provenance_type", "NCERT"),
                     "provenance_type": r.get("provenance_type", "NCERT"),
                     "visibility_scope": r.get("visibility_scope", "course"),
@@ -493,6 +593,10 @@ class GenericTutorOrchestrator:
                         "status": ai_status_val,
                         "success": False,
                     },
+                    is_blocked=False,
+                    is_completed=False,
+                    is_grounded=False,
+                    turn_type="ERROR",
                 )
 
 
@@ -571,10 +675,14 @@ class GenericTutorOrchestrator:
             # ── 16. Audit & Telemetry ─────────────────────────────────────────
             latency_total = round((time.perf_counter() - t0) * 1000.0, 2)
             self._processed_turns.add(turn_fingerprint)
+            self._GLOBAL_PROCESSED_TURNS.add(turn_fingerprint)
 
             ai_status_val = (
                 ai_res.status.value if hasattr(ai_res.status, "value") else str(ai_res.status or "MODEL_SUCCESS")
             )
+            is_turn_completed = (turn_status == "SUCCESS")
+            is_turn_grounded = bool(rag_sources_used) and val_result.is_valid
+            turn_type_val = "COMPLETED" if is_turn_completed else turn_status
             return TutorTurnResult(
                 turn_id=turn_id,
                 session_id=req.session_id,
@@ -604,6 +712,10 @@ class GenericTutorOrchestrator:
                     "status": ai_status_val,
                     "success": True,
                 },
+                is_blocked=False,
+                is_completed=is_turn_completed,
+                is_grounded=is_turn_grounded,
+                turn_type=turn_type_val,
             )
 
 
@@ -630,4 +742,8 @@ class GenericTutorOrchestrator:
                 latency_ms=round((time.perf_counter() - t0) * 1000.0, 2),
                 status="CRASH_RECOVERED",
                 validation_issues=[{"code": "APP_CRASH_MID_TURN", "message": rec.technical_diagnostic}],
+                is_blocked=False,
+                is_completed=False,
+                is_grounded=False,
+                turn_type="ERROR",
             )
