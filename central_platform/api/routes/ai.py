@@ -137,10 +137,14 @@ async def execute_ai_prompt(
             if not req.student_id:
                 req.student_id = current_user.id
 
+    task_type_str = (req.task_type or "general").lower().strip()
     try:
-        task_type_enum = TaskType(req.task_type) if req.task_type in TaskType._value2member_map_ else TaskType.GENERAL
-    except Exception:
-        task_type_enum = TaskType.GENERAL
+        task_type_enum = TaskType(task_type_str)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid task_type: '{req.task_type}'. Must be one of {[t.value for t in TaskType]}",
+        )
 
     exec_req = AIExecutionRequest(
         prompt=req.prompt,
@@ -341,10 +345,14 @@ async def preview_routing(
     svc: AIGatewayService = Depends(get_ai_gateway_service),
 ):
     """Preview which provider and model the router will select for a workload."""
+    task_type_str = (req.task_type or "general").lower().strip()
     try:
-        task_type_enum = TaskType(req.task_type) if req.task_type in TaskType._value2member_map_ else TaskType.GENERAL
-    except Exception:
-        task_type_enum = TaskType.GENERAL
+        task_type_enum = TaskType(task_type_str)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Invalid task_type: '{req.task_type}'. Must be one of {[t.value for t in TaskType]}",
+        )
 
     decision = svc.router.route(
         task_type=task_type_enum,

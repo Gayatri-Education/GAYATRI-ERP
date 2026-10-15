@@ -28,7 +28,7 @@
 | **04** | Payment webhook verification & tenant binding | P1 | **PASSED** | [`phase-logs/REMEDIATION_PHASE_04_LOG.md`](phase-logs/REMEDIATION_PHASE_04_LOG.md) | Order-derived tenant binding, zero org-default, constant-time HMAC verified (11/11 passed). Proceed to Phase 05 |
 | **05** | Edge devices, attendance punches & invalid enums | P1 | **PASSED** | [`phase-logs/REMEDIATION_PHASE_05_LOG.md`](phase-logs/REMEDIATION_PHASE_05_LOG.md) | Device auth, tenant binding, and enum rejection verified (15/15 passed). Proceed to Phase 06 |
 | **06** | Central authorization & tenant-isolation audit | P1 | **PASSED** | [`phase-logs/REMEDIATION_PHASE_06_LOG.md`](phase-logs/REMEDIATION_PHASE_06_LOG.md) | Universal role normalization, tenant isolation, route matrix generated (12/12 passed). Proceed to Phase 07 |
-| **07** | AI task validation, tutor context & RAG trust | P1/P2 | **NOT_STARTED** | `phase-logs/REMEDIATION_PHASE_07_LOG.md` | Depends on Phase 06 |
+| **07** | AI task validation, tutor context & RAG trust | P1/P2 | **PASSED** | [`phase-logs/REMEDIATION_PHASE_07_LOG.md`](phase-logs/REMEDIATION_PHASE_07_LOG.md) | Task validation (422), client placeholder elimination, RAG & degraded state integrity verified (10/10 passed). Proceed to Phase 08 |
 | **08** | Database lifecycle, transactions & service isolation | P1 | **NOT_STARTED** | `phase-logs/REMEDIATION_PHASE_08_LOG.md` | Depends on Phase 07 |
 | **09** | Genuine UI-to-API-to-database E2E workflows | P1/P2 | **NOT_STARTED** | `phase-logs/REMEDIATION_PHASE_09_LOG.md` | Depends on Phase 08 |
 | **10** | Install, dependency lock & model-readiness | P2 | **NOT_STARTED** | `phase-logs/REMEDIATION_PHASE_10_LOG.md` | Depends on Phase 09 |

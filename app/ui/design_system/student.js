@@ -99,12 +99,52 @@ window.GayatriStudent = (function () {
     });
   }
 
+  function resolveActiveStudentId(studentId) {
+    if (studentId && studentId !== 'current') return studentId;
+    if (window.GayatriApp && typeof window.GayatriApp.getCurrentStudentId === 'function') {
+      const appSid = window.GayatriApp.getCurrentStudentId();
+      if (appSid) return appSid;
+    }
+    if (window.sessionStorage) {
+      const stored = window.sessionStorage.getItem('student_id');
+      if (stored) return stored;
+    }
+    return null;
+  }
+
+  function resolveActiveCourseId(courseId) {
+    if (courseId && courseId !== 'crs-chem-101') return courseId;
+    if (window.GayatriApp && typeof window.GayatriApp.getCurrentCourseId === 'function') {
+      const appCid = window.GayatriApp.getCurrentCourseId();
+      if (appCid) return appCid;
+    }
+    if (window.sessionStorage) {
+      const stored = window.sessionStorage.getItem('active_course_id');
+      if (stored) return stored;
+    }
+    return null;
+  }
+
   async function startReview(conceptId, studentId, courseId) {
     if (!conceptId) return;
+    const resolvedStudentId = resolveActiveStudentId(studentId);
+    if (!resolvedStudentId) {
+      if (window.GayatriUI) {
+        window.GayatriUI.showToast('Unable to start review: active student identity is not established.', 'error');
+      }
+      return null;
+    }
+    const resolvedCourseId = resolveActiveCourseId(courseId);
+    if (!resolvedCourseId) {
+      if (window.GayatriUI) {
+        window.GayatriUI.showToast('Unable to start review: active course context is missing.', 'error');
+      }
+      return null;
+    }
+
     if (window.GayatriUI) {
       window.GayatriUI.showToast(`Starting review session for ${conceptId}...`, 'info');
     }
-    const resolvedStudentId = studentId || 'current';
     try {
       const resp = await fetch(`/api/v1/students/${encodeURIComponent(resolvedStudentId)}/action`, {
         method: 'POST',
@@ -115,7 +155,7 @@ window.GayatriStudent = (function () {
         body: JSON.stringify({
           action_type: 'review_start',
           concept_id: conceptId,
-          course_id: courseId || 'crs-chem-101'
+          course_id: resolvedCourseId
         })
       });
       if (!resp.ok) {
@@ -138,10 +178,18 @@ window.GayatriStudent = (function () {
   }
 
   async function loadReviewQueue(studentId, courseId) {
-    const resolvedStudentId = studentId || 'current';
+    const resolvedStudentId = resolveActiveStudentId(studentId);
+    if (!resolvedStudentId) {
+      if (window.GayatriUI) {
+        window.GayatriUI.showToast('Unable to load review queue: active student identity is not established.', 'error');
+      }
+      renderReviewQueue([]);
+      return [];
+    }
+    const resolvedCourseId = resolveActiveCourseId(courseId);
     try {
-      const url = courseId
-        ? `/api/v1/students/${encodeURIComponent(resolvedStudentId)}/review-queue?course_id=${encodeURIComponent(courseId)}`
+      const url = resolvedCourseId
+        ? `/api/v1/students/${encodeURIComponent(resolvedStudentId)}/review-queue?course_id=${encodeURIComponent(resolvedCourseId)}`
         : `/api/v1/students/${encodeURIComponent(resolvedStudentId)}/review-queue`;
       const resp = await fetch(url, {
         headers: { 'Accept': 'application/json' }
