@@ -187,7 +187,7 @@ phases:
     branch: dev/phase-00-baseline
     issue_url: null
     pull_request_url: null
-    commit_shas: []
+    commit_shas: ["038a179"]
     findings: [ERP-017]
     files_changed:
       - "central_platform/api/routes/tutor.py"

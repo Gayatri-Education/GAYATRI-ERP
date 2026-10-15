@@ -4,7 +4,7 @@
 **Status:** PASSED  
 **Date:** 2026-10-15  
 **Branch:** `dev/phase-00-baseline`  
-**Commit / Checkpoint:** Pending regression  
+**Commit / Checkpoint:** `038a179`  
 
 ---
 
@@ -109,7 +109,7 @@ Prior to remediation:
 ---
 
 ## 11. GitHub Issue / Commit Links
-- Checkpoint commit pending staging.
+- Commit `038a179` ("feat(phase-08): resolve ERP-017 blocked-turn semantics, enforce RAG grounding and server-side prompt security")
 
 ---
 
