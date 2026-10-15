@@ -6,7 +6,7 @@
 
 **Curriculum-Free Adaptive AI Tutor · CBSE/NCERT Classes 9–12**
 
-[![CI](https://github.com/Gayatri-Education/Gayatri/actions/workflows/ci.yml/badge.svg)](https://github.com/Gayatri-Education/Gayatri/actions/workflows/ci.yml)
+[![CI](https://github.com/Gayatri-Education/GAYATRI-ERP/actions/workflows/ci.yml/badge.svg)](https://github.com/Gayatri-Education/GAYATRI-ERP/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE.md)
 [![Version](https://img.shields.io/badge/version-3.0.1-orange.svg)](VERSION)
@@ -73,14 +73,14 @@ Gayatri is an **open, curriculum-free AI tutoring platform** — any school, ins
                         │  QWebChannel Bridge
 ┌───────────────────────▼──────────────────────────────────────┐
 │              Central Platform (FastAPI)                      │
-│  /api/v1 — 21 routers · Auth · Students · Teachers          │
+│  /api/v1 — modular API routers · Auth · Students · Teachers  │
 │  Courses · Sessions · RAG · Assessment · Analytics           │
 │  Notifications · Sync · Fees · Payments · i18n              │
 └─────────────┬──────────────────────────┬─────────────────────┘
               │                          │
 ┌─────────────▼──────────┐  ┌────────────▼────────────────────┐
 │   SQLite (WAL mode)    │  │   Local SLM (llama-cpp-python)  │
-│   50 tables, 8 migs    │  │   Qwen2.5-0.5B · no Ollama     │
+│   50+ tables, 8 migs   │  │   Qwen2.5-0.5B · no Ollama     │
 │   offline-first        │  │   runs on CPU, 1GB RAM           │
 └────────────────────────┘  └─────────────────────────────────┘
               │
@@ -113,8 +113,8 @@ Gayatri is an **open, curriculum-free AI tutoring platform** — any school, ins
 ### 1. Clone & Install
 
 ```bash
-git clone https://github.com/Gayatri-Education/Gayatri.git
-cd Gayatri
+git clone https://github.com/Gayatri-Education/GAYATRI-ERP.git
+cd Gayatri-ERP
 
 # Windows (recommended)
 setup.bat          # creates .venv, installs deps, runs migrations, launches app
@@ -150,7 +150,7 @@ GAYATRI_ENCRYPTION_KEY=
 ### 3. Initialize Database
 
 ```bash
-python -m python scripts/migrate_db.py up --db-path gayatri_local.db
+python scripts/migrate_db.py up --db-path gayatri_local.db
 # Or via Python:
 python -c "from central_platform.db import PlatformDatabase; db = PlatformDatabase(); print('Ready. Tables:', len(db.get_table_names()))"
 ```
@@ -208,7 +208,7 @@ See [`docs/operations/deployment-guide.md`](docs/operations/deployment-guide.md)
 
 ## 🧪 Running Tests
 
-**1,252 tests, all must pass.** CI enforces this on every push.
+**1,765+ automated non-GUI tests, all passing.** CI enforces this on every push.
 
 ```bash
 # Full suite (~90 seconds)

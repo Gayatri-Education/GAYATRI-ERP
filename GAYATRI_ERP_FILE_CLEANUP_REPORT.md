@@ -19,7 +19,17 @@ Use one row per candidate; add evidence links and reviewer approval before delet
 
 | Path | Classification | Why considered unnecessary | Reference checks performed | Runtime/packaging/CI checks | Tests before/after | Decision | PR / reviewer |
 |---|---|---|---|---|---|---|---|
-| _No candidates assessed yet_ | `UNKNOWN_BLOCKED` | Inventory not complete | N/A | N/A | N/A | Retain | N/A |
+| `central_platform/` | `KEEP_RUNTIME` | Core backend API, auth, database, AI, and finance logic | Static/dynamic imports verified | Pytest + Uvicorn CI entry points | 1,765 tests passing | Retain | QA Lead |
+| `app/` | `KEEP_RUNTIME` | PySide6 desktop portals, QWebChannel bridge, UI assets | PySide6 portal controllers | Qt runtime & desktop launch | GUI suites & tests | Retain | QA Lead |
+| `tests/` | `KEEP_TEST` | Automated unit, integration, adversarial, and QA suites | Pytest discovery root | CI test runner | 1,765 tests passing | Retain | QA Lead |
+| `migrations/` | `KEEP_OPS` | Reversible SQLite database DDL scripts (001-008) | `scripts/migrate_db.py` | Schema upgrade/downgrade | Migration tests passing | Retain | QA Lead |
+| `scripts/` | `KEEP_OPS` | Operational utilities for migration, seeding, and launch | Called by setup/run scripts | Windows/Linux dev setup | CLI test fixtures | Retain | QA Lead |
+| `docs/` | `KEEP_DOCS` | Canonical architecture, security, API, and QA logs | Internal links and guides | Markdown linter / docs | Verified path references | Retain | QA Lead |
+| `gayatri-agent-sdk/` | `KEEP_OPS` | Agent integration SDK and supporting adapters | Agent pipeline callers | Package manifests | Agent test suites | Retain | QA Lead |
+| `gayatri_sources_and_notes/` | `KEEP_DOCS` | Architecture matrix and system reference notes | System documentation | Reference materials | N/A | Retain | QA Lead |
+| `training/` | `KEEP_OPS` | Pedagogical fine-tuning datasets and RAG seed | Training pipeline | Local SLM training | Data integrity tests | Retain | QA Lead |
+| `README.md` | `CONSOLIDATE` | Main entry point; corrected repo URLs and commands | Git clone & CLI commands | GitHub / local dev setup | 1,765 tests passing | Retain (Consolidated) | QA Lead |
+| `GAYATRI_ERP_README.md` | `CONSOLIDATE` | ERP-specific overview synchronized with canonical docs | Linked in root docs | GitHub navigation | N/A | Retain (Consolidated) | QA Lead |
 
 Allowed classifications: `KEEP_RUNTIME`, `KEEP_TEST`, `KEEP_OPS`, `KEEP_DOCS`, `CONSOLIDATE`, `REMOVE_CANDIDATE`, `UNKNOWN_BLOCKED`.
 

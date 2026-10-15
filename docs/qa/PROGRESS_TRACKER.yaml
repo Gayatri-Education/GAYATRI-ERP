@@ -2,12 +2,12 @@ project: GAYATRI-ERP
 repository: https://github.com/Gayatri-Education/GAYATRI-ERP
 default_branch: main
 overall_status: IN_PROGRESS
-current_phase: PHASE-15
+current_phase: PHASE-16
 baseline:
   commit: becd081b295cbad6c0920a352f493d57671bb0e8
   inspected_at_utc: "2026-10-15T07:15:00Z"
   working_tree_clean: false
-last_updated_utc: "2026-10-15T13:40:00Z"
+last_updated_utc: "2026-10-15T13:45:00Z"
 notes:
   - "Statuses and test results must be based on actual evidence; do not invent counts, timestamps, commits, or URLs."
   - "Each phase must plan, reproduce, implement, test, debug, verify, document, and publish before the next phase."
@@ -309,7 +309,7 @@ phases:
     branch: dev/phase-00-baseline
     issue_url: null
     pull_request_url: null
-    commit_shas: []
+    commit_shas: ["c4ed5d7"]
     findings: [ERP-022]
     files_changed:
       - "tests/test_qa_phase14_e2e_product_acceptance.py"
@@ -324,14 +324,22 @@ phases:
     blockers: []
   - id: PHASE-15
     title: Repository cleanup and documentation consolidation
-    status: NOT_STARTED
-    branch: null
+    status: DONE
+    branch: dev/phase-00-baseline
     issue_url: null
     pull_request_url: null
     commit_shas: []
     findings: []
-    files_changed: []
-    test_evidence: []
+    files_changed:
+      - "README.md"
+      - "docs/qa/FILE_CLEANUP_REPORT.md"
+      - "GAYATRI_ERP_FILE_CLEANUP_REPORT.md"
+      - "tests/test_qa_phase15_repo_cleanup_and_docs.py"
+      - "docs/qa/phase-logs/PHASE_15_PLAN.md"
+      - "docs/qa/phase-logs/PHASE_15_LOG.md"
+    test_evidence:
+      - "5/5 passed in tests/test_qa_phase15_repo_cleanup_and_docs.py in 1.03s"
+      - "1770/1770 passed in full automated regression suite in 229.25s (0 failures, 0 skipped)"
     blockers: []
   - id: PHASE-16
     title: Final audit, handover, and maintenance
