@@ -115,11 +115,13 @@ window.GayatriFeeAdmin = (function () {
     }
   }
 
-  // 4. Print Receipt
+  // 4. Print Receipt (Verified Receipt Only)
   async function printReceipt(receiptId) {
     if (!receiptId) {
-      window.print();
-      return;
+      if (window.GayatriUI) {
+        window.GayatriUI.showToast('Receipt ID is required for verified receipt printing.', 'error');
+      }
+      return false;
     }
     try {
       const resp = await fetch(`/api/v1/finance/receipts/${encodeURIComponent(receiptId)}`, {
@@ -127,24 +129,41 @@ window.GayatriFeeAdmin = (function () {
       });
       if (!resp.ok) {
         if (window.GayatriUI) {
-          window.GayatriUI.showToast(`Unable to verify persisted receipt ${receiptId}`, 'error');
+          window.GayatriUI.showToast(`Unable to verify persisted receipt ${receiptId}: status ${resp.status}`, 'error');
         }
-        return;
+        return false;
       }
       const receiptData = await resp.json();
+      if (!receiptData || !receiptData.receipt_number || receiptData.amount === undefined) {
+        if (window.GayatriUI) {
+          window.GayatriUI.showToast(`Receipt ${receiptId} failed integrity verification: missing required fields.`, 'error');
+        }
+        return false;
+      }
       if (window.GayatriUI) {
-        window.GayatriUI.showToast(`Verified receipt ${receiptData.receipt_number || receiptId}. Printing...`, 'success');
+        window.GayatriUI.showToast(`Verified receipt ${receiptData.receipt_number}. Printing...`, 'success');
       }
       window.print();
+      return true;
     } catch (e) {
-      window.print();
+      if (window.GayatriUI) {
+        window.GayatriUI.showToast(`Network or verification error printing receipt: ${e.message}`, 'error');
+      }
+      return false;
     }
+  }
+
+  // 5. Print Current Page (Separate unverified view action)
+  function printCurrentPage() {
+    window.print();
   }
 
   return {
     switchTab,
     generateMonthlyBilling,
     exportOutstandingReport,
-    printReceipt
+    printReceipt,
+    printCurrentPage
   };
 })();
+

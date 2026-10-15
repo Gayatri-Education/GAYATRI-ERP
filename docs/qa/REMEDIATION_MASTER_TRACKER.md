@@ -24,8 +24,8 @@
 | **00** | Baseline and repository setup | P0 | **PASSED** | [`phase-logs/REMEDIATION_PHASE_00_LOG.md`](phase-logs/REMEDIATION_PHASE_00_LOG.md) | Baseline verified (1,775 passed) |
 | **01** | Restore trustworthy CI & production config tests | P0 | **PASSED** | [`phase-logs/REMEDIATION_PHASE_01_LOG.md`](phase-logs/REMEDIATION_PHASE_01_LOG.md) | Production config isolation verified (22/22 passed). Proceed to Phase 02 |
 | **02** | Eliminate synthetic parent data & fake dashboard | P1 | **PASSED** | [`phase-logs/REMEDIATION_PHASE_02_LOG.md`](phase-logs/REMEDIATION_PHASE_02_LOG.md) | Boundary verification, fail-closed isolation & real DB derivation passed (68/68 passed). Proceed to Phase 03 |
-| **03** | Financially trustworthy fee admin & receipts | P1 | **NOT_STARTED** | `phase-logs/REMEDIATION_PHASE_03_LOG.md` | Execute Phase 03 Plan |
-| **04** | Payment webhook verification & tenant binding | P1 | **NOT_STARTED** | `phase-logs/REMEDIATION_PHASE_04_LOG.md` | Depends on Phase 03 |
+| **03** | Financially trustworthy fee admin & receipts | P1 | **PASSED** | [`phase-logs/REMEDIATION_PHASE_03_LOG.md`](phase-logs/REMEDIATION_PHASE_03_LOG.md) | Database-backed atomic billing runs, deduplication, honest empty reports verified (10/10 passed). Proceed to Phase 04 |
+| **04** | Payment webhook verification & tenant binding | P1 | **NOT_STARTED** | `phase-logs/REMEDIATION_PHASE_04_LOG.md` | Execute Phase 04 Plan |
 | **05** | Edge devices, attendance punches & invalid enums | P1 | **NOT_STARTED** | `phase-logs/REMEDIATION_PHASE_05_LOG.md` | Depends on Phase 04 |
 | **06** | Central authorization & tenant-isolation audit | P1 | **NOT_STARTED** | `phase-logs/REMEDIATION_PHASE_06_LOG.md` | Depends on Phase 05 |
 | **07** | AI task validation, tutor context & RAG trust | P1/P2 | **NOT_STARTED** | `phase-logs/REMEDIATION_PHASE_07_LOG.md` | Depends on Phase 06 |

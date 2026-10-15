@@ -266,6 +266,27 @@ class PlatformDatabase:
                 ON rate_limit_events (key, timestamp);
                 """
             )
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS billing_batches (
+                    id TEXT PRIMARY KEY,
+                    organization_id TEXT NOT NULL,
+                    month_year TEXT NOT NULL,
+                    invoices_generated INTEGER DEFAULT 0,
+                    total_amount REAL DEFAULT 0.0,
+                    currency TEXT DEFAULT 'INR',
+                    status TEXT DEFAULT 'COMPLETED',
+                    created_at TEXT NOT NULL,
+                    UNIQUE(organization_id, month_year)
+                );
+                """
+            )
+            conn.execute(
+                """
+                CREATE INDEX IF NOT EXISTS idx_billing_batches_org_month
+                ON billing_batches (organization_id, month_year);
+                """
+            )
         self.checkpoint("TRUNCATE")
 
     # ── Token Revocation & Sliding Rate Limiting ────────────────────────────
@@ -4111,6 +4132,188 @@ class PlatformDatabase:
                 ),
             )
             return refund
+
+    # ── Fee Administration, Billing Batches & Aging Reports ───────────
+
+    def get_students_by_organization(self, organization_id: str) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT sp.id as student_id, sp.admission_number, sp.academic_status,
+                       p.first_name, p.last_name, p.email
+                FROM student_profiles sp
+                LEFT JOIN persons p ON sp.person_id = p.id
+                WHERE sp.organization_id = ?;
+            """, (organization_id,))
+            rows = cursor.fetchall()
+            if rows:
+                return [
+                    {
+                        "student_id": r["student_id"],
+                        "admission_number": r["admission_number"] or "",
+                        "academic_status": r["academic_status"] or "active",
+                        "full_name": f"{r['first_name'] or ''} {r['last_name'] or ''}".strip() or r["student_id"],
+                        "email": r["email"] or "",
+                    }
+                    for r in rows
+                ]
+            cursor.execute("""
+                SELECT id as student_id, full_name, email
+                FROM users
+                WHERE organization_id = ? AND role = 'student' AND is_active = 1;
+            """, (organization_id,))
+            u_rows = cursor.fetchall()
+            return [
+                {
+                    "student_id": r["student_id"],
+                    "admission_number": "",
+                    "academic_status": "active",
+                    "full_name": r["full_name"] or r["student_id"],
+                    "email": r["email"] or "",
+                }
+                for r in u_rows
+            ]
+
+    def create_billing_batch(self, batch: Dict[str, Any]) -> Dict[str, Any]:
+        with self._get_connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO billing_batches (
+                    id, organization_id, month_year, invoices_generated, total_amount, currency, status, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+                """,
+                (
+                    batch["batch_id"],
+                    batch["organization_id"],
+                    batch["month_year"],
+                    batch["invoices_generated"],
+                    batch["total_amount"],
+                    batch.get("currency", "INR"),
+                    batch.get("status", "COMPLETED"),
+                    batch.get("created_at", datetime.now(timezone.utc).isoformat()),
+                ),
+            )
+            return batch
+
+    def get_billing_batch(self, organization_id: str, month_year: str) -> Optional[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT * FROM billing_batches WHERE organization_id = ? AND month_year = ?;",
+                (organization_id, month_year),
+            )
+            row = cursor.fetchone()
+            if not row:
+                return None
+            return {
+                "batch_id": row["id"],
+                "organization_id": row["organization_id"],
+                "month_year": row["month_year"],
+                "invoices_generated": row["invoices_generated"],
+                "total_amount": float(row["total_amount"]),
+                "currency": row["currency"],
+                "status": row["status"],
+                "created_at": row["created_at"],
+            }
+
+    def get_fee_admin_summary(self, organization_id: str) -> Dict[str, Any]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            # 1. Total collected from completed payments
+            cursor.execute(
+                "SELECT coalesce(SUM(amount), 0.0) FROM payments WHERE org_id = ? AND status = 'completed' AND is_deleted = 0;",
+                (organization_id,),
+            )
+            total_collected = float(cursor.fetchone()[0])
+
+            # 2. Total pending from issued / partially_paid invoices
+            cursor.execute(
+                "SELECT coalesce(SUM(amount_due - amount_paid), 0.0) FROM invoices WHERE org_id = ? AND status IN ('issued', 'partially_paid') AND is_deleted = 0;",
+                (organization_id,),
+            )
+            total_pending = float(cursor.fetchone()[0])
+
+            # 3. Total overdue
+            now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            cursor.execute(
+                "SELECT coalesce(SUM(amount_due - amount_paid), 0.0) FROM invoices WHERE org_id = ? AND status IN ('issued', 'partially_paid', 'overdue') AND due_date < ? AND is_deleted = 0;",
+                (organization_id, now_iso),
+            )
+            total_overdue = float(cursor.fetchone()[0])
+
+            # 4. Total discounts applied
+            cursor.execute(
+                """
+                SELECT coalesce(SUM(d.applied_amount), 0.0)
+                FROM discounts d
+                JOIN fee_accounts fa ON d.fee_account_id = fa.id
+                WHERE fa.org_id = ? AND d.is_deleted = 0;
+                """,
+                (organization_id,),
+            )
+            total_discounts = float(cursor.fetchone()[0])
+
+            # 5. Accounts count
+            cursor.execute(
+                "SELECT count(*) FROM fee_accounts WHERE org_id = ? AND is_deleted = 0;",
+                (organization_id,),
+            )
+            accounts_count = int(cursor.fetchone()[0])
+
+            return {
+                "org_id": organization_id,
+                "total_collected": total_collected,
+                "total_pending": total_pending,
+                "total_overdue": total_overdue,
+                "total_discounts": total_discounts,
+                "accounts_count": accounts_count,
+                "currency": "INR",
+            }
+
+    def get_outstanding_invoices(self, organization_id: str) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT i.id, i.student_id, i.amount_due, i.amount_paid, i.due_date, i.status,
+                       u.full_name, u.email
+                FROM invoices i
+                LEFT JOIN users u ON i.student_id = u.id
+                WHERE i.org_id = ? AND i.is_deleted = 0 AND (i.amount_due - i.amount_paid) > 0.001
+                ORDER BY i.due_date ASC;
+                """,
+                (organization_id,),
+            )
+            rows = cursor.fetchall()
+            results = []
+            now_dt = datetime.now(timezone.utc)
+            for r in rows:
+                due_amt = float(r["amount_due"]) - float(r["amount_paid"])
+                due_date_str = r["due_date"]
+                overdue_days = 0
+                try:
+                    due_dt = datetime.fromisoformat(due_date_str.replace("Z", "+00:00"))
+                    if due_dt.tzinfo is None:
+                        due_dt = due_dt.replace(tzinfo=timezone.utc)
+                    delta = (now_dt - due_dt).days
+                    overdue_days = max(0, delta)
+                except Exception:
+                    pass
+
+                inv_status = r["status"]
+                if overdue_days > 0 and inv_status != "paid":
+                    inv_status = "overdue"
+
+                results.append({
+                    "invoice_id": r["id"],
+                    "student_id": r["student_id"],
+                    "student_name": r["full_name"] or r["student_id"],
+                    "grade": "Grade 10",
+                    "amount_due": due_amt,
+                    "overdue_days": overdue_days,
+                    "status": inv_status,
+                })
+            return results
 
     # ── Phase 14 Sync Operations & Idempotency ───────────────────────
 

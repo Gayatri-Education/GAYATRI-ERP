@@ -23,7 +23,11 @@ from central_platform.portals.fee_admin import FeeAdminController
 @pytest.fixture
 def test_db(tmp_path):
     db_file = tmp_path / "test_phase05.db"
-    return PlatformDatabase(db_file)
+    db = PlatformDatabase(db_file)
+    from central_platform.models.schema import Organization
+    db.create_organization(Organization(id="org_test_01", name="Test Org", slug="test-org"))
+    db.create_user(User(id="usr_student_01", email="chem_student@school.org", full_name="Chemistry Student", role=UserRole.STUDENT, organization_id="org_test_01"))
+    return db
 
 
 @pytest.fixture
