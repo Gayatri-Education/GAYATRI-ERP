@@ -137,10 +137,39 @@ window.GayatriStudent = (function () {
     }
   }
 
+  async function loadReviewQueue(studentId, courseId) {
+    const resolvedStudentId = studentId || 'current';
+    try {
+      const url = courseId
+        ? `/api/v1/students/${encodeURIComponent(resolvedStudentId)}/review-queue?course_id=${encodeURIComponent(courseId)}`
+        : `/api/v1/students/${encodeURIComponent(resolvedStudentId)}/review-queue`;
+      const resp = await fetch(url, {
+        headers: { 'Accept': 'application/json' }
+      });
+      if (!resp.ok) {
+        if (window.GayatriUI) {
+          window.GayatriUI.showToast(`Unable to load review queue (${resp.status})`, 'error');
+        }
+        return [];
+      }
+      const data = await resp.json();
+      const items = data.data || [];
+      renderReviewQueue(items);
+      return items;
+    } catch (e) {
+      if (window.GayatriUI) {
+        window.GayatriUI.showToast(`Error fetching review queue: ${e.message}`, 'error');
+      }
+      return [];
+    }
+  }
+
   return {
     switchStudentTab,
     renderDashboardStats,
     renderReviewQueue,
     startReview,
+    loadReviewQueue,
   };
 })();
+

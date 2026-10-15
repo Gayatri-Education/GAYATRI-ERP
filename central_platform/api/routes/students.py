@@ -39,6 +39,7 @@ from central_platform.models.schema import User, UserRole
 from central_platform.progress.service import StudentProgressService
 from central_platform.slr.service import SLRService
 from central_platform.teacher.portal import TeacherPortalService, get_shared_portal_service
+from central_platform.portals.student import StudentPortalController
 
 router = APIRouter(prefix="/students", tags=["Students"])
 
@@ -250,6 +251,20 @@ async def get_student_progress_summary(
         "review_due_count": len(report.review_due),
     }
     return ApiResponse(ok=True, data=summary_data)
+
+
+@router.get("/{student_id}/review-queue", response_model=ApiResponse[List[Dict[str, Any]]])
+async def get_student_review_queue(
+    student_id: str,
+    course_id: Optional[str] = None,
+    current_user: Optional[User] = Depends(get_current_user_optional),
+    db: PlatformDatabase = Depends(get_db),
+):
+    """Retrieve spaced review queue for student with strict isolation."""
+    _enforce_student_access(current_user, target_student_id=student_id)
+    items = StudentPortalController.get_review_queue(student_id=student_id, course_id=course_id, db=db)
+    return ApiResponse(ok=True, data=[i.to_dict() for i in items])
+
 
 
 # ── Student Multi-Course Workflow (Phase 17) ──────────────────────────────

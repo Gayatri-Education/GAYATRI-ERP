@@ -72,3 +72,28 @@ class StudentPortalController:
     @classmethod
     def get_dashboard_summary(cls, student_id: str, course_id: str) -> StudentDashboardSummary:
         return StudentDashboardSummary(student_id=student_id, course_id=course_id)
+
+    @classmethod
+    def get_review_queue(
+        cls,
+        student_id: str,
+        course_id: Optional[str] = None,
+        db: Optional[Any] = None,
+    ) -> List[ReviewQueueItem]:
+        """Retrieve authorized spaced review queue items for a student."""
+        from central_platform.progress.service import StudentProgressService
+        progress_svc = StudentProgressService(db=db)
+        report = progress_svc.get_student_progress(student_id, course_id=course_id)
+        queue_items: List[ReviewQueueItem] = []
+        for due in report.review_due:
+            queue_items.append(
+                ReviewQueueItem(
+                    concept_id=due.concept_id,
+                    concept_name=due.concept_name,
+                    subject="Chemistry",
+                    retainability=max(0.1, round(due.current_mastery, 2)),
+                    next_review_due=due.due_at[:10] if due.due_at else "Today",
+                )
+            )
+        return queue_items
+
