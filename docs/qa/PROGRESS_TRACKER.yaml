@@ -30,7 +30,7 @@ phases:
     branch: dev/phase-00-baseline
     issue_url: null
     pull_request_url: null
-    commit_shas: []
+    commit_shas: ["1d01892"]
     findings: [ERP-003, ERP-004, ERP-012, ERP-014, ERP-015, ERP-019]
     files_changed:
       - "central_platform/auth/tokens.py"
