@@ -226,11 +226,6 @@ def get_authoritative_settings(env_vars: Optional[Dict[str, str]] = None) -> Pla
     env = resolve_environment(envs)
     is_prod = env == "production"
 
-    jwt_secret = resolve_jwt_secret(envs, is_prod)
-    encryption_key = resolve_encryption_key(envs, is_prod)
-    allowed_origins = resolve_cors_origins(envs, is_prod)
-    db_path = resolve_database_path(envs, is_prod)
-
     debug = envs.get("DEBUG", "false").lower() in ("true", "1", "yes")
     reload_mode = envs.get("RELOAD", "false").lower() in ("true", "1", "yes")
     fastapi_debug = envs.get("FASTAPI_DEBUG", "false").lower() in ("true", "1", "yes")
@@ -239,6 +234,11 @@ def get_authoritative_settings(env_vars: Optional[Dict[str, str]] = None) -> Pla
         raise RuntimeError(
             "Production startup aborted: Debug and reload modes are strictly prohibited in production."
         )
+
+    jwt_secret = resolve_jwt_secret(envs, is_prod)
+    encryption_key = resolve_encryption_key(envs, is_prod)
+    allowed_origins = resolve_cors_origins(envs, is_prod)
+    db_path = resolve_database_path(envs, is_prod)
 
     model_file = envs.get("GAYATRI_MODEL_FILE")
     model_checksum = envs.get("GAYATRI_MODEL_CHECKSUM")

@@ -21,9 +21,9 @@
 
 | Phase | Title / Scope | Priority | Status | Evidence / Log | Next Action |
 |:---:|---|:---:|:---:|---|---|
-| **00** | Baseline and repository setup | P0 | **PASSED** | [`phase-logs/REMEDIATION_PHASE_00_LOG.md`](phase-logs/REMEDIATION_PHASE_00_LOG.md) | Proceed to Phase 01 |
-| **01** | Restore trustworthy CI & production config tests | P0 | **NOT_STARTED** | `phase-logs/REMEDIATION_PHASE_01_LOG.md` | Execute Phase 01 Plan |
-| **02** | Eliminate synthetic parent data & fake dashboard | P1 | **NOT_STARTED** | `phase-logs/REMEDIATION_PHASE_02_LOG.md` | Depends on Phase 01 |
+| **00** | Baseline and repository setup | P0 | **PASSED** | [`phase-logs/REMEDIATION_PHASE_00_LOG.md`](phase-logs/REMEDIATION_PHASE_00_LOG.md) | Baseline verified (1,775 passed) |
+| **01** | Restore trustworthy CI & production config tests | P0 | **PASSED** | [`phase-logs/REMEDIATION_PHASE_01_LOG.md`](phase-logs/REMEDIATION_PHASE_01_LOG.md) | Production config isolation verified (22/22 passed). Proceed to Phase 02 |
+| **02** | Eliminate synthetic parent data & fake dashboard | P1 | **IN_PROGRESS** | `phase-logs/REMEDIATION_PHASE_02_LOG.md` | Execute Phase 02 Plan |
 | **03** | Financially trustworthy fee admin & receipts | P1 | **NOT_STARTED** | `phase-logs/REMEDIATION_PHASE_03_LOG.md` | Depends on Phase 02 |
 | **04** | Payment webhook verification & tenant binding | P1 | **NOT_STARTED** | `phase-logs/REMEDIATION_PHASE_04_LOG.md` | Depends on Phase 03 |
 | **05** | Edge devices, attendance punches & invalid enums | P1 | **NOT_STARTED** | `phase-logs/REMEDIATION_PHASE_05_LOG.md` | Depends on Phase 04 |

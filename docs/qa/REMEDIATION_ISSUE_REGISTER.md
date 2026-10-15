@@ -6,7 +6,7 @@
 
 | Issue ID | Category / Target Behavior | Priority | Status | Verification Plan / Invariant | Phase |
 |---|---|:---:|:---:|---|:---:|
-| **QA-001** | Production config test isolation & missing DB mask | P0 | IN_PROGRESS | Isolate temp DB paths and verify exact reload/debug/checksum assertions | 01 |
+| **QA-001** | Production config test isolation & missing DB mask | P0 | FIXED_VERIFIED | Isolate temp DB paths and verify exact reload/debug/checksum assertions | 01 |
 | **QA-002** | Synthetic parent metrics & placeholder student data | P1 | NOT_STARTED | Load real data from tenant-scoped DB services; honest empty/error states | 02 |
 | **QA-003** | Toast-only fee admin & fabricated invoice counts | P1 | NOT_STARTED | Database-backed atomic billing runs, deduplication, verified receipt prints | 03 |
 | **QA-004** | Payment webhook tenant spoofing & org-default fallback | P1 | NOT_STARTED | Gateway-derived tenant binding, constant-time HMAC check, double-entry ledger | 04 |
