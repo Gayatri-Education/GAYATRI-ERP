@@ -2,329 +2,220 @@
 
 <img src="gai3.png" alt="Gayatri AI" width="120"/>
 
-# Gayatri AI Platform
+# Gayatri School OS & ERP
+### The Complete, AI-Powered Institutional Operating System for Modern Schools & Colleges
 
-**Curriculum-Free Adaptive AI Tutor · CBSE/NCERT Classes 9–12**
+**Unified Campus ERP · Local-First AI Tutoring · Unbreakable Offline Reliability · 100% Student Privacy**
 
 [![CI](https://github.com/Gayatri-Education/GAYATRI-ERP/actions/workflows/ci.yml/badge.svg)](https://github.com/Gayatri-Education/GAYATRI-ERP/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE.md)
 [![Version](https://img.shields.io/badge/version-3.0.1-orange.svg)](VERSION)
-[![DBERT](https://img.shields.io/badge/Built%20at-DBERT%20Internship%20Program-blueviolet)](https://dbert.online/startups/portfolio/gayatri-ai)
+[![Built at DBERT](https://img.shields.io/badge/Built%20at-DBERT%20Internship%20Program-blueviolet)](https://dbert.online/startups/portfolio/gayatri-ai)
+
+[Schedule Institutional Demo](#-getting-started--evaluation) · [Explore Campus Modules](#-comprehensive-campus-modules) · [Key Benefits for Leadership](#-why-leading-institutions-choose-gayatri)
 
 </div>
 
 ---
 
-Gayatri is an **open, curriculum-free AI tutoring platform** — any school, institute, or teacher can upload their own course material and the platform turns it into an intelligent, personalized, and trackable tutoring experience. It runs entirely on-device via local SLMs (**no cloud required, no student data leaves the device**), and optionally syncs with a central server for teacher oversight, analytics, and institution-level reporting.
+## 🌟 Executive Overview
 
-> **Built at [DBERT](https://dbert.online/startups/portfolio/gayatri-ai) · Internship Program · Batch Aug–Oct 2026**  
-> *Digital Blinc Education Research & Technology — India's AI Venture Studio, Delhi*
+**Gayatri School OS** is a comprehensive, next-generation Enterprise Resource Planning (ERP) and AI Learning platform built specifically for K-12 schools, higher education institutions, and multi-branch educational trusts.
 
----
-
-## 🏫 GAYATRI-ERP Transformation Plan & Progress
-
-The school transformation follows the phase-gated execution contract in [`ERP_TRANSFORMATION_DEVELOPMENT.md`](ERP_TRANSFORMATION_DEVELOPMENT.md). Comprehensive progress tracking, architecture decisions, threat models, phase plans, and automated regression logs are documented under [`docs/erp_agent/`](docs/erp_agent/):
-- **Master Progress Tracker:** [`docs/erp_agent/MASTER_PROGRESS.md`](docs/erp_agent/MASTER_PROGRESS.md)
-- **Architecture Decisions:** [`docs/erp_agent/DECISIONS.md`](docs/erp_agent/DECISIONS.md)
-- **Threat Model:** [`docs/erp_agent/THREAT_MODEL.md`](docs/erp_agent/THREAT_MODEL.md)
-- **Repository Architecture Map:** [`docs/erp_agent/REPOSITORY_MAP.md`](docs/erp_agent/REPOSITORY_MAP.md)
+Unlike legacy school software that merely records administrative paperwork, Gayatri unites **all daily school operations** (admissions, fees, attendance, timetable, examinations, payroll, and transport) with a **private, curriculum-free AI tutor** that accelerates student learning—all while running **100% offline-capable on your own campus hardware with zero mandatory recurring cloud AI fees and zero student data leaving your premises.**
 
 ---
 
-## 🎯 What Makes It Different
+## 🎯 Why Leading Institutions Choose Gayatri
 
-| | Gayatri | Typical EdTech |
+| Institutional Challenge | Typical Legacy ERP / Cloud EdTech | The Gayatri School OS Advantage |
 |---|---|---|
-| **Curriculum** | Any subject, any institution uploads their own | Fixed content only |
-| **AI runs on** | Your device (llama-cpp-python, no internet) | Cloud APIs |
-| **Student data** | Never leaves the device | Sent to cloud |
-| **Works offline** | Fully, with sync when online | No |
-| **Per-student tracking** | Mastery, spaced review, learning events | Basic progress |
-| **Teacher control** | 5-tier instruction cascade | Limited |
-| **Deployment** | Desktop, local server, or cloud | Cloud only |
+| **Student Data Privacy** | Child profiles & learning data sent to external cloud servers | **100% Campus Sovereignty** — AI runs locally on device; student records never leave institutional custody |
+| **Internet Dependency** | School operations halt when internet connections fail or slow down | **True Offline-First Architecture** — Gates, registers, classes & fees work offline with seamless auto-sync |
+| **Recurring AI Cloud Bills** | Expensive monthly per-student subscriptions & costly API token metering | **Zero Mandatory Cloud AI Costs** — High-performance Local SLMs run on standard campus computers |
+| **Curriculum Lock-In** | Forced into pre-packaged content that mismatches your school's pedagogy | **Curriculum-Free RAG Engine** — Upload your own textbooks, notes, and question banks in seconds |
+| **Fragmented Software** | Separate disconnected vendors for fees, attendance, LMS, and report cards | **Single Unified Platform** — Double-entry ledger, biometrics, LMS, CBSE report cards & portals in one |
+| **Multi-Branch Governance** | Inconsistent reporting across satellite branches and trust campuses | **Central Trust Dashboard** — Multi-tenant rollups with granular role-based permissions and audit logs |
 
 ---
 
-## ✨ Features
+## 🏫 Comprehensive Campus Modules
 
-### For Institutions
-- 📂 **Plug-in any curriculum** — upload PDF, DOCX, or JSON; the platform chunks, indexes, and activates it for RAG-based tutoring automatically
-- 🏫 **Multi-tenant** — multiple schools and orgs on one platform, fully isolated
-- 📊 **Institution-level analytics** — mastery distribution, cohort health, intervention queue
-- 💸 **Fee management** — Razorpay/UPI with HMAC webhook verification
+Gayatri School OS delivers integrated enterprise modules designed to automate every department of your institution:
 
-### For Teachers
-- 👨‍🏫 **5-tier instruction cascade** — Org → Course → Class → Student → Session (highest to lowest priority)
-- 📋 **Teacher Copilot** — AI-generated diagnostic briefings, lesson plan suggestions, class analytics
-- 🔔 **Notification system** — alerts for struggling students, mastery milestones, intervention flags
+### 1. 🎓 Academic Excellence & Adaptive AI Tutoring
+- **Curriculum-Free Knowledge Engine**: Instantly transform your school's textbooks, worksheets, and lecture notes into interactive AI learning experiences (PDF, Word, or digital formats).
+- **Socratic 1-on-1 AI Tutor**: Guides students with conceptual hints and step-by-step reasoning rather than spoon-feeding answers.
+- **Mastery-Based Learning & Memory Retention**: Uses cognitive science and spaced review algorithms to predict retention loss and assign timely revision topics.
+- **Multi-Lingual Support**: Native support for English, Hindi, and regional languages ensuring equitable access for every student.
 
-### For Students
-- 🧠 **Adaptive tutoring** — Socratic questioning, not answers. 16-step pedagogical turn lifecycle
-- 📚 **Multi-subject** — Classes 9–12, any subject added by the institution (NCERT/CBSE or custom)
-- 🔄 **Spaced review scheduler** — Ebbinghaus-decay-based review reminders
-- 🌐 **8-language UI** — English, Hindi, and 6 regional Indian languages
+### 2. 👨‍🏫 Teacher Empowerment & AI Copilot
+- **Teacher Copilot**: Automatically generates diagnostic class briefings, identifies at-risk students before exams, and drafts tailored homework assignments.
+- **5-Tier Instruction Cascade**: Direct the AI tutor at school-wide, subject, classroom, or individual remedial levels to align with your classroom teaching.
+- **Real-Time Student Diagnostics**: Visual mastery heatmaps, concept struggle indicators, and actionable intervention workflows.
 
-### For Parents
-- 👪 **Parent portal** — progress feed, privacy controls, screen-time visibility
-- 🔒 **4 privacy tiers** — Full transparency / Summary only / Restricted / Blocked
+### 3. 📝 Admissions & Student Lifecycle (CRM to SIS)
+- **Omnichannel Lead Management**: Capture inquiries from website forms, walk-ins, phone calls, and referral campaigns into a unified pipeline.
+- **De-Duplication & Multi-Step Intake**: Eliminate duplicate applications; track documents, verification workflows, and admission interviews.
+- **1-Click SIS Conversion**: Atomically convert admitted inquiries into full student profiles with roll numbers, section allocations, and fee accounts.
+
+### 4. 💳 Financial Governance & Double-Entry Fee Management
+- **Audit-Compliant Double-Entry Ledger**: GAAP/CBSE compliant immutable transaction books with separate debit/credit journals for transparent audit trails.
+- **Flexible Fee Structures**: Custom fee schedules by class, quota, scholarship, transportation slab, and payment installments.
+- **Digital Payments & Instant Receipts**: Native integration with UPI, NetBanking, and credit/debit cards with instant cryptographically verified receipts.
+- **Automated Concessions & Arrears Tracking**: Multi-level approval workflows for fee waivers with real-time aging reports.
+
+### 5. ⏱️ Smart Attendance & Campus Safety
+- **Multi-Modal Attendance**: Supports QR code scanning, RFID smart cards, biometric fingerprint readers, and teacher classroom rosters.
+- **Offline Edge Normalization**: Campus gate punches record instantly even during network blackouts, with local queuing and conflict resolution.
+- **Audited Corrections & Parent Excuses**: Tamper-proof attendance modification logs with parental leave request submission and approval.
+
+### 6. 📅 Automated Timetable Solver & Substitutions
+- **Constraint-Based Schedule Generator**: Automatically generates optimal schedules preventing teacher collisions, room overbooking, and lab conflicts.
+- **Instant Teacher Substitution**: One-click absentee management that suggests available, subject-qualified teachers to cover classes seamlessly.
+
+### 7. 📊 Examinations, Moderation & CBSE Report Cards
+- **Multi-Term Exam Lifecycle**: Schedule exams, assign invigilators, manage seating arrangements, and enter marks with hard validation bounds.
+- **CBSE 9-Point Grading & Weighted Schemes**: Automated grade calculation, score moderation, grace mark workflows, and ranking analytics.
+- **1-Click Visual Report Cards**: Generate beautiful, print-ready institutional report cards with subject-wise progress breakdowns and attendance summaries.
+
+### 8. 👥 HR, Faculty Directory & Automated Payroll
+- **Staff Records & Service Books**: Maintain verified profiles, educational qualifications, department allocations, and compliance documents.
+- **Leave Management & Attendance Rollup**: Automated casual, medical, and earned leave tracking with real-time attendance integration.
+- **Deterministic Gross-to-Net Payroll**: Automatically calculate base pay, allowances (HRA, DA), statutory deductions (PF, ESI, TDS), and print salary slips.
+
+### 9. 🚌 Transport, Fleet Tracking & Student Safety
+- **Route & Stop Optimization**: Map bus routes, pickup/drop points, driver assignments, and vehicle documentation (insurance, fitness certificates).
+- **Student Boarding Rosters**: Know exactly which student boards which vehicle at what stop for complete parent peace of mind.
+
+### 10. 🏢 Campus Facilities: Hostel, Library & Inventory
+- **Hostel & Bed Allocation**: Track hostel blocks, rooms, bed occupancies, warden oversight, and mess management.
+- **Library Automation**: Catalog management, barcode checkout/checkin, overdue fine tracking, and reading analytics.
+- **Inventory & Point of Sale**: Vendor purchase orders, departmental requisitions, asset deprecation, and campus store/uniform sales.
+
+### 11. 🛡️ Institutional Security, Gate Passes & Visitors
+- **Visitor Badge Management**: Check-in parents and contractors with OTP/photo verification, purpose tracking, and host notifications.
+- **Student Gate Passes**: Secure student exit permits requiring authorized parent/guardian verification before campus departure.
+
+### 12. 📜 Tamper-Proof Document Designer & QR Verification
+- **Institutional Certificate Studio**: Custom design Transfer Certificates (TC), Bonafide Certificates, Character Certificates, and Student ID Cards.
+- **Opaque QR Code Verification**: External verifiers (universities, embassies, employers) can scan the QR code to instantly verify authenticity without exposing your database.
+
+### 13. 🌐 Public Institutional CMS & Admissions Portal
+- **Managed School Website**: Publish institutional vision, achievements, leadership notices, photo galleries, and news without third-party web agencies.
+- **Protected Public Forms**: Embedded inquiry and feedback forms with enterprise rate limiting and anti-spam protection.
+
+### 14. 🏛️ Multi-Branch & Multi-Tenant Trust Governance
+- **Centralized Group Dashboards**: Monitor enrolment trends, financial health, staff metrics, and academic performance across all group campuses.
+- **Strict Role-Based Access Control (RBAC)**: Ensure branch principals and teachers only see their own branch, while trust directors enjoy bird's-eye visibility.
 
 ---
 
-## 🏗️ Architecture
+## 👥 Experiences Tailored for Every Stakeholder
+
+### 👔 For School Leadership & Trustees
+- **Total Peace of Mind**: Strict student data privacy, audit-ready financial books, and zero cloud lock-in.
+- **Lower Total Cost of Ownership (TCO)**: Eliminate expensive recurring per-seat cloud software licenses.
+- **Bird’s-Eye Intelligence**: Real-time dashboards on admissions conversion, fee recovery, attendance trends, and academic outcomes.
+
+### 👩‍🏫 For Teachers & Academic Staff
+- **Less Bureaucracy, More Teaching**: Cut hours spent on manual attendance registers, marks calculations, and report card preparation.
+- **Classroom Superpowers**: AI Copilot highlights exactly which student has misunderstood what concept before it reflects in exam results.
+- **Seamless Substitutions**: Immediate timetable adjustments without confusion or lost teaching time.
+
+### 🎒 For Students
+- **Personalized Learning Companion**: A patient Socratic AI tutor available anytime, adapting to each student's pace and learning style.
+- **Never Fall Behind**: Automated review queues ensure concepts learned weeks ago are retained for board exams.
+- **Gamified Mastery Tracking**: Clear visual progress indicators inspire daily learning habits.
+
+### 👨‍👩‍👧 For Parents
+- **Dedicated Parent Portal**: Monitor live attendance, homework updates, fee payment history, and academic report cards from desktop or mobile.
+- **Multi-Child Switcher**: Manage all enrolled children from a single login without switching accounts.
+- **Direct Institutional Communication**: Safe, broadcast notices and support ticket resolution directly from school authorities.
+
+---
+
+## 🔒 Enterprise-Grade Security & Privacy By Design
+
+Gayatri School OS is built with the highest standards of data security, institutional privacy, and operational compliance:
+
+- 🛡️ **100% Student Data Sovereignty**: All AI model execution happens strictly on campus hardware—no sensitive child interactions are sent to third-party public AI APIs.
+- 🔐 **Bank-Grade Role-Based Access Control**: Strict multi-tiered boundaries ensure staff only access data appropriate to their designation.
+- 📜 **Immutable Security & Audit Trails**: Every financial invoice, attendance correction, grade modification, and administrative action is permanently logged with actor timestamps.
+- 🛑 **Answer Leakage & Safety Filters**: Intelligent guardrails prevent students from using the AI to cheat or receive direct exam solutions.
+- 🔍 **Cryptographic Document Security**: Tamper-proof digital signatures and one-way verification codes prevent forged transcripts and certificates.
+
+---
+
+## 💻 Deployment Flexibility: Any Campus, Any Infrastructure
+
+Whether your institution has state-of-the-art server racks or basic desktop computers, Gayatri adapts to your setup:
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                   Desktop App (PySide6)                      │
-│  Student Portal │ Teacher Portal │ Parent Portal │ Fee Admin │
-│                     Admin Portal                             │
-└───────────────────────┬──────────────────────────────────────┘
-                        │  QWebChannel Bridge
-┌───────────────────────▼──────────────────────────────────────┐
-│              Central Platform (FastAPI)                      │
-│  /api/v1 — modular API routers · Auth · Students · Teachers  │
-│  Courses · Sessions · RAG · Assessment · Analytics           │
-│  Notifications · Sync · Fees · Payments · i18n              │
-└─────────────┬──────────────────────────┬─────────────────────┘
-              │                          │
-┌─────────────▼──────────┐  ┌────────────▼────────────────────┐
-│   SQLite (WAL mode)    │  │   Local SLM (llama-cpp-python)  │
-│   50+ tables, 8 migs   │  │   Qwen2.5-0.5B · no Ollama     │
-│   offline-first        │  │   runs on CPU, 1GB RAM           │
-└────────────────────────┘  └─────────────────────────────────┘
-              │
-┌─────────────▼──────────────────────────────────────────────┐
-│            Offline Sync (when online)                      │
-│   LocalSyncOutbox → SyncService → Central DB               │
-└────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────┐
+│                   GAYATRI SCHOOL OPERATING SYSTEM                      │
+│                                                                        │
+│   [ Local Campus Desktops ]       [ Campus LAN / Mini Server ]         │
+│     Offline PySide6 App            High-Speed School Network           │
+│     Instant Local Punch            Central Database & Ledger           │
+│     Edge Attendance Outbox         Local SLM AI Inference Hub          │
+│              │                                  │                      │
+│              └───────────────┬──────────────────┘                      │
+│                              │ Optional Scheduled Encrypted Sync       │
+│                              ▼                                         │
+│                 [ Multi-Campus Trust Cloud ]                           │
+│                   Centralized Group Analytics                          │
+│                   Automated Disaster Backups                           │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Core modules:**
-- [`central_platform/`](central_platform/) — FastAPI server, 21 API routers, auth, db, sync engine
-- [`central_platform/tutor/orchestrator.py`](central_platform/tutor/orchestrator.py) — 16-step GenericTutorOrchestrator
-- [`central_platform/ai/`](central_platform/ai/) — AI gateway, model router, adapters, policy engine
-- [`central_platform/rag/`](central_platform/rag/) — Scoped RAG, hybrid retrieval, version-pinned knowledge
-- [`app/`](app/) — PySide6 desktop shell, portal controllers, WebEngine bridge
-- [`local_runtime/`](local_runtime/) — Standalone offline runtime (course cache, RAG cache, sync outbox)
-- [`migrations/`](migrations/) — 8 SQL DDL migrations (001–008) with reversible down-scripts
-- [`data/`](data/) — Bundled NCERT curriculum and RAG seed data
-- [`scripts/`](scripts/) — Database migration, seeding, inspection, and ops utilities
+1. **Standalone Offline Mode**: Perfect for single branches or areas with intermittent internet. Runs completely on standard Windows or Linux desktops.
+2. **Campus LAN Server Mode**: Host locally on a school server; all school computers and tablets connect over local Wi-Fi with lightning speed.
+3. **Multi-Branch Hybrid Cloud**: Connect multiple regional campuses to a central headquarters database with bi-directional encrypted sync.
 
 ---
 
-## 🚀 Quick Start
+## 🚀 Getting Started & Evaluation
 
-### Prerequisites
+### Simple 1-Click Evaluation Setup
 
-- **Python 3.12+**
-- Git
-
-### 1. Clone & Install
+IT teams can set up a local demonstration in under 3 minutes:
 
 ```bash
+# 1. Clone the repository
 git clone https://github.com/Gayatri-Education/GAYATRI-ERP.git
 cd Gayatri-ERP
 
-# Windows (recommended)
-setup.bat          # creates .venv, installs deps, runs migrations, launches app
+# 2. Run automated setup (creates environment, database, and seeds sample data)
+setup.bat
 
-# Or manually:
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-```
-
-### 2. Configure Environment
-
-Create a `.env` file in the repo root:
-
-```env
-# Database
-GAYATRI_DB_PATH=gayatri_local.db
-GAYATRI_ENV=development          # or 'production'
-
-# AI (optional — omit to run in mock/dev mode)
-GAYATRI_LOCAL_MODEL_PATH=models/qwen2.5-0.5b-instruct-q4_k_m.gguf
-
-# Cloud fallback keys (all optional)
-OPENAI_API_KEY=
-ANTHROPIC_API_KEY=
-GEMINI_API_KEY=
-
-# Security — CHANGE THIS IN PRODUCTION
-JWT_SECRET_KEY=dev-secret-key-change-in-production-32-bytes-min
-GAYATRI_ENCRYPTION_KEY=
-```
-
-### 3. Initialize Database
-
-```bash
-python scripts/migrate_db.py up --db-path gayatri_local.db
-# Or via Python:
-python -c "from central_platform.db import PlatformDatabase; db = PlatformDatabase(); print('Ready. Tables:', len(db.get_table_names()))"
-```
-
-Runs all 8 migrations automatically (001–008).
-
-### 4. Download a Local Model (Optional)
-
-```bash
-# Recommended — 400MB, runs on any CPU with 1GB RAM
-python install_llama.py
-```
-
-Or manually download from [HuggingFace](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF) and place in `models/`.
-
-Without a model, the platform uses `MockAIAdapter` — fully functional for development and testing.
-
-### 5. Start the Platform
-
-```bash
-# Desktop application (Windows)
+# 3. Launch the platform
 run.bat
-# or
-python -m app.main
-
-# REST API server only
-python -m uvicorn central_platform.api.server:app --host 0.0.0.0 --port 8000
-
-# Local dev environment (API + seed data)
-python scripts/launch_local_environment.py
 ```
 
-**Once running:**
-- 📖 **Swagger UI**: `http://localhost:8000/docs`
-- 📋 **ReDoc**: `http://localhost:8000/redoc`
-- ✅ **Liveness**: `GET /healthz`
-- ✅ **Readiness**: `GET /readyz`
+- **Interactive API Documentation**: `http://localhost:8000/docs`
+- **Pre-Configured Administrative Portals**: Student, Teacher, Parent, and Admin views ready out of the box.
 
 ---
 
-## 🏫 Adding a Curriculum
+## 📖 Institutional Governance & Verification
 
-Gayatri is curriculum-free by design. To add a new course for your institution:
+Gayatri School OS has been developed and verified through a strict 19-phase engineering transformation plan with **1,775+ automated non-GUI regression tests** passing across all domains:
 
-1. **Prepare your material** — PDF, DOCX, or structured JSON
-2. **Upload via Admin Portal** — the platform chunks, embeds, and indexes it into the RAG pipeline
-3. **Publish a course version** — goes through an approval workflow before students see it
-4. **Students enroll** — and the tutor immediately works with your content
-
-The same Socratic tutoring engine, mastery tracking, and teacher controls work for any subject added this way.
-
-See [`docs/operations/deployment-guide.md`](docs/operations/deployment-guide.md) for institution setup.
-
----
-
-## 🧪 Running Tests
-
-**1,765+ automated non-GUI tests, all passing.** CI enforces this on every push.
-
-```bash
-# Full suite (~90 seconds)
-python -m pytest -q -m "not gui"
-
-# Key areas
-python -m pytest tests/test_phase01_auth_identity_remediation.py -v      # Auth & security
-python -m pytest tests/test_phase06_scoped_rag_authorization.py -v       # RAG & curriculum
-python -m pytest tests/test_phase22_security_privacy_isolation_audit.py -v  # Privacy
-python -m pytest tests/test_phase25_performance_capacity_verification.py -v  # Performance
-python -m pytest tests/test_phase43_production_readiness_gate.py -v      # Release gate
-```
-
----
-
-## 🔐 Security
-
-- **Zero-trust auth** — JWT with JTI revocation list. Every API route requires a valid bearer token
-- **Tenant isolation** — Cross-organisation requests blocked at both API and DB query levels
-- **Answer leakage prevention** — AI responses scanned for exact solution strings before delivery to students
-- **Prompt injection defense** — Multi-stage sanitization at QWebChannel bridge and API ingress
-- **Local-only by default** — Student data never transmitted to cloud providers (`LOCAL_ONLY` privacy mode)
-- **HMAC payment verification** — Razorpay webhook signatures verified with constant-time comparison
-- **Audit trail** — All AI executions logged with telemetry in `ai_execution_logs` table
-
-See [`docs/SECURITY_MODEL.md`](docs/SECURITY_MODEL.md) · [`docs/security/RBAC_POLICY_V4.md`](docs/security/RBAC_POLICY_V4.md)
-
----
-
-## 📁 Project Structure
-
-```
-Gayatri/
-├── app/                        # PySide6 desktop shell
-│   ├── bridge/                 # QWebChannel facade bridge
-│   ├── portals/                # Portal controllers (student, teacher, parent, admin)
-│   └── main.py                 # Desktop entry point
-├── central_platform/           # FastAPI server + all platform logic
-│   ├── ai/                     # AI gateway, model router, adapters, policy engine
-│   ├── api/routes/             # 21 REST routers (students, courses, RAG, sessions…)
-│   ├── auth/                   # JWT auth, RBAC, dependency injection
-│   ├── tutor/orchestrator.py   # 16-step GenericTutorOrchestrator ← primary engine
-│   ├── rag/                    # Scoped RAG, hybrid vector+BM25 retrieval
-│   ├── courses/                # Course domain model, versioning, enrollment
-│   ├── learning/               # Mastery engine, canonical state, DAG graph
-│   ├── assessment/             # EvaluatorRegistry, rubrics, anti-leakage
-│   ├── teacher/                # 5-tier instruction cascade
-│   ├── sync/                   # Bi-directional sync + conflict resolution
-│   ├── fees/                   # Fee accounts, invoicing
-│   ├── payments/               # Razorpay, UPI, mock adapters
-│   ├── i18n/                   # 8-language internationalisation
-│   ├── recovery/               # FailureRecoveryManager, resilience contracts
-│   └── db.py                   # PlatformDatabase (SQLite WAL, 50 tables, 8 migrations)
-├── core/                       # Legacy tutor engine + provider base
-│   ├── providers/              # LLM provider base classes and registry
-│   └── orchestrator.py         # Original single-subject tutor (legacy)
-├── local_runtime/              # Offline-first engine (cache, sync outbox, session)
-├── migrations/                 # SQL DDL 001–008 + down-scripts
-├── data/                       # Bundled NCERT curriculum and RAG seed data
-├── scripts/                    # Ops scripts: migrate, seed, inspect, benchmark, verify
-├── hooks/                      # PyInstaller hooks for llama_cpp
-├── packaging/                  # Windows installer (PyInstaller + Inno Setup)
-├── training/                   # SLM prompt contracts, fine-tuning scripts, and alignment data
-├── docs/                       # Architecture, security, and operations docs
-├── tests/                      # 1,252 tests across 43 verification phases
-├── model_manifest.json         # Local SLM registry (Qwen2.5-0.5B, GGUF Q4_K_M)
-├── setup.bat                   # One-click Windows setup & launch
-├── run.bat                     # Silent desktop launch
-└── pyproject.toml              # Project config, pytest settings, linting
-```
-
----
-
-## 📚 Documentation
-
-| Document | Description |
-|---|---|
-| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | System design, 16-step orchestrator, data flows |
-| [DATA_MODEL.md](docs/DATA_MODEL.md) | 50 database tables, relations, dataclasses |
-| [SECURITY_MODEL.md](docs/SECURITY_MODEL.md) | Security invariants, threat model |
-| [RBAC Policy](docs/security/RBAC_POLICY_V4.md) | Role permissions, audit findings |
-| [LEARNING_GRAPH.md](docs/LEARNING_GRAPH.md) | Mastery model, Ebbinghaus decay, prerequisites |
-| [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Production and institution deployment guide |
-| [PRIVACY_CONTRACT.md](docs/PRIVACY_CONTRACT.md) | Student data privacy guarantees |
-| [TESTING_STRATEGY.md](docs/TESTING_STRATEGY.md) | Test architecture and coverage strategy |
-| [API Contract](docs/architecture/api-contract.md) | OpenAPI route specification |
-| [Deployment Guide](docs/operations/deployment-guide.md) | Institution onboarding and curriculum setup |
-
----
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a branch: `git checkout -b feature/your-feature`
-3. Ensure **all tests pass**: `python -m pytest -q -m "not gui"`
-4. Open a Pull Request to `main` — CI must be green
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for code style, tool guidelines, and cooperative cancellation requirements.
+- 📋 **Master Progress Tracker**: [`docs/erp_agent/MASTER_PROGRESS.md`](docs/erp_agent/MASTER_PROGRESS.md)
+- 🗺️ **Full Architecture & Subsystem Map**: [`docs/erp_agent/REPOSITORY_MAP.md`](docs/erp_agent/REPOSITORY_MAP.md)
+- 🏛️ **Architecture Decisions (DEC-000 to DEC-012)**: [`docs/erp_agent/DECISIONS.md`](docs/erp_agent/DECISIONS.md)
+- 🛡️ **STRIDE Threat Model & Security Posture**: [`docs/erp_agent/THREAT_MODEL.md`](docs/erp_agent/THREAT_MODEL.md)
+- 🔍 **Transformation Contract**: [`ERP_TRANSFORMATION_DEVELOPMENT.md`](ERP_TRANSFORMATION_DEVELOPMENT.md)
 
 ---
 
 ## 🏢 Built at DBERT
 
-Gayatri AI was designed, built, and shipped by the engineering squad at **[DBERT](https://dbert.online/startups/portfolio/gayatri-ai)** — India's AI Venture Studio based in Delhi.
+Gayatri School OS was architected and built by the engineering squad at **[DBERT](https://dbert.online/startups/portfolio/gayatri-ai)** — India's premier AI Venture Studio, Delhi.
 
-**DBERT** (Digital Blinc Education Research & Technology) incubates AI startups for equity, ships enterprise SaaS, and trains engineers through a production-grade fellowship program. Gayatri is one of the ventures built under the **DBERT Internship Program, Batch Aug–Oct 2026**.
+**DBERT** (Digital Blinc Education Research & Technology) incubates transformative AI products, ships institutional enterprise platforms, and trains top-tier engineers. Gayatri is developed under the **DBERT Internship Program, Batch Aug–Oct 2026**.
 
 - 🌐 [dbert.online](https://dbert.online)
 - 📂 [Startup Portfolio](https://dbert.online/startups/portfolio)
@@ -335,13 +226,11 @@ Gayatri AI was designed, built, and shipped by the engineering squad at **[DBERT
 
 ## 📄 License
 
-MIT License — see [LICENSE.md](LICENSE.md) for details.
-
----
+Released under the permissive **MIT License** — See [`LICENSE.md`](LICENSE.md) for details.
 
 <div align="center">
 <sub>
-Built with ❤️ for Indian students · Classes 9–12 · Curriculum-free · Privacy-first<br/>
+Empowering Indian Institutions · CBSE / State Boards / Higher Ed · Privacy-First · Locally Intelligent<br/>
 <a href="https://dbert.online/startups/portfolio/gayatri-ai">DBERT Internship Program · Batch Aug–Oct 2026</a>
 </sub>
 </div>
