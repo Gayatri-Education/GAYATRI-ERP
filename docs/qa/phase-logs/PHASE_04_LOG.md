@@ -4,7 +4,7 @@
 **Status:** PASSED  
 **Date:** 2026-10-15  
 **Branch:** `dev/phase-00-baseline`  
-**Commit / Checkpoint:** Phase 04 complete  
+**Commit / Checkpoint:** `598deec`  
 
 ---
 
