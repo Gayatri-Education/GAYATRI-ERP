@@ -7,8 +7,8 @@
 |---|---|---|---|---|---|---|---|
 | **Identity & Provisioning** | Admin Portal Create User | `/api/v1/admin/users` | `AdminService.create_org_user` | `users` table | `ORG_ADMIN` / `SUPER_ADMIN` | `test_org_admin_user_provisioning_and_isolation` | `IMPLEMENTED_VERIFIED` |
 | **Token Revocation** | User Logout Button | `/api/v1/auth/logout` | `DatabaseRevocationStore.revoke` | `revoked_tokens` table | Bearer JWT required | `test_F004_revoked_token_returns_401` | `IMPLEMENTED_VERIFIED` |
-| **Parent Dashboard Context** | Parent Switch Child | `get_dashboard_context` | `ParentPortalController` | Multi-table read | Parent-to-Student Link | `test_parent_portal_controller_linked_children` | `IMPLEMENTED_VERIFIED` |
-| **Parent-Child Privacy Isolation** | View Child Progress | `get_child_progress` | `ParentPortalController` | `learning_records` | Parent-to-Student Link | `test_parent_portal_privacy_and_child_isolation` | `IMPLEMENTED_VERIFIED` |
+| **Parent Dashboard Context** | Parent Switch Child | `get_dashboard_context` | `ParentPortalController` | Multi-table read | Parent-to-Student Link | `tests/test_phase02_parent_portal_remediation.py` | `IMPLEMENTED_VERIFIED` |
+| **Parent-Child Privacy Isolation** | View Child Progress | `get_child_progress` | `ParentPortalController` | `learning_records` | Parent-to-Student Link | `tests/test_phase02_parent_portal_remediation.py` | `IMPLEMENTED_VERIFIED` |
 | **Admissions CRM Intake** | Inquire Online / Walkin | `/api/v1/admissions/inquiries` | `AdmissionsService.create_inquiry` | `admissions_inquiries` | Public form / Org Scoped | `test_e2e_student_lifecycle_and_restart_durability` | `IMPLEMENTED_VERIFIED` |
 | **Student Lifecycle SIS** | Convert to Student | `/api/v1/admissions/convert` | `AdmissionsService.convert_to_student` | `students` / `enrollments` | `ORG_ADMIN` | `test_submodule_6b_admissions_lifecycle` | `IMPLEMENTED_VERIFIED` |
 | **Fee Plan & Billing** | Generate Monthly Billing | `/api/v1/fees/billing/generate` | `FeeService.generate_monthly_billing` | `invoices`, `ledger_entries` | `ORG_ADMIN` | `test_fee_admin_controller_generate_monthly_billing` | `IMPLEMENTED_VERIFIED` |

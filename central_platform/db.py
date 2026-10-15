@@ -600,6 +600,115 @@ class PlatformDatabase:
                 for r in rows
             ]
 
+    def get_guardian_students(
+        self,
+        organization_id: Optional[str],
+        guardian_id: str,
+        can_access_portal_only: bool = True,
+    ) -> List[Dict[str, Any]]:
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            query = """
+                SELECT l.*,
+                       sp.admission_number, sp.person_id as student_person_id,
+                       p.first_name, p.last_name, p.email, p.phone
+                FROM student_guardian_links l
+                LEFT JOIN student_profiles sp ON l.student_id = sp.id
+                LEFT JOIN persons p ON sp.person_id = p.id
+                WHERE (
+                    l.guardian_id = ?
+                    OR l.guardian_id IN (
+                        SELECT gp.id FROM guardian_profiles gp
+                        JOIN persons gp_p ON gp.person_id = gp_p.id
+                        WHERE gp.id = ? OR gp.person_id = ? OR gp_p.user_id = ?
+                    )
+                )
+            """
+            params: list[Any] = [guardian_id, guardian_id, guardian_id, guardian_id]
+            if organization_id:
+                query += " AND l.organization_id = ?"
+                params.append(organization_id)
+            if can_access_portal_only:
+                query += " AND l.can_access_portal = 1"
+            cursor.execute(query, tuple(params))
+            rows = cursor.fetchall()
+            results = []
+            for r in rows:
+                first_name = r["first_name"]
+                last_name = r["last_name"]
+                email = r["email"]
+                if not first_name:
+                    cursor.execute("SELECT full_name, email FROM users WHERE id = ?;", (r["student_id"],))
+                    u_row = cursor.fetchone()
+                    if u_row:
+                        first_name = u_row["full_name"] or r["student_id"]
+                        email = u_row["email"]
+                results.append({
+                    "id": r["id"],
+                    "organization_id": r["organization_id"],
+                    "student_id": r["student_id"],
+                    "guardian_id": r["guardian_id"],
+                    "relationship": r["relationship"],
+                    "is_primary_contact": bool(r["is_primary_contact"]),
+                    "is_emergency_contact": bool(r["is_emergency_contact"]),
+                    "is_pickup_authorized": bool(r["is_pickup_authorized"]),
+                    "can_access_portal": bool(r["can_access_portal"]),
+                    "admission_number": r["admission_number"],
+                    "first_name": first_name or "",
+                    "last_name": last_name or "",
+                    "email": email or "",
+                    "phone": r["phone"] or "",
+                })
+            return results
+
+    def is_guardian_linked(
+        self,
+        organization_id: Optional[str],
+        guardian_id: str,
+        student_id: str,
+        check_portal_access: bool = True,
+    ) -> bool:
+        """Check whether a guardian is authorized and linked to a student."""
+        with self._get_connection() as conn:
+            cursor = conn.cursor()
+            query = """
+                SELECT 1 FROM student_guardian_links l
+                WHERE (
+                    l.guardian_id = ?
+                    OR l.guardian_id IN (
+                        SELECT gp.id FROM guardian_profiles gp
+                        JOIN persons gp_p ON gp.person_id = gp_p.id
+                        WHERE gp.id = ? OR gp.person_id = ? OR gp_p.user_id = ?
+                    )
+                )
+                AND (
+                    l.student_id = ?
+                    OR l.student_id IN (
+                        SELECT sp.id FROM student_profiles sp
+                        JOIN persons sp_p ON sp.person_id = sp_p.id
+                        WHERE sp.id = ? OR sp.person_id = ? OR sp_p.user_id = ?
+                    )
+                )
+            """
+            params: list[Any] = [
+                guardian_id, guardian_id, guardian_id, guardian_id,
+                student_id, student_id, student_id, student_id,
+            ]
+            if organization_id:
+                query += " AND l.organization_id = ?"
+                params.append(organization_id)
+            if check_portal_access:
+                query += " AND l.can_access_portal = 1"
+            cursor.execute(query, tuple(params))
+            if cursor.fetchone():
+                return True
+
+        from central_platform.privacy.policies import PrivacyRulesEngine
+        if PrivacyRulesEngine.is_parent_linked(guardian_id, student_id):
+            return True
+
+        return False
+
     def create_staff_profile(
         self,
         staff_id: str,
